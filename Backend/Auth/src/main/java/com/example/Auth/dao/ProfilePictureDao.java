@@ -1,0 +1,117 @@
+package com.example.Auth.dao;
+
+import com.example.Auth.entity.ProfilePicture;
+import com.example.Auth.model.ProfilePictureModel;
+import com.example.Auth.repository.ProfilePictureRepository;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
+import org.springframework.stereotype.Component;
+
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+/**
+ * DAO for ProfilePicture operations.
+ */
+@Component
+public class ProfilePictureDao extends BaseDao<ProfilePicture, ProfilePictureModel, UUID> {
+
+    @Autowired
+    private ProfilePictureRepository profilePictureRepository;
+
+    @Override
+    protected Class<ProfilePicture> getEntityClass() {
+        return ProfilePicture.class;
+    }
+
+    @Override
+    protected ProfilePictureModel toModel(ProfilePicture entity) {
+        if (entity == null)
+            return null;
+
+        ProfilePictureModel model = new ProfilePictureModel();
+        model.setId(entity.getId());
+        model.setUserId(entity.getUser() != null ? entity.getUser().getId() : null);
+        model.setStorageKey(entity.getStorageKey());
+        model.setOriginalFilename(entity.getFilename());
+        model.setContentType(entity.getContentType());
+        model.setSizeBytes(entity.getSizeBytes());
+        model.setWidth(entity.getWidth());
+        model.setHeight(entity.getHeight());
+        model.setCurrent(entity.isCurrent());
+        model.setCreatedAt(entity.getCreatedAt());
+
+        return model;
+    }
+
+    @Override
+    protected ProfilePicture toEntity(ProfilePictureModel model) {
+        if (model == null)
+            return null;
+
+        ProfilePicture entity = new ProfilePicture();
+        entity.setId(model.getId());
+        entity.setStorageKey(model.getStorageKey());
+        entity.setFilename(model.getOriginalFilename());
+        entity.setContentType(model.getContentType());
+        entity.setSizeBytes(model.getSizeBytes());
+        entity.setWidth(model.getWidth());
+        entity.setHeight(model.getHeight());
+        entity.setCurrent(model.isCurrent());
+
+        return entity;
+    }
+
+    // Query methods
+
+    public List<ProfilePictureModel> findByUserId(UUID userId) {
+        return profilePictureRepository.findByUserId(userId).stream()
+                .map(this::toModel).toList();
+    }
+
+    public Optional<ProfilePictureModel> findCurrentByUserId(UUID userId) {
+        return profilePictureRepository.findCurrentByUserId(userId).map(this::toModel);
+    }
+
+    public Optional<ProfilePictureModel> findByStorageKey(String storageKey) {
+        return profilePictureRepository.findByStorageKey(storageKey).map(this::toModel);
+    }
+
+    public boolean existsCurrentByUserId(UUID userId) {
+        return profilePictureRepository.existsCurrentByUserId(userId);
+    }
+
+    public long countByUserId(UUID userId) {
+        return profilePictureRepository.countByUserId(userId);
+    }
+
+    public long calculateTotalStorageByUserId(UUID userId) {
+        List<ProfilePicture> pictures = profilePictureRepository.findAllByUserId(userId);
+        return pictures.stream()
+                .mapToLong(p -> p.getSizeBytes() != null ? p.getSizeBytes() : 0)
+                .sum();
+    }
+
+    // Update operations
+
+    public boolean setCurrentPicture(UUID userId, UUID pictureId) {
+        // First, unmark all as current
+        Query unmarkQuery = new Query(Criteria.where("user.$id").is(userId));
+        Update unmarkUpdate = new Update().set("current", false);
+        update(unmarkQuery, unmarkUpdate);
+
+        // Then, mark the specified picture as current
+        Query markQuery = new Query(Criteria.where("_id").is(pictureId));
+        Update markUpdate = new Update().set("current", true);
+        return updateOne(markQuery, markUpdate);
+    }
+
+    public boolean unmarkAllAsCurrentForUser(UUID userId) {
+        Query query = new Query(Criteria.where("user.$id").is(userId));
+        Update update = new Update().set("current", false);
+        return update(query, update) > 0;
+    }
+}
