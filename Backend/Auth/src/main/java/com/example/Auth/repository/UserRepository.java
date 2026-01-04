@@ -1,8 +1,9 @@
 package com.example.Auth.repository;
 
 import com.example.Auth.entity.User;
-import org.springframework.data.mongodb.repository.MongoRepository;
-import org.springframework.data.mongodb.repository.Query;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
@@ -15,7 +16,7 @@ import java.util.UUID;
  * Provides CRUD operations and custom queries for user management.
  */
 @Repository
-public interface UserRepository extends MongoRepository<User, UUID> {
+public interface UserRepository extends JpaRepository<User, UUID> {
 
     /**
      * Find a user by username (case-insensitive).
@@ -41,8 +42,8 @@ public interface UserRepository extends MongoRepository<User, UUID> {
      * @param email    the email to search for
      * @return Optional containing the user if found
      */
-    @Query("{ '$or': [ { 'username': { '$regex': ?0, '$options': 'i' } }, { 'email': { '$regex': ?1, '$options': 'i' } } ] }")
-    Optional<User> findByUsernameOrEmail(String username, String email);
+    @Query("SELECT u FROM User u WHERE LOWER(u.username) = LOWER(:username) OR LOWER(u.email) = LOWER(:email)")
+    Optional<User> findByUsernameOrEmail(@Param("username") String username, @Param("email") String email);
 
     /**
      * Find a user by OAuth provider and provider ID.
@@ -99,8 +100,8 @@ public interface UserRepository extends MongoRepository<User, UUID> {
      * @param date the cutoff date
      * @return list of inactive users
      */
-    @Query("{ '$or': [ { 'lastLoginAt': null }, { 'lastLoginAt': { '$lt': ?0 } } ] }")
-    List<User> findInactiveUsersSince(Instant date);
+    @Query("SELECT u FROM User u WHERE u.lastLoginAt IS NULL OR u.lastLoginAt < :date")
+    List<User> findInactiveUsersSince(@Param("date") Instant date);
 
     /**
      * Count total number of users by provider.

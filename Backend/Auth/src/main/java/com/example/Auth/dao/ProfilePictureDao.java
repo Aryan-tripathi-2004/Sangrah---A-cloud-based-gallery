@@ -4,10 +4,8 @@ import com.example.Auth.entity.ProfilePicture;
 import com.example.Auth.model.ProfilePictureModel;
 import com.example.Auth.repository.ProfilePictureRepository;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
@@ -97,21 +95,39 @@ public class ProfilePictureDao extends BaseDao<ProfilePicture, ProfilePictureMod
 
     // Update operations
 
+    @Transactional
     public boolean setCurrentPicture(UUID userId, UUID pictureId) {
         // First, unmark all as current
-        Query unmarkQuery = new Query(Criteria.where("user.$id").is(userId));
-        Update unmarkUpdate = new Update().set("current", false);
-        update(unmarkQuery, unmarkUpdate);
+        List<ProfilePicture> pictures = profilePictureRepository.findByUserId(userId);
+        for (ProfilePicture picture : pictures) {
+            if (picture.isCurrent()) {
+                picture.setCurrent(false);
+                profilePictureRepository.save(picture);
+            }
+        }
 
         // Then, mark the specified picture as current
-        Query markQuery = new Query(Criteria.where("_id").is(pictureId));
-        Update markUpdate = new Update().set("current", true);
-        return updateOne(markQuery, markUpdate);
+        Optional<ProfilePicture> pictureOpt = profilePictureRepository.findById(pictureId);
+        if (pictureOpt.isPresent()) {
+            ProfilePicture picture = pictureOpt.get();
+            picture.setCurrent(true);
+            profilePictureRepository.save(picture);
+            return true;
+        }
+        return false;
     }
 
+    @Transactional
     public boolean unmarkAllAsCurrentForUser(UUID userId) {
-        Query query = new Query(Criteria.where("user.$id").is(userId));
-        Update update = new Update().set("current", false);
-        return update(query, update) > 0;
+        List<ProfilePicture> pictures = profilePictureRepository.findByUserId(userId);
+        boolean anyUpdated = false;
+        for (ProfilePicture picture : pictures) {
+            if (picture.isCurrent()) {
+                picture.setCurrent(false);
+                profilePictureRepository.save(picture);
+                anyUpdated = true;
+            }
+        }
+        return anyUpdated;
     }
 }

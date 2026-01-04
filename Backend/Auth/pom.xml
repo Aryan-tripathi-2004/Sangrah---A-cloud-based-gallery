@@ -1,35 +1,27 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
-	<modelVersion>4.0.0</modelVersion>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>4.0.0</version>
-        <relativePath/> <!-- lookup parent from repository -->
+        <version>3.2.0</version>
+        <relativePath/>
     </parent>
-	<groupId>com.example</groupId>
-	<artifactId>Auth</artifactId>
-	<version>0.0.1-SNAPSHOT</version>	
+
+    <groupId>com.sangrah</groupId>
+    <artifactId>auth-service</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
     <packaging>jar</packaging>
 
-	<name>Authentication Service</name>
-	<description>Microservice for operations related to Authentication </description>
-	<url/>
-	<licenses>
-		<license/>
-	</licenses>
-	<developers>
-		<developer/>
-	</developers>
-	<scm>
-		<connection/>
-		<developerConnection/>
-		<tag/>
-		<url/>
-	</scm>
-	<properties>
-		<java.version>17</java.version>
+    <name>Sangrah Auth Service</name>
+    <description>Authentication and Authorization microservice for Sangrah cloud storage platform</description>
+
+    <properties>
+        <java.version>17</java.version>
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -40,7 +32,8 @@
         <mapstruct.version>1.5.5.Final</mapstruct.version>
         <nimbus-jose-jwt.version>9.37.3</nimbus-jose-jwt.version>
         <springdoc-openapi.version>2.3.0</springdoc-openapi.version>
-        <mongodb-driver.version>4.11.1</mongodb-driver.version>
+        <mysql-connector.version>8.2.0</mysql-connector.version>
+        <flyway.version>10.4.1</flyway.version>
         <testcontainers.version>1.19.3</testcontainers.version>
 
         <!-- Plugin versions -->
@@ -51,20 +44,10 @@
         <spotbugs-maven-plugin.version>4.8.2.0</spotbugs-maven-plugin.version>
         <maven-checkstyle-plugin.version>3.3.1</maven-checkstyle-plugin.version>
         <spring-boot-maven-plugin.version>3.2.0</spring-boot-maven-plugin.version>
-	</properties>
-	<dependencies>
-		<!-- <dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter</artifactId>
-		</dependency> -->
+    </properties>
 
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-test</artifactId>
-			<scope>test</scope>
-		</dependency>
-
-		<!-- Sangrah Common Dependency -->
+    <dependencies>
+        <!-- Sangrah Common Dependency -->
         <dependency>
             <groupId>com.sangrah</groupId>
             <artifactId>common-dependency</artifactId>
@@ -79,7 +62,26 @@
 
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-data-mongodb</artifactId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <version>${mysql-connector.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+            <version>${flyway.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-mysql</artifactId>
+            <version>${flyway.version}</version>
         </dependency>
 
         <dependency>
@@ -125,14 +127,6 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-aop</artifactId>
-            <version>4.0.0-M1</version>
-        </dependency>
-
-        <!-- MongoDB Driver -->
-        <dependency>
-            <groupId>org.mongodb</groupId>
-            <artifactId>mongodb-driver-sync</artifactId>
-            <version>${mongodb-driver.version}</version>
         </dependency>
 
         <!-- JWT -->
@@ -162,6 +156,13 @@
             <artifactId>micrometer-registry-prometheus</artifactId>
         </dependency>
 
+        <!-- Testing -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.security</groupId>
             <artifactId>spring-security-test</artifactId>
@@ -184,7 +185,7 @@
 
         <dependency>
             <groupId>org.testcontainers</groupId>
-            <artifactId>mongodb</artifactId>
+            <artifactId>mysql</artifactId>
             <version>${testcontainers.version}</version>
             <scope>test</scope>
         </dependency>
@@ -203,21 +204,21 @@
             <version>${testcontainers.version}</version>
             <scope>test</scope>
         </dependency>
-	</dependencies>
+    </dependencies>
 
-	<build>
-		<plugins>
-			<!-- Spring Boot Maven Plugin -->
-			<plugin>
-				<groupId>org.springframework.boot</groupId>
-				<artifactId>spring-boot-maven-plugin</artifactId>
-				<version>${spring-boot-maven-plugin.version}</version>
+    <build>
+        <plugins>
+            <!-- Spring Boot Maven Plugin -->
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <version>${spring-boot-maven-plugin.version}</version>
                 <configuration>
                     <mainClass>com.example.Auth.AuthServiceApplication</mainClass>
                 </configuration>
-			</plugin>
+            </plugin>
 
-			<!-- Compiler Plugin -->
+            <!-- Compiler Plugin -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
@@ -361,7 +362,6 @@
                     </execution>
                 </executions>
             </plugin>
-		</plugins>
-	</build>
-
+        </plugins>
+    </build>
 </project>

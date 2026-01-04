@@ -1,13 +1,11 @@
 package com.example.Auth.entity;
 
+import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import org.springframework.data.annotation.CreatedDate;
-import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.mapping.DBRef;
-import org.springframework.data.mongodb.core.mapping.Document;
-import org.springframework.data.mongodb.core.index.Indexed;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -17,15 +15,23 @@ import java.util.UUID;
  * Refresh tokens are long-lived tokens used to obtain new access tokens.
  * Each token is associated with a specific session and device.
  */
-@Document(collection = "refresh_tokens")
+@Entity
+@Table(name = "refresh_tokens", indexes = {
+        @Index(name = "idx_refresh_token_user", columnList = "user_id"),
+        @Index(name = "idx_refresh_token_hash", columnList = "token_hash", unique = true),
+        @Index(name = "idx_refresh_token_session", columnList = "session_id"),
+        @Index(name = "idx_refresh_token_expires", columnList = "expires_at")
+})
+@EntityListeners(AuditingEntityListener.class)
 public class RefreshToken {
 
     @Id
+    @Column(name = "id", updatable = false, nullable = false, columnDefinition = "BINARY(16)")
     private UUID id;
 
-    @DBRef
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", nullable = false)
     @NotNull(message = "User is required")
-    @Indexed
     private User user;
 
     /**
@@ -34,7 +40,7 @@ public class RefreshToken {
      */
     @NotBlank(message = "Token hash is required")
     @Size(min = 64, max = 64, message = "Token hash must be 64 characters (SHA-256)")
-    @Indexed(unique = true)
+    @Column(name = "token_hash", nullable = false, unique = true, length = 64)
     private String tokenHash;
 
     /**
@@ -42,41 +48,53 @@ public class RefreshToken {
      * Used for session-based token revocation.
      */
     @NotNull(message = "Session ID is required")
-    @Indexed
+    @Column(name = "session_id", nullable = false, columnDefinition = "BINARY(16)")
     private UUID sessionId;
 
     @CreatedDate
+    @Column(name = "issued_at", nullable = false, updatable = false)
     private Instant issuedAt;
 
     @NotNull(message = "Expiry time is required")
-    @Indexed
+    @Column(name = "expires_at", nullable = false)
     private Instant expiresAt;
 
     /**
      * Flag indicating if this token has been revoked.
      * Revoked tokens cannot be used to obtain new access tokens.
      */
+    @Column(name = "revoked", nullable = false)
     private boolean revoked = false;
 
+    @Column(name = "revoked_at")
     private Instant revokedAt;
+
+    /**
+     * Timestamp of when this token was last used to refresh an access token.
+     */
+    @Column(name = "last_used_at")
+    private Instant lastUsedAt;
 
     /**
      * Information about the device that requested this token.
      * Example: "Chrome 120.0.0 on Windows 10"
      */
     @Size(max = 255, message = "Device info cannot exceed 255 characters")
+    @Column(name = "device_info", length = 255)
     private String deviceInfo;
 
     /**
      * IP address from which the token was issued.
      */
     @Size(max = 45, message = "IP address cannot exceed 45 characters")
+    @Column(name = "ip_address", length = 45)
     private String ipAddress;
 
     /**
      * User agent string from the client that requested the token.
      */
     @Size(max = 500, message = "User agent cannot exceed 500 characters")
+    @Column(name = "user_agent", length = 500)
     private String userAgent;
 
     // Constructors
@@ -187,6 +205,14 @@ public class RefreshToken {
 
     public void setRevokedAt(Instant revokedAt) {
         this.revokedAt = revokedAt;
+    }
+
+    public Instant getLastUsedAt() {
+        return lastUsedAt;
+    }
+
+    public void setLastUsedAt(Instant lastUsedAt) {
+        this.lastUsedAt = lastUsedAt;
     }
 
     public String getDeviceInfo() {

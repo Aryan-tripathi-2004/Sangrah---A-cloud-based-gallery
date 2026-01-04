@@ -1,11 +1,9 @@
 package com.example.Auth.entity;
 
+import jakarta.persistence.*;
 import org.springframework.data.annotation.CreatedDate;
-import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.LastModifiedDate;
-import org.springframework.data.mongodb.core.mapping.DBRef;
-import org.springframework.data.mongodb.core.mapping.Document;
-import org.springframework.data.mongodb.core.index.Indexed;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.time.Instant;
 import java.util.HashSet;
@@ -15,24 +13,32 @@ import java.util.UUID;
 /**
  * Role entity for RBAC (Role-Based Access Control).
  */
-@Document(collection = "roles")
+@Entity
+@Table(name = "roles", indexes = {
+        @Index(name = "idx_role_name", columnList = "name", unique = true)
+})
+@EntityListeners(AuditingEntityListener.class)
 public class Role {
 
     @Id
+    @Column(name = "id", updatable = false, nullable = false, columnDefinition = "BINARY(16)")
     private UUID id;
 
-    @Indexed(unique = true)
+    @Column(name = "name", nullable = false, unique = true, length = 50)
     private String name;
 
+    @Column(name = "description", length = 500)
     private String description;
 
     @CreatedDate
+    @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
     @LastModifiedDate
+    @Column(name = "updated_at")
     private Instant updatedAt;
 
-    @DBRef
+    @ManyToMany(mappedBy = "roles", fetch = FetchType.LAZY)
     private Set<User> users = new HashSet<>();
 
     // Constructors

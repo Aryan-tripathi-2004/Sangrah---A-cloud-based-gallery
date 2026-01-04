@@ -4,10 +4,8 @@ import com.example.Auth.entity.RefreshToken;
 import com.example.Auth.model.RefreshTokenModel;
 import com.example.Auth.repository.RefreshTokenRepository;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
@@ -42,6 +40,7 @@ public class RefreshTokenDao extends BaseDao<RefreshToken, RefreshTokenModel, UU
         model.setRevoked(entity.isRevoked());
         model.setRevokedAt(entity.getRevokedAt());
         model.setCreatedAt(entity.getIssuedAt());
+        model.setLastUsedAt(entity.getLastUsedAt());
 
         return model;
     }
@@ -59,6 +58,7 @@ public class RefreshTokenDao extends BaseDao<RefreshToken, RefreshTokenModel, UU
         entity.setRevoked(model.isRevoked());
         entity.setRevokedAt(model.getRevokedAt());
         entity.setIssuedAt(model.getCreatedAt());
+        entity.setLastUsedAt(model.getLastUsedAt());
 
         return entity;
     }
@@ -85,33 +85,60 @@ public class RefreshTokenDao extends BaseDao<RefreshToken, RefreshTokenModel, UU
 
     // Update operations
 
+    @Transactional
     public boolean revokeToken(String tokenHash) {
-        Query query = new Query(Criteria.where("tokenHash").is(tokenHash));
-        Update update = new Update()
-                .set("revoked", true)
-                .set("revokedAt", Instant.now());
-        return updateOne(query, update);
+        Optional<RefreshToken> tokenOpt = refreshTokenRepository.findByTokenHash(tokenHash);
+        if (tokenOpt.isPresent()) {
+            RefreshToken token = tokenOpt.get();
+            token.setRevoked(true);
+            token.setRevokedAt(Instant.now());
+            refreshTokenRepository.save(token);
+            return true;
+        }
+        return false;
     }
 
+    @Transactional
     public long revokeAllTokensForUser(UUID userId) {
-        Query query = new Query(Criteria.where("user.$id").is(userId).and("revoked").is(false));
-        Update update = new Update()
-                .set("revoked", true)
-                .set("revokedAt", Instant.now());
-        return update(query, update);
+        List<RefreshToken> tokens = refreshTokenRepository.findByUserId(userId);
+        long count = 0;
+        Instant now = Instant.now();
+        for (RefreshToken token : tokens) {
+            if (!token.isRevoked()) {
+                token.setRevoked(true);
+                token.setRevokedAt(now);
+                refreshTokenRepository.save(token);
+                count++;
+            }
+        }
+        return count;
     }
 
+    @Transactional
     public long revokeAllTokensForSession(UUID sessionId) {
-        Query query = new Query(Criteria.where("sessionId").is(sessionId).and("revoked").is(false));
-        Update update = new Update()
-                .set("revoked", true)
-                .set("revokedAt", Instant.now());
-        return update(query, update);
+        List<RefreshToken> tokens = refreshTokenRepository.findBySessionId(sessionId);
+        long count = 0;
+        Instant now = Instant.now();
+        for (RefreshToken token : tokens) {
+            if (!token.isRevoked()) {
+                token.setRevoked(true);
+                token.setRevokedAt(now);
+                refreshTokenRepository.save(token);
+                count++;
+            }
+        }
+        return count;
     }
 
+    @Transactional
     public boolean updateLastUsed(UUID tokenId) {
-        Query query = new Query(Criteria.where("_id").is(tokenId));
-        Update update = new Update().set("lastUsedAt", Instant.now());
-        return updateOne(query, update);
+        Optional<RefreshToken> tokenOpt = refreshTokenRepository.findById(tokenId);
+        if (tokenOpt.isPresent()) {
+            RefreshToken token = tokenOpt.get();
+            token.setLastUsedAt(Instant.now());
+            refreshTokenRepository.save(token);
+            return true;
+        }
+        return false;
     }
 }

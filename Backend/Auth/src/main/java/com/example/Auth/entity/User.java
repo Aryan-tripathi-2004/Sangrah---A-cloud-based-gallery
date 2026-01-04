@@ -1,11 +1,9 @@
 package com.example.Auth.entity;
 
-import org.springframework.data.annotation.Id;
+import jakarta.persistence.*;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
-import org.springframework.data.mongodb.core.mapping.Document;
-import org.springframework.data.mongodb.core.mapping.DBRef;
-import org.springframework.data.mongodb.core.index.Indexed;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -13,40 +11,60 @@ import java.util.UUID;
 /**
  * User entity representing a user in the system.
  */
-@Document(collection = "users")
+@Entity
+@Table(name = "users", indexes = {
+        @Index(name = "idx_user_username", columnList = "username", unique = true),
+        @Index(name = "idx_user_email", columnList = "email", unique = true),
+        @Index(name = "idx_user_provider", columnList = "provider, providerId")
+})
+@EntityListeners(AuditingEntityListener.class)
 public class User {
 
     @Id
+    @Column(name = "id", updatable = false, nullable = false, columnDefinition = "BINARY(16)")
     private UUID id;
 
-    @Indexed(unique = true)
+    @Column(name = "username", nullable = false, unique = true, length = 50)
     private String username;
 
-    @Indexed(unique = true)
+    @Column(name = "email", nullable = false, unique = true, length = 100)
     private String email;
 
+    @Column(name = "password_hash", length = 255)
     private String passwordHash;
 
+    @Column(name = "enabled", nullable = false)
     private Boolean enabled = true;
 
+    @Column(name = "locked", nullable = false)
     private Boolean locked = false;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "provider", nullable = false, length = 20)
     private AuthProvider provider = AuthProvider.LOCAL;
 
+    @Column(name = "provider_id", length = 100)
     private String providerId;
 
     @CreatedDate
+    @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
     @LastModifiedDate
+    @Column(name = "updated_at")
     private Instant updatedAt;
 
+    @Column(name = "last_login_at")
     private Instant lastLoginAt;
 
-    @DBRef
+    @OneToOne(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     private UserProfile profile;
 
-    @DBRef
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(name = "user_roles", joinColumns = @JoinColumn(name = "user_id", referencedColumnName = "id"), inverseJoinColumns = @JoinColumn(name = "role_id", referencedColumnName = "id"), indexes = {
+            @Index(name = "idx_user_roles_user", columnList = "user_id"),
+            @Index(name = "idx_user_roles_role", columnList = "role_id")
+    })
     private java.util.Set<Role> roles = new java.util.HashSet<>();
 
     public enum AuthProvider {

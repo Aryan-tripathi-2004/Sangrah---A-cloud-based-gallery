@@ -1,9 +1,12 @@
 package com.example.Auth.dao;
 
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
-import org.springframework.beans.factory.annotation.Autowired;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+import jakarta.persistence.TypedQuery;
+import jakarta.persistence.criteria.CriteriaBuilder;
+import jakarta.persistence.criteria.CriteriaQuery;
+import jakarta.persistence.criteria.Root;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
@@ -13,7 +16,7 @@ import java.util.Optional;
  * All DAOs should extend this class to inherit common functionality.
  * This layer sits between Service and Repository, handling:
  * - Entity to Model transformations
- * - Complex queries using MongoTemplate
+ * - Complex queries using EntityManager
  * - Update operations
  * - Data validation and pre/post-processing
  *
@@ -23,8 +26,8 @@ import java.util.Optional;
  */
 public abstract class BaseDao<E, M, ID> {
 
-    @Autowired
-    protected MongoTemplate mongoTemplate;
+    @PersistenceContext
+    protected EntityManager entityManager;
 
     /**
      * Get the entity class type.
@@ -56,7 +59,7 @@ public abstract class BaseDao<E, M, ID> {
      * @return Optional containing the model if found
      */
     public Optional<M> findById(ID id) {
-        E entity = mongoTemplate.findById(id, getEntityClass());
+        E entity = entityManager.find(getEntityClass(), id);
         return Optional.ofNullable(entity).map(this::toModel);
     }
 
@@ -66,7 +69,12 @@ public abstract class BaseDao<E, M, ID> {
      * @return list of business models
      */
     public List<M> findAll() {
-        List<E> entities = mongoTemplate.findAll(getEntityClass());
+        CriteriaBuilder cb = entityManager.getCriteriaBuilder();
+        CriteriaQuery<E> cq = cb.createQuery(getEntityClass());
+        Root<E> root = cq.from(getEntityClass());
+        cq.select(root);
+
+        List<E> entities = entityManager.createQuery(cq).getResultList();
         return entities.stream()
                 .map(this::toModel)
                 .toList();
@@ -78,9 +86,11 @@ public abstract class BaseDao<E, M, ID> {
      * @param model the business model to save
      * @return the saved business model
      */
+    @Transactional
     public M save(M model) {
         E entity = toEntity(model);
-        E savedEntity = mongoTemplate.save(entity);
+        E savedEntity = entityManager.merge(entity);
+        entityManager.flush();
         return toModel(savedEntity);
     }
 
@@ -89,77 +99,70 @@ public abstract class BaseDao<E, M, ID> {
      *
      * @param id the entity ID
      */
+    @Transactional
     public void deleteById(ID id) {
-        Query query = new Query();
-        query.addCriteria(org.springframework.data.mongodb.core.query.Criteria.where("_id").is(id));
-        mongoTemplate.remove(query, getEntityClass());
+        E entity = entityManager.find(getEntityClass(), id);
+        if (entity != null) {
+            entityManager.remove(entity);
+        }
     }
 
     /**
-     * Update entity using query and update objects.
+     * Count all entities.
      *
-     * @param query  the query to find entities
-     * @param update the update operations
-     * @return number of modified documents
+     * @return count of entities
      */
-    protected long update(Query query, Update update) {
-        var result = mongoTemplate.updateMulti(query, update, getEntityClass());
-        return result.getModifiedCount();
+    protected long count() {
+        CriteriaBuilder cb = entityManager.getCriteriaBuilder();
+        CriteriaQuery<Long> cq = cb.createQuery(Long.class);
+        Root<E> root = cq.from(getEntityClass());
+        cq.select(cb.count(root));
+        return entityManager.createQuery(cq).getSingleResult();
     }
 
     /**
-     * Update a single entity.
+     * Execute a JPQL query and return results as models.
      *
-     * @param query  the query to find the entity
-     * @param update the update operations
-     * @return true if entity was updated
-     */
-    protected boolean updateOne(Query query, Update update) {
-        var result = mongoTemplate.updateFirst(query, update, getEntityClass());
-        return result.getModifiedCount() > 0;
-    }
-
-    /**
-     * Count documents matching query.
-     *
-     * @param query the query
-     * @return count of matching documents
-     */
-    protected long count(Query query) {
-        return mongoTemplate.count(query, getEntityClass());
-    }
-
-    /**
-     * Check if document exists matching query.
-     *
-     * @param query the query
-     * @return true if document exists
-     */
-    protected boolean exists(Query query) {
-        return mongoTemplate.exists(query, getEntityClass());
-    }
-
-    /**
-     * Find entities matching query and convert to models.
-     *
-     * @param query the query
+     * @param jpql the JPQL query string
      * @return list of business models
      */
-    protected List<M> find(Query query) {
-        List<E> entities = mongoTemplate.find(query, getEntityClass());
+    protected List<M> executeQuery(String jpql) {
+        TypedQuery<E> query = entityManager.createQuery(jpql, getEntityClass());
+        List<E> entities = query.getResultList();
         return entities.stream()
                 .map(this::toModel)
                 .toList();
     }
 
     /**
-     * Find one entity matching query and convert to model.
+     * Execute a JPQL query and return a single result as model.
      *
-     * @param query the query
+     * @param jpql the JPQL query string
      * @return Optional containing the model if found
      */
-    protected Optional<M> findOne(Query query) {
-        E entity = mongoTemplate.findOne(query, getEntityClass());
-        return Optional.ofNullable(entity).map(this::toModel);
+    protected Optional<M> executeQuerySingle(String jpql) {
+        TypedQuery<E> query = entityManager.createQuery(jpql, getEntityClass());
+        query.setMaxResults(1);
+        List<E> results = query.getResultList();
+        return results.isEmpty() ? Optional.empty() : Optional.of(toModel(results.get(0)));
+    }
+
+    /**
+     * Refresh entity state from database.
+     *
+     * @param entity the entity to refresh
+     */
+    protected void refresh(E entity) {
+        if (entityManager.contains(entity)) {
+            entityManager.refresh(entity);
+        }
+    }
+
+    /**
+     * Flush pending changes to database.
+     */
+    @Transactional
+    protected void flush() {
+        entityManager.flush();
     }
 }

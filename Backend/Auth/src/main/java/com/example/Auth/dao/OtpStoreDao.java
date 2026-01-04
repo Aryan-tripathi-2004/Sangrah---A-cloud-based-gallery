@@ -4,10 +4,8 @@ import com.example.Auth.entity.OtpStore;
 import com.example.Auth.model.OtpStoreModel;
 import com.example.Auth.repository.OtpStoreRepository;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
@@ -96,18 +94,29 @@ public class OtpStoreDao extends BaseDao<OtpStore, OtpStoreModel, UUID> {
 
     // Update operations
 
+    @Transactional
     public boolean markAsUsed(UUID otpId) {
-        Query query = new Query(Criteria.where("_id").is(otpId));
-        Update update = new Update()
-                .set("used", true)
-                .set("usedAt", Instant.now());
-        return updateOne(query, update);
+        Optional<OtpStore> otpOpt = otpStoreRepository.findById(otpId);
+        if (otpOpt.isPresent()) {
+            OtpStore otp = otpOpt.get();
+            otp.setUsed(true);
+            otp.setUsedAt(Instant.now());
+            otpStoreRepository.save(otp);
+            return true;
+        }
+        return false;
     }
 
+    @Transactional
     public boolean incrementAttempts(UUID otpId) {
-        Query query = new Query(Criteria.where("_id").is(otpId));
-        Update update = new Update().inc("attempts", 1);
-        return updateOne(query, update);
+        Optional<OtpStore> otpOpt = otpStoreRepository.findById(otpId);
+        if (otpOpt.isPresent()) {
+            OtpStore otp = otpOpt.get();
+            otp.setAttempts(otp.getAttempts() + 1);
+            otpStoreRepository.save(otp);
+            return true;
+        }
+        return false;
     }
 
     public void invalidateOldOtps(String email, OtpStore.Purpose purpose) {

@@ -1,8 +1,10 @@
 package com.example.Auth.repository;
 
 import com.example.Auth.entity.OtpStore;
-import org.springframework.data.mongodb.repository.MongoRepository;
-import org.springframework.data.mongodb.repository.Query;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
@@ -13,10 +15,10 @@ import java.util.UUID;
 /**
  * Repository interface for OtpStore entity operations.
  * Provides CRUD operations and custom queries for OTP management.
- * Note: Update operations are handled in the DAO layer using MongoTemplate.
+ * Note: Update operations are handled in the DAO layer using EntityManager.
  */
 @Repository
-public interface OtpStoreRepository extends MongoRepository<OtpStore, UUID> {
+public interface OtpStoreRepository extends JpaRepository<OtpStore, UUID> {
 
         /**
          * Find the most recent valid OTP for an email and purpose.
@@ -27,8 +29,9 @@ public interface OtpStoreRepository extends MongoRepository<OtpStore, UUID> {
          * @param now     current timestamp for expiry check
          * @return Optional containing the OTP if found
          */
-        @Query(value = "{ 'email': ?0, 'purpose': ?1, 'used': false, 'expiresAt': { '$gt': ?2 }, 'attempts': { '$lt': 10 } }", sort = "{ 'createdAt': -1 }")
-        Optional<OtpStore> findValidOtpByEmailAndPurpose(String email, OtpStore.Purpose purpose, Instant now);
+        @Query("SELECT o FROM OtpStore o WHERE o.email = :email AND o.purpose = :purpose AND o.used = false AND o.expiresAt > :now AND o.attempts < 10 ORDER BY o.createdAt DESC")
+        Optional<OtpStore> findValidOtpByEmailAndPurpose(@Param("email") String email,
+                        @Param("purpose") OtpStore.Purpose purpose, @Param("now") Instant now);
 
         /**
          * Find all OTPs for a specific user.
@@ -61,8 +64,8 @@ public interface OtpStoreRepository extends MongoRepository<OtpStore, UUID> {
          * @param now current timestamp
          * @return list of expired OTPs
          */
-        @Query("{ 'expiresAt': { '$lte': ?0 } }")
-        List<OtpStore> findExpiredOtps(Instant now);
+        @Query("SELECT o FROM OtpStore o WHERE o.expiresAt <= :now")
+        List<OtpStore> findExpiredOtps(@Param("now") Instant now);
 
         /**
          * Find all used OTPs.
@@ -76,7 +79,7 @@ public interface OtpStoreRepository extends MongoRepository<OtpStore, UUID> {
          *
          * @return list of OTPs with too many attempts
          */
-        @Query("{ 'attempts': { '$gte': 10 } }")
+        @Query("SELECT o FROM OtpStore o WHERE o.attempts >= 10")
         List<OtpStore> findOtpsWithMaxAttempts();
 
         /**
@@ -88,8 +91,9 @@ public interface OtpStoreRepository extends MongoRepository<OtpStore, UUID> {
          * @param since   timestamp for the lookback period
          * @return list of recent OTPs
          */
-        @Query(value = "{ 'email': ?0, 'purpose': ?1, 'createdAt': { '$gte': ?2 } }", sort = "{ 'createdAt': -1 }")
-        List<OtpStore> findRecentOtpsByEmailAndPurpose(String email, OtpStore.Purpose purpose, Instant since);
+        @Query("SELECT o FROM OtpStore o WHERE o.email = :email AND o.purpose = :purpose AND o.createdAt >= :since ORDER BY o.createdAt DESC")
+        List<OtpStore> findRecentOtpsByEmailAndPurpose(@Param("email") String email,
+                        @Param("purpose") OtpStore.Purpose purpose, @Param("since") Instant since);
 
         /**
          * Count OTPs generated for an email in a time period.
@@ -100,11 +104,12 @@ public interface OtpStoreRepository extends MongoRepository<OtpStore, UUID> {
          * @param since   timestamp for the lookback period
          * @return count of OTPs
          */
-        @Query(value = "{ 'email': ?0, 'purpose': ?1, 'createdAt': { '$gte': ?2 } }", count = true)
-        long countRecentOtpsByEmailAndPurpose(String email, OtpStore.Purpose purpose, Instant since);
+        @Query("SELECT COUNT(o) FROM OtpStore o WHERE o.email = :email AND o.purpose = :purpose AND o.createdAt >= :since")
+        long countRecentOtpsByEmailAndPurpose(@Param("email") String email, @Param("purpose") OtpStore.Purpose purpose,
+                        @Param("since") Instant since);
 
         // Note: Update operations (markAsUsed, incrementAttempts) are handled in the
-        // DAO layer using MongoTemplate
+        // DAO layer using EntityManager
 
         /**
          * Delete expired OTPs.
@@ -112,6 +117,7 @@ public interface OtpStoreRepository extends MongoRepository<OtpStore, UUID> {
          *
          * @param expiryDate cutoff date for deletion
          */
+        @Modifying
         void deleteByExpiresAtBefore(Instant expiryDate);
 
         /**
@@ -121,6 +127,7 @@ public interface OtpStoreRepository extends MongoRepository<OtpStore, UUID> {
          * @param email   the email address
          * @param purpose the OTP purpose
          */
+        @Modifying
         void deleteByEmailAndPurpose(String email, OtpStore.Purpose purpose);
 
         /**
@@ -129,8 +136,9 @@ public interface OtpStoreRepository extends MongoRepository<OtpStore, UUID> {
          *
          * @param date the cutoff date
          */
-        @Query(value = "{ 'used': true, 'usedAt': { '$lt': ?0 } }", delete = true)
-        void deleteUsedOtpsOlderThan(Instant date);
+        @Modifying
+        @Query("DELETE FROM OtpStore o WHERE o.used = true AND o.usedAt < :date")
+        void deleteUsedOtpsOlderThan(@Param("date") Instant date);
 
         /**
          * Count active (valid, non-expired, non-used) OTPs for a user.
@@ -139,6 +147,6 @@ public interface OtpStoreRepository extends MongoRepository<OtpStore, UUID> {
          * @param now    current timestamp
          * @return count of active OTPs
          */
-        @Query(value = "{ 'userId': ?0, 'used': false, 'expiresAt': { '$gt': ?1 }, 'attempts': { '$lt': 10 } }", count = true)
-        long countActiveOtpsByUserId(UUID userId, Instant now);
+        @Query("SELECT COUNT(o) FROM OtpStore o WHERE o.userId = :userId AND o.used = false AND o.expiresAt > :now AND o.attempts < 10")
+        long countActiveOtpsByUserId(@Param("userId") UUID userId, @Param("now") Instant now);
 }

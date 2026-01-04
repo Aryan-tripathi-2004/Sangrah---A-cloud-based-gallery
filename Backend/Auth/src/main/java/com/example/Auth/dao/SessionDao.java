@@ -4,10 +4,8 @@ import com.example.Auth.entity.Session;
 import com.example.Auth.model.SessionModel;
 import com.example.Auth.repository.SessionRepository;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
@@ -130,13 +128,15 @@ public class SessionDao extends BaseDao<Session, SessionModel, UUID> {
      * @return true if session is active
      */
     public boolean existsActiveSession(UUID sessionId, Instant now) {
-        Query query = new Query(Criteria.where("_id").is(sessionId)
-                .and("revoked").is(false)
-                .and("expiresAt").gt(now));
-        return exists(query);
+        Optional<Session> sessionOpt = sessionRepository.findById(sessionId);
+        if (sessionOpt.isPresent()) {
+            Session session = sessionOpt.get();
+            return !session.isRevoked() && session.getExpiresAt().isAfter(now);
+        }
+        return false;
     }
 
-    // Update operations using MongoTemplate
+    // Update operations using JPA
 
     /**
      * Update last accessed timestamp for a session.
@@ -145,10 +145,16 @@ public class SessionDao extends BaseDao<Session, SessionModel, UUID> {
      * @param lastAccessedAt the last accessed timestamp
      * @return true if updated successfully
      */
+    @Transactional
     public boolean updateLastAccessed(UUID sessionId, Instant lastAccessedAt) {
-        Query query = new Query(Criteria.where("_id").is(sessionId));
-        Update update = new Update().set("lastAccessedAt", lastAccessedAt);
-        return updateOne(query, update);
+        Optional<Session> sessionOpt = sessionRepository.findById(sessionId);
+        if (sessionOpt.isPresent()) {
+            Session session = sessionOpt.get();
+            session.setLastAccessedAt(lastAccessedAt);
+            sessionRepository.save(session);
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -158,10 +164,16 @@ public class SessionDao extends BaseDao<Session, SessionModel, UUID> {
      * @param expiresAt the new expiry timestamp
      * @return true if updated successfully
      */
+    @Transactional
     public boolean extendExpiry(UUID sessionId, Instant expiresAt) {
-        Query query = new Query(Criteria.where("_id").is(sessionId));
-        Update update = new Update().set("expiresAt", expiresAt);
-        return updateOne(query, update);
+        Optional<Session> sessionOpt = sessionRepository.findById(sessionId);
+        if (sessionOpt.isPresent()) {
+            Session session = sessionOpt.get();
+            session.setExpiresAt(expiresAt);
+            sessionRepository.save(session);
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -171,13 +183,18 @@ public class SessionDao extends BaseDao<Session, SessionModel, UUID> {
      * @param reason    the revocation reason
      * @return true if revoked successfully
      */
+    @Transactional
     public boolean revokeSession(UUID sessionId, String reason) {
-        Query query = new Query(Criteria.where("_id").is(sessionId));
-        Update update = new Update()
-                .set("revoked", true)
-                .set("revokedAt", Instant.now())
-                .set("revocationReason", reason);
-        return updateOne(query, update);
+        Optional<Session> sessionOpt = sessionRepository.findById(sessionId);
+        if (sessionOpt.isPresent()) {
+            Session session = sessionOpt.get();
+            session.setRevoked(true);
+            session.setRevokedAt(Instant.now());
+            session.setRevocationReason(reason);
+            sessionRepository.save(session);
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -187,13 +204,21 @@ public class SessionDao extends BaseDao<Session, SessionModel, UUID> {
      * @param reason the revocation reason
      * @return number of sessions revoked
      */
+    @Transactional
     public long revokeAllSessionsForUser(UUID userId, String reason) {
-        Query query = new Query(Criteria.where("user.$id").is(userId).and("revoked").is(false));
-        Update update = new Update()
-                .set("revoked", true)
-                .set("revokedAt", Instant.now())
-                .set("revocationReason", reason);
-        return update(query, update);
+        List<Session> sessions = sessionRepository.findByUserId(userId);
+        long count = 0;
+        Instant now = Instant.now();
+        for (Session session : sessions) {
+            if (!session.isRevoked()) {
+                session.setRevoked(true);
+                session.setRevokedAt(now);
+                session.setRevocationReason(reason);
+                sessionRepository.save(session);
+                count++;
+            }
+        }
+        return count;
     }
 
     /**
@@ -204,14 +229,20 @@ public class SessionDao extends BaseDao<Session, SessionModel, UUID> {
      * @param reason           the revocation reason
      * @return number of sessions revoked
      */
+    @Transactional
     public long revokeOtherSessions(UUID userId, UUID currentSessionId, String reason) {
-        Query query = new Query(Criteria.where("user.$id").is(userId)
-                .and("_id").ne(currentSessionId)
-                .and("revoked").is(false));
-        Update update = new Update()
-                .set("revoked", true)
-                .set("revokedAt", Instant.now())
-                .set("revocationReason", reason);
-        return update(query, update);
+        List<Session> sessions = sessionRepository.findByUserId(userId);
+        long count = 0;
+        Instant now = Instant.now();
+        for (Session session : sessions) {
+            if (!session.getSessionId().equals(currentSessionId) && !session.isRevoked()) {
+                session.setRevoked(true);
+                session.setRevokedAt(now);
+                session.setRevocationReason(reason);
+                sessionRepository.save(session);
+                count++;
+            }
+        }
+        return count;
     }
 }

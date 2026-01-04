@@ -1,8 +1,10 @@
 package com.example.Auth.repository;
 
 import com.example.Auth.entity.ProfilePicture;
-import org.springframework.data.mongodb.repository.MongoRepository;
-import org.springframework.data.mongodb.repository.Query;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -12,10 +14,10 @@ import java.util.UUID;
 /**
  * Repository interface for ProfilePicture entity operations.
  * Provides CRUD operations and custom queries for profile picture management.
- * Note: Update operations are handled in the DAO layer using MongoTemplate.
+ * Note: Update operations are handled in the DAO layer using EntityManager.
  */
 @Repository
-public interface ProfilePictureRepository extends MongoRepository<ProfilePicture, UUID> {
+public interface ProfilePictureRepository extends JpaRepository<ProfilePicture, UUID> {
 
         /**
          * Find all profile pictures for a specific user.
@@ -23,8 +25,8 @@ public interface ProfilePictureRepository extends MongoRepository<ProfilePicture
          * @param userId the user ID
          * @return list of profile pictures ordered by creation date descending
          */
-        @Query(value = "{ 'user.$id': ?0 }", sort = "{ 'createdAt': -1 }")
-        List<ProfilePicture> findByUserId(UUID userId);
+        @Query("SELECT pp FROM ProfilePicture pp WHERE pp.user.id = :userId ORDER BY pp.createdAt DESC")
+        List<ProfilePicture> findByUserId(@Param("userId") UUID userId);
 
         /**
          * Find the current profile picture for a user.
@@ -32,8 +34,8 @@ public interface ProfilePictureRepository extends MongoRepository<ProfilePicture
          * @param userId the user ID
          * @return Optional containing the current profile picture if found
          */
-        @Query("{ 'user.$id': ?0, 'current': true }")
-        Optional<ProfilePicture> findCurrentByUserId(UUID userId);
+        @Query("SELECT pp FROM ProfilePicture pp WHERE pp.user.id = :userId AND pp.current = true")
+        Optional<ProfilePicture> findCurrentByUserId(@Param("userId") UUID userId);
 
         /**
          * Find a profile picture by storage key.
@@ -57,11 +59,11 @@ public interface ProfilePictureRepository extends MongoRepository<ProfilePicture
          * @param userId the user ID
          * @return true if the user has a current profile picture
          */
-        @Query(value = "{ 'user.$id': ?0, 'current': true }", exists = true)
-        boolean existsCurrentByUserId(UUID userId);
+        @Query("SELECT CASE WHEN COUNT(pp) > 0 THEN true ELSE false END FROM ProfilePicture pp WHERE pp.user.id = :userId AND pp.current = true")
+        boolean existsCurrentByUserId(@Param("userId") UUID userId);
 
         // Note: Update operations (setCurrentPicture, unmarkAllAsCurrentForUser)
-        // are handled in the DAO layer using MongoTemplate
+        // are handled in the DAO layer using EntityManager
 
         /**
          * Delete all profile pictures for a user.
@@ -69,14 +71,16 @@ public interface ProfilePictureRepository extends MongoRepository<ProfilePicture
          *
          * @param userId the user ID
          */
-        @Query(value = "{ 'user.$id': ?0 }", delete = true)
-        void deleteByUserId(UUID userId);
+        @Modifying
+        @Query("DELETE FROM ProfilePicture pp WHERE pp.user.id = :userId")
+        void deleteByUserId(@Param("userId") UUID userId);
 
         /**
          * Delete a profile picture by storage key.
          *
          * @param storageKey the storage key
          */
+        @Modifying
         void deleteByStorageKey(String storageKey);
 
         /**
@@ -85,8 +89,8 @@ public interface ProfilePictureRepository extends MongoRepository<ProfilePicture
          * @param userId the user ID
          * @return count of profile pictures
          */
-        @Query(value = "{ 'user.$id': ?0 }", count = true)
-        long countByUserId(UUID userId);
+        @Query("SELECT COUNT(pp) FROM ProfilePicture pp WHERE pp.user.id = :userId")
+        long countByUserId(@Param("userId") UUID userId);
 
         /**
          * Calculate total storage used by a user's profile pictures.
@@ -95,8 +99,8 @@ public interface ProfilePictureRepository extends MongoRepository<ProfilePicture
          * @param userId the user ID
          * @return total size in bytes
          */
-        @Query(value = "{ 'user.$id': ?0 }")
-        List<ProfilePicture> findAllByUserId(UUID userId);
+        @Query("SELECT pp FROM ProfilePicture pp WHERE pp.user.id = :userId")
+        List<ProfilePicture> findAllByUserId(@Param("userId") UUID userId);
 
         /**
          * Find profile pictures larger than a specific size.
@@ -105,6 +109,6 @@ public interface ProfilePictureRepository extends MongoRepository<ProfilePicture
          * @param minSizeBytes minimum size in bytes
          * @return list of large profile pictures
          */
-        @Query(value = "{ 'sizeBytes': { '$gte': ?0 } }", sort = "{ 'sizeBytes': -1 }")
-        List<ProfilePicture> findLargePictures(long minSizeBytes);
+        @Query("SELECT pp FROM ProfilePicture pp WHERE pp.sizeBytes >= :minSize ORDER BY pp.sizeBytes DESC")
+        List<ProfilePicture> findLargePictures(@Param("minSize") long minSizeBytes);
 }

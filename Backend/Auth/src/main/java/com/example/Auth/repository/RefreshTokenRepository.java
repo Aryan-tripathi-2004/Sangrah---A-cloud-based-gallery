@@ -1,8 +1,10 @@
 package com.example.Auth.repository;
 
 import com.example.Auth.entity.RefreshToken;
-import org.springframework.data.mongodb.repository.MongoRepository;
-import org.springframework.data.mongodb.repository.Query;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
@@ -13,10 +15,10 @@ import java.util.UUID;
 /**
  * Repository interface for RefreshToken entity operations.
  * Provides CRUD operations and custom queries for refresh token management.
- * Note: Update operations are handled in the DAO layer using MongoTemplate.
+ * Note: Update operations are handled in the DAO layer using EntityManager.
  */
 @Repository
-public interface RefreshTokenRepository extends MongoRepository<RefreshToken, UUID> {
+public interface RefreshTokenRepository extends JpaRepository<RefreshToken, UUID> {
 
         /**
          * Find a refresh token by its hash.
@@ -33,8 +35,8 @@ public interface RefreshTokenRepository extends MongoRepository<RefreshToken, UU
          * @param userId the user ID
          * @return list of refresh tokens
          */
-        @Query("{ 'user.$id': ?0 }")
-        List<RefreshToken> findByUserId(UUID userId);
+        @Query("SELECT rt FROM RefreshToken rt WHERE rt.user.id = :userId")
+        List<RefreshToken> findByUserId(@Param("userId") UUID userId);
 
         /**
          * Find all valid (non-revoked, non-expired) refresh tokens for a user.
@@ -43,8 +45,8 @@ public interface RefreshTokenRepository extends MongoRepository<RefreshToken, UU
          * @param now    current timestamp for expiry check
          * @return list of valid tokens
          */
-        @Query("{ 'user.$id': ?0, 'revoked': false, 'expiresAt': { '$gt': ?1 } }")
-        List<RefreshToken> findValidTokensByUserId(UUID userId, Instant now);
+        @Query("SELECT rt FROM RefreshToken rt WHERE rt.user.id = :userId AND rt.revoked = false AND rt.expiresAt > :now")
+        List<RefreshToken> findValidTokensByUserId(@Param("userId") UUID userId, @Param("now") Instant now);
 
         /**
          * Find all refresh tokens for a specific session.
@@ -62,8 +64,8 @@ public interface RefreshTokenRepository extends MongoRepository<RefreshToken, UU
          * @param now       current timestamp for expiry check
          * @return list of valid tokens
          */
-        @Query("{ 'sessionId': ?0, 'revoked': false, 'expiresAt': { '$gt': ?1 } }")
-        List<RefreshToken> findValidTokensBySessionId(UUID sessionId, Instant now);
+        @Query("SELECT rt FROM RefreshToken rt WHERE rt.sessionId = :sessionId AND rt.revoked = false AND rt.expiresAt > :now")
+        List<RefreshToken> findValidTokensBySessionId(@Param("sessionId") UUID sessionId, @Param("now") Instant now);
 
         /**
          * Find all expired refresh tokens.
@@ -72,8 +74,8 @@ public interface RefreshTokenRepository extends MongoRepository<RefreshToken, UU
          * @param now current timestamp
          * @return list of expired tokens
          */
-        @Query("{ 'expiresAt': { '$lte': ?0 } }")
-        List<RefreshToken> findExpiredTokens(Instant now);
+        @Query("SELECT rt FROM RefreshToken rt WHERE rt.expiresAt <= :now")
+        List<RefreshToken> findExpiredTokens(@Param("now") Instant now);
 
         /**
          * Find all revoked refresh tokens.
@@ -83,14 +85,14 @@ public interface RefreshTokenRepository extends MongoRepository<RefreshToken, UU
         List<RefreshToken> findByRevokedTrue();
 
         // Note: Update operations (revoke, delete) are handled in the DAO layer using
-        // MongoTemplate
+        // EntityManager
 
         /**
          * Delete expired refresh tokens by date.
-         * MongoDB will automatically delete documents matching the criteria.
          *
          * @param expiryDate cutoff date for deletion
          */
+        @Modifying
         void deleteByExpiresAtBefore(Instant expiryDate);
 
         /**
@@ -100,8 +102,8 @@ public interface RefreshTokenRepository extends MongoRepository<RefreshToken, UU
          * @param now    current timestamp
          * @return count of active tokens
          */
-        @Query(value = "{ 'user.$id': ?0, 'revoked': false, 'expiresAt': { '$gt': ?1 } }", count = true)
-        long countActiveTokensByUserId(UUID userId, Instant now);
+        @Query("SELECT COUNT(rt) FROM RefreshToken rt WHERE rt.user.id = :userId AND rt.revoked = false AND rt.expiresAt > :now")
+        long countActiveTokensByUserId(@Param("userId") UUID userId, @Param("now") Instant now);
 
         /**
          * Count total tokens by user.
@@ -109,6 +111,6 @@ public interface RefreshTokenRepository extends MongoRepository<RefreshToken, UU
          * @param userId the user ID
          * @return total token count
          */
-        @Query(value = "{ 'user.$id': ?0 }", count = true)
-        long countByUserId(UUID userId);
+        @Query("SELECT COUNT(rt) FROM RefreshToken rt WHERE rt.user.id = :userId")
+        long countByUserId(@Param("userId") UUID userId);
 }

@@ -1,7 +1,7 @@
 package com.example.Auth.repository;
 
 import com.example.Auth.entity.Role;
-import org.springframework.data.mongodb.repository.MongoRepository;
+import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 import java.util.Optional;
@@ -12,7 +12,7 @@ import java.util.UUID;
  * Provides CRUD operations and custom queries for role management.
  */
 @Repository
-public interface RoleRepository extends MongoRepository<Role, UUID> {
+public interface RoleRepository extends JpaRepository<Role, UUID> {
 
     /**
      * Find a role by name.

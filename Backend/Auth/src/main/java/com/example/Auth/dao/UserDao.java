@@ -4,10 +4,8 @@ import com.example.Auth.entity.User;
 import com.example.Auth.model.UserModel;
 import com.example.Auth.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
@@ -155,7 +153,7 @@ public class UserDao extends BaseDao<User, UserModel, UUID> {
         return entities.stream().map(this::toModel).toList();
     }
 
-    // Update operations using MongoTemplate
+    // Update operations using EntityManager
 
     /**
      * Update last login timestamp for a user.
@@ -164,10 +162,16 @@ public class UserDao extends BaseDao<User, UserModel, UUID> {
      * @param lastLoginAt the login timestamp
      * @return true if updated successfully
      */
+    @Transactional
     public boolean updateLastLogin(UUID userId, Instant lastLoginAt) {
-        Query query = new Query(Criteria.where("_id").is(userId));
-        Update update = new Update().set("lastLoginAt", lastLoginAt);
-        return updateOne(query, update);
+        Optional<User> userOpt = userRepository.findById(userId);
+        if (userOpt.isPresent()) {
+            User user = userOpt.get();
+            user.setLastLoginAt(lastLoginAt);
+            userRepository.save(user);
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -176,10 +180,16 @@ public class UserDao extends BaseDao<User, UserModel, UUID> {
      * @param userId the user ID
      * @return true if locked successfully
      */
+    @Transactional
     public boolean lockUser(UUID userId) {
-        Query query = new Query(Criteria.where("_id").is(userId));
-        Update update = new Update().set("locked", true);
-        return updateOne(query, update);
+        Optional<User> userOpt = userRepository.findById(userId);
+        if (userOpt.isPresent()) {
+            User user = userOpt.get();
+            user.setLocked(true);
+            userRepository.save(user);
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -188,10 +198,16 @@ public class UserDao extends BaseDao<User, UserModel, UUID> {
      * @param userId the user ID
      * @return true if unlocked successfully
      */
+    @Transactional
     public boolean unlockUser(UUID userId) {
-        Query query = new Query(Criteria.where("_id").is(userId));
-        Update update = new Update().set("locked", false);
-        return updateOne(query, update);
+        Optional<User> userOpt = userRepository.findById(userId);
+        if (userOpt.isPresent()) {
+            User user = userOpt.get();
+            user.setLocked(false);
+            userRepository.save(user);
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -200,10 +216,16 @@ public class UserDao extends BaseDao<User, UserModel, UUID> {
      * @param userId the user ID
      * @return true if enabled successfully
      */
+    @Transactional
     public boolean enableUser(UUID userId) {
-        Query query = new Query(Criteria.where("_id").is(userId));
-        Update update = new Update().set("enabled", true);
-        return updateOne(query, update);
+        Optional<User> userOpt = userRepository.findById(userId);
+        if (userOpt.isPresent()) {
+            User user = userOpt.get();
+            user.setEnabled(true);
+            userRepository.save(user);
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -212,10 +234,16 @@ public class UserDao extends BaseDao<User, UserModel, UUID> {
      * @param userId the user ID
      * @return true if disabled successfully
      */
+    @Transactional
     public boolean disableUser(UUID userId) {
-        Query query = new Query(Criteria.where("_id").is(userId));
-        Update update = new Update().set("enabled", false);
-        return updateOne(query, update);
+        Optional<User> userOpt = userRepository.findById(userId);
+        if (userOpt.isPresent()) {
+            User user = userOpt.get();
+            user.setEnabled(false);
+            userRepository.save(user);
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -225,10 +253,16 @@ public class UserDao extends BaseDao<User, UserModel, UUID> {
      * @param passwordHash the new password hash
      * @return true if updated successfully
      */
+    @Transactional
     public boolean updatePassword(UUID userId, String passwordHash) {
-        Query query = new Query(Criteria.where("_id").is(userId));
-        Update update = new Update().set("passwordHash", passwordHash);
-        return updateOne(query, update);
+        Optional<User> userOpt = userRepository.findById(userId);
+        if (userOpt.isPresent()) {
+            User user = userOpt.get();
+            user.setPasswordHash(passwordHash);
+            userRepository.save(user);
+            return true;
+        }
+        return false;
     }
 
     // Counting methods

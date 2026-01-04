@@ -1,10 +1,9 @@
 package com.example.Auth.entity;
 
+import jakarta.persistence.*;
 import org.springframework.data.annotation.CreatedDate;
-import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.LastModifiedDate;
-import org.springframework.data.mongodb.core.mapping.DBRef;
-import org.springframework.data.mongodb.core.mapping.Document;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -12,59 +11,87 @@ import java.util.UUID;
 /**
  * User profile entity containing extended user information and preferences.
  */
-@Document(collection = "user_profiles")
+@Entity
+@Table(name = "user_profiles", indexes = {
+        @Index(name = "idx_profile_user", columnList = "user_id", unique = true)
+})
+@EntityListeners(AuditingEntityListener.class)
 public class UserProfile {
 
     @Id
+    @Column(name = "id", updatable = false, nullable = false, columnDefinition = "BINARY(16)")
     private UUID id;
 
-    @DBRef
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", nullable = false, unique = true)
     private User user;
 
+    @Column(name = "first_name", length = 50)
     private String firstName;
 
+    @Column(name = "last_name", length = 50)
     private String lastName;
 
+    @Column(name = "display_name", length = 100)
     private String displayName;
 
+    @Column(name = "bio", length = 1000)
     private String bio;
 
+    @Column(name = "locale", length = 10)
     private String locale = "en_US";
 
+    @Column(name = "timezone", length = 50)
     private String timezone = "UTC";
 
+    @Column(name = "email_verified", nullable = false)
     private Boolean emailVerified = false;
 
+    @Column(name = "profile_public", nullable = false)
     private Boolean profilePublic = false;
 
+    @Column(name = "marketing_opt_in", nullable = false)
     private Boolean marketingOptIn = false;
 
+    @Column(name = "two_factor_enabled", nullable = false)
     private Boolean twoFactorEnabled = false;
 
+    @Column(name = "premium", nullable = false)
     private Boolean premium = false;
 
+    @Column(name = "deleted", nullable = false)
     private Boolean deleted = false;
 
+    @Column(name = "suspended", nullable = false)
     private Boolean suspended = false;
 
+    @Column(name = "test_account", nullable = false)
     private Boolean testAccount = false;
 
+    @Column(name = "email_notifications_enabled", nullable = false)
     private Boolean emailNotificationsEnabled = true;
 
+    @Column(name = "push_notifications_enabled", nullable = false)
     private Boolean pushNotificationsEnabled = true;
 
+    @Column(name = "rules_acceptance_version", length = 20)
     private String rulesAcceptanceVersion;
 
+    @Column(name = "rules_acceptance_date")
     private Instant rulesAcceptanceDate;
 
+    @Column(name = "privacy_policy_acceptance_version", length = 20)
     private String privacyPolicyAcceptanceVersion;
 
+    @Column(name = "privacy_policy_acceptance_date")
     private Instant privacyPolicyAcceptanceDate;
 
     @CreatedDate
+    @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
     @LastModifiedDate
+    @Column(name = "updated_at")
     private Instant updatedAt;
 
     // Constructors

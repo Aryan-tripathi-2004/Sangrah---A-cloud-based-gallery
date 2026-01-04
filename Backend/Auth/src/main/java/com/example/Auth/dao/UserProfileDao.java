@@ -4,10 +4,8 @@ import com.example.Auth.entity.UserProfile;
 import com.example.Auth.model.UserProfileModel;
 import com.example.Auth.repository.UserProfileRepository;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
@@ -119,49 +117,91 @@ public class UserProfileDao extends BaseDao<UserProfile, UserProfileModel, UUID>
 
     // Update operations
 
+    @Transactional
     public boolean updateEmailVerified(UUID userId, boolean verified) {
-        Query query = new Query(Criteria.where("user.$id").is(userId));
-        Update update = new Update().set("emailVerified", verified);
-        return updateOne(query, update);
+        Optional<UserProfile> profileOpt = userProfileRepository.findByUserId(userId);
+        if (profileOpt.isPresent()) {
+            UserProfile profile = profileOpt.get();
+            profile.setEmailVerified(verified);
+            userProfileRepository.save(profile);
+            return true;
+        }
+        return false;
     }
 
+    @Transactional
     public boolean updatePremiumStatus(UUID userId, boolean premium) {
-        Query query = new Query(Criteria.where("user.$id").is(userId));
-        Update update = new Update().set("premium", premium);
-        return updateOne(query, update);
+        Optional<UserProfile> profileOpt = userProfileRepository.findByUserId(userId);
+        if (profileOpt.isPresent()) {
+            UserProfile profile = profileOpt.get();
+            profile.setPremium(premium);
+            userProfileRepository.save(profile);
+            return true;
+        }
+        return false;
     }
 
+    @Transactional
     public boolean updateTwoFactorEnabled(UUID userId, boolean enabled) {
-        Query query = new Query(Criteria.where("user.$id").is(userId));
-        Update update = new Update().set("twoFactorEnabled", enabled);
-        return updateOne(query, update);
+        Optional<UserProfile> profileOpt = userProfileRepository.findByUserId(userId);
+        if (profileOpt.isPresent()) {
+            UserProfile profile = profileOpt.get();
+            profile.setTwoFactorEnabled(enabled);
+            userProfileRepository.save(profile);
+            return true;
+        }
+        return false;
     }
 
+    @Transactional
     public boolean updateSuspendedStatus(UUID userId, boolean suspended) {
-        Query query = new Query(Criteria.where("user.$id").is(userId));
-        Update update = new Update().set("suspended", suspended);
-        return updateOne(query, update);
+        Optional<UserProfile> profileOpt = userProfileRepository.findByUserId(userId);
+        if (profileOpt.isPresent()) {
+            UserProfile profile = profileOpt.get();
+            profile.setSuspended(suspended);
+            userProfileRepository.save(profile);
+            return true;
+        }
+        return false;
     }
 
+    @Transactional
     public boolean softDelete(UUID userId) {
-        Query query = new Query(Criteria.where("user.$id").is(userId));
-        Update update = new Update().set("deleted", true);
-        return updateOne(query, update);
+        Optional<UserProfile> profileOpt = userProfileRepository.findByUserId(userId);
+        if (profileOpt.isPresent()) {
+            UserProfile profile = profileOpt.get();
+            profile.setDeleted(true);
+            userProfileRepository.save(profile);
+            return true;
+        }
+        return false;
     }
 
+    @Transactional
     public boolean restore(UUID userId) {
-        Query query = new Query(Criteria.where("user.$id").is(userId));
-        Update update = new Update().set("deleted", false);
-        return updateOne(query, update);
+        Optional<UserProfile> profileOpt = userProfileRepository.findByUserId(userId);
+        if (profileOpt.isPresent()) {
+            UserProfile profile = profileOpt.get();
+            profile.setDeleted(false);
+            userProfileRepository.save(profile);
+            return true;
+        }
+        return false;
     }
 
+    @Transactional
     public boolean updateTermsAcceptance(UUID userId, String rulesVersion, String privacyVersion) {
-        Query query = new Query(Criteria.where("user.$id").is(userId));
-        Update update = new Update()
-                .set("rulesAcceptanceVersion", rulesVersion)
-                .set("rulesAcceptanceDate", Instant.now())
-                .set("privacyPolicyAcceptanceVersion", privacyVersion)
-                .set("privacyPolicyAcceptanceDate", Instant.now());
-        return updateOne(query, update);
+        Optional<UserProfile> profileOpt = userProfileRepository.findByUserId(userId);
+        if (profileOpt.isPresent()) {
+            UserProfile profile = profileOpt.get();
+            Instant now = Instant.now();
+            profile.setRulesAcceptanceVersion(rulesVersion);
+            profile.setRulesAcceptanceDate(now);
+            profile.setPrivacyPolicyAcceptanceVersion(privacyVersion);
+            profile.setPrivacyPolicyAcceptanceDate(now);
+            userProfileRepository.save(profile);
+            return true;
+        }
+        return false;
     }
 }

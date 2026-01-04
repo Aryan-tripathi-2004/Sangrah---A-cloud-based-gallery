@@ -3,8 +3,10 @@ package com.example.Auth.repository;
 import com.example.Auth.entity.AuditLog;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.mongodb.repository.MongoRepository;
-import org.springframework.data.mongodb.repository.Query;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
@@ -16,7 +18,7 @@ import java.util.UUID;
  * Provides CRUD operations and custom queries for audit log management.
  */
 @Repository
-public interface AuditLogRepository extends MongoRepository<AuditLog, UUID> {
+public interface AuditLogRepository extends JpaRepository<AuditLog, UUID> {
 
         /**
          * Find all audit logs for a specific user.
@@ -73,8 +75,9 @@ public interface AuditLogRepository extends MongoRepository<AuditLog, UUID> {
          * @param pageable  pagination information
          * @return page of audit logs
          */
-        @Query(value = "{ 'createdAt': { '$gte': ?0, '$lte': ?1 } }", sort = "{ 'createdAt': -1 }")
-        Page<AuditLog> findByDateRange(Instant startDate, Instant endDate, Pageable pageable);
+        @Query("SELECT a FROM AuditLog a WHERE a.createdAt >= :start AND a.createdAt <= :end ORDER BY a.createdAt DESC")
+        Page<AuditLog> findByDateRange(@Param("start") Instant startDate, @Param("end") Instant endDate,
+                        Pageable pageable);
 
         /**
          * Find audit logs for a user within a date range.
@@ -85,8 +88,9 @@ public interface AuditLogRepository extends MongoRepository<AuditLog, UUID> {
          * @param pageable  pagination information
          * @return page of audit logs
          */
-        @Query(value = "{ 'userId': ?0, 'createdAt': { '$gte': ?1, '$lte': ?2 } }", sort = "{ 'createdAt': -1 }")
-        Page<AuditLog> findByUserIdAndDateRange(UUID userId, Instant startDate, Instant endDate, Pageable pageable);
+        @Query("SELECT a FROM AuditLog a WHERE a.userId = :userId AND a.createdAt >= :start AND a.createdAt <= :end ORDER BY a.createdAt DESC")
+        Page<AuditLog> findByUserIdAndDateRange(@Param("userId") UUID userId, @Param("start") Instant startDate,
+                        @Param("end") Instant endDate, Pageable pageable);
 
         /**
          * Find audit logs by action and user.
@@ -105,8 +109,8 @@ public interface AuditLogRepository extends MongoRepository<AuditLog, UUID> {
          * @param pageable pagination information
          * @return page of audit logs ordered by creation date descending
          */
-        @Query(value = "{ 'userId': ?0 }", sort = "{ 'createdAt': -1 }")
-        Page<AuditLog> findRecentByUserId(UUID userId, Pageable pageable);
+        @Query("SELECT a FROM AuditLog a WHERE a.userId = :userId ORDER BY a.createdAt DESC")
+        Page<AuditLog> findRecentByUserId(@Param("userId") UUID userId, Pageable pageable);
 
         /**
          * Find all system actions (where userId is null).
@@ -114,7 +118,7 @@ public interface AuditLogRepository extends MongoRepository<AuditLog, UUID> {
          * @param pageable pagination information
          * @return page of system audit logs
          */
-        @Query(value = "{ 'userId': null }", sort = "{ 'createdAt': -1 }")
+        @Query("SELECT a FROM AuditLog a WHERE a.userId IS NULL ORDER BY a.createdAt DESC")
         Page<AuditLog> findSystemActions(Pageable pageable);
 
         /**
@@ -125,8 +129,8 @@ public interface AuditLogRepository extends MongoRepository<AuditLog, UUID> {
          * @param pageable pagination information
          * @return page of failed login audit logs
          */
-        @Query(value = "{ 'action': 'LOGIN_FAILED', 'createdAt': { '$gte': ?0 } }", sort = "{ 'createdAt': -1 }")
-        Page<AuditLog> findFailedLoginsSince(Instant since, Pageable pageable);
+        @Query("SELECT a FROM AuditLog a WHERE a.action = 'LOGIN_FAILED' AND a.createdAt >= :since ORDER BY a.createdAt DESC")
+        Page<AuditLog> findFailedLoginsSince(@Param("since") Instant since, Pageable pageable);
 
         /**
          * Count failed login attempts for a specific IP in a time period.
@@ -135,8 +139,8 @@ public interface AuditLogRepository extends MongoRepository<AuditLog, UUID> {
          * @param since     timestamp for the lookback period
          * @return count of failed attempts
          */
-        @Query(value = "{ 'action': 'LOGIN_FAILED', 'ipAddress': ?0, 'createdAt': { '$gte': ?1 } }", count = true)
-        long countFailedLoginsByIpSince(String ipAddress, Instant since);
+        @Query("SELECT COUNT(a) FROM AuditLog a WHERE a.action = 'LOGIN_FAILED' AND a.ipAddress = :ip AND a.createdAt >= :since")
+        long countFailedLoginsByIpSince(@Param("ip") String ipAddress, @Param("since") Instant since);
 
         /**
          * Count failed login attempts for a specific email in a time period.
@@ -146,8 +150,8 @@ public interface AuditLogRepository extends MongoRepository<AuditLog, UUID> {
          * @param since timestamp for the lookback period
          * @return count of failed attempts
          */
-        @Query(value = "{ 'action': 'LOGIN_FAILED', 'details.email': ?0, 'createdAt': { '$gte': ?1 } }", count = true)
-        long countFailedLoginsByEmailSince(String email, Instant since);
+        @Query("SELECT COUNT(a) FROM AuditLog a WHERE a.action = 'LOGIN_FAILED' AND JSON_EXTRACT(a.details, '$.email') = :email AND a.createdAt >= :since")
+        long countFailedLoginsByEmailSince(@Param("email") String email, @Param("since") Instant since);
 
         /**
          * Find audit logs by action types (multiple actions).
@@ -156,8 +160,8 @@ public interface AuditLogRepository extends MongoRepository<AuditLog, UUID> {
          * @param pageable pagination information
          * @return page of audit logs
          */
-        @Query(value = "{ 'action': { '$in': ?0 } }", sort = "{ 'createdAt': -1 }")
-        Page<AuditLog> findByActions(List<String> actions, Pageable pageable);
+        @Query("SELECT a FROM AuditLog a WHERE a.action IN :actions ORDER BY a.createdAt DESC")
+        Page<AuditLog> findByActions(@Param("actions") List<String> actions, Pageable pageable);
 
         /**
          * Count audit logs by action type.
@@ -181,5 +185,6 @@ public interface AuditLogRepository extends MongoRepository<AuditLog, UUID> {
          *
          * @param date cutoff date for deletion
          */
+        @Modifying
         void deleteByCreatedAtBefore(Instant date);
 }

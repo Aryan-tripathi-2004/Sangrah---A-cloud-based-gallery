@@ -246,8 +246,8 @@ public class AuthenticationService {
         // Generate new access token
         String newAccessToken = jwtTokenProvider.generateAccessToken(user, session.getSessionId());
 
-        // Note: RefreshToken entity does not have lastUsedAt field, so we skip updating
-        // it
+        // Update last used timestamp for the refresh token
+        refreshTokenDao.updateLastUsed(refreshToken.getId());
 
         logger.info(MSG_TOKEN_REFRESHED_SUCCESS_LOG, Map.of(
                 "userId", user.getId().toString(),

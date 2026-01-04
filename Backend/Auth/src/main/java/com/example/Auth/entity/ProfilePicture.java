@@ -1,11 +1,9 @@
 package com.example.Auth.entity;
 
+import jakarta.persistence.*;
 import jakarta.validation.constraints.*;
 import org.springframework.data.annotation.CreatedDate;
-import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.mapping.DBRef;
-import org.springframework.data.mongodb.core.mapping.Document;
-import org.springframework.data.mongodb.core.index.Indexed;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -16,7 +14,13 @@ import java.util.UUID;
  * dimensions, and size. The actual image is stored in cloud storage (Azure
  * Blob).
  */
-@Document(collection = "profile_pictures")
+@Entity
+@Table(name = "profile_pictures", indexes = {
+        @Index(name = "idx_profile_picture_user", columnList = "user_id"),
+        @Index(name = "idx_profile_picture_storage", columnList = "storage_key", unique = true),
+        @Index(name = "idx_profile_picture_current", columnList = "current")
+})
+@EntityListeners(AuditingEntityListener.class)
 public class ProfilePicture {
 
     /**
@@ -35,11 +39,12 @@ public class ProfilePicture {
     };
 
     @Id
+    @Column(name = "id", updatable = false, nullable = false, columnDefinition = "BINARY(16)")
     private UUID id;
 
-    @DBRef
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", nullable = false)
     @NotNull(message = "User is required")
-    @Indexed
     private User user;
 
     /**
@@ -47,6 +52,7 @@ public class ProfilePicture {
      */
     @NotBlank(message = "Filename is required")
     @Size(max = 255, message = "Filename cannot exceed 255 characters")
+    @Column(name = "filename", nullable = false, length = 255)
     private String filename;
 
     /**
@@ -55,6 +61,7 @@ public class ProfilePicture {
      */
     @NotBlank(message = "Content type is required")
     @Pattern(regexp = "^image/(jpeg|png|webp|gif)$", message = "Invalid content type. Allowed: jpeg, png, webp, gif")
+    @Column(name = "content_type", nullable = false, length = 50)
     private String contentType;
 
     /**
@@ -64,6 +71,7 @@ public class ProfilePicture {
     @NotNull(message = "File size is required")
     @Min(value = 1, message = "File size must be at least 1 byte")
     @Max(value = MAX_SIZE_BYTES, message = "File size cannot exceed 10 MB")
+    @Column(name = "size_bytes", nullable = false)
     private Long sizeBytes;
 
     /**
@@ -72,29 +80,32 @@ public class ProfilePicture {
      */
     @NotBlank(message = "Storage key is required")
     @Size(max = 500, message = "Storage key cannot exceed 500 characters")
-    @Indexed(unique = true)
+    @Column(name = "storage_key", nullable = false, unique = true, length = 500)
     private String storageKey;
 
     /**
      * Image width in pixels.
      */
     @Min(value = 1, message = "Width must be at least 1 pixel")
+    @Column(name = "width")
     private Integer width;
 
     /**
      * Image height in pixels.
      */
     @Min(value = 1, message = "Height must be at least 1 pixel")
+    @Column(name = "height")
     private Integer height;
 
     /**
      * Flag indicating if this is the user's current profile picture.
      * Only one picture per user should be marked as current.
      */
-    @Indexed
+    @Column(name = "current", nullable = false)
     private boolean current = false;
 
     @CreatedDate
+    @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
     // Constructors

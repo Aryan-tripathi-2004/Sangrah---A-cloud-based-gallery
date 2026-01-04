@@ -1,10 +1,9 @@
 package com.example.Auth.entity;
 
+import jakarta.persistence.*;
 import jakarta.validation.constraints.*;
 import org.springframework.data.annotation.CreatedDate;
-import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.mapping.Document;
-import org.springframework.data.mongodb.core.index.Indexed;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -16,7 +15,13 @@ import java.util.UUID;
  * authentication.
  * OTPs are hashed before storage for security.
  */
-@Document(collection = "otp_store")
+@Entity
+@Table(name = "otp_store", indexes = {
+        @Index(name = "idx_otp_user", columnList = "user_id"),
+        @Index(name = "idx_otp_email", columnList = "email"),
+        @Index(name = "idx_otp_expires", columnList = "expires_at")
+})
+@EntityListeners(AuditingEntityListener.class)
 public class OtpStore {
 
     /**
@@ -29,13 +34,14 @@ public class OtpStore {
     }
 
     @Id
+    @Column(name = "id", updatable = false, nullable = false, columnDefinition = "BINARY(16)")
     private UUID id;
 
     /**
      * User ID for which this OTP was generated (nullable for pre-registration
      * scenarios).
      */
-    @Indexed
+    @Column(name = "user_id", columnDefinition = "BINARY(16)")
     private UUID userId;
 
     /**
@@ -44,7 +50,7 @@ public class OtpStore {
     @NotBlank(message = "Email is required")
     @Email(message = "Invalid email format")
     @Size(max = 255, message = "Email cannot exceed 255 characters")
-    @Indexed
+    @Column(name = "email", nullable = false, length = 255)
     private String email;
 
     /**
@@ -53,24 +59,30 @@ public class OtpStore {
      */
     @NotBlank(message = "OTP hash is required")
     @Size(min = 64, max = 64, message = "OTP hash must be 64 characters (HMAC-SHA256)")
+    @Column(name = "otp_hash", nullable = false, length = 64)
     private String otpHash;
 
     @NotNull(message = "Purpose is required")
+    @Enumerated(EnumType.STRING)
+    @Column(name = "purpose", nullable = false, length = 30)
     private Purpose purpose;
 
     @CreatedDate
+    @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
     @NotNull(message = "Expiry time is required")
-    @Indexed
+    @Column(name = "expires_at", nullable = false)
     private Instant expiresAt;
 
     /**
      * Flag indicating if this OTP has been used.
      * Once used, an OTP cannot be reused.
      */
+    @Column(name = "used", nullable = false)
     private boolean used = false;
 
+    @Column(name = "used_at")
     private Instant usedAt;
 
     /**
@@ -79,6 +91,7 @@ public class OtpStore {
      */
     @Min(value = 0, message = "Attempts cannot be negative")
     @Max(value = 10, message = "Maximum 10 attempts allowed")
+    @Column(name = "attempts", nullable = false)
     private int attempts = 0;
 
     /**
@@ -86,6 +99,7 @@ public class OtpStore {
      * Used for security monitoring and rate limiting.
      */
     @Size(max = 45, message = "IP address cannot exceed 45 characters")
+    @Column(name = "ip_address", length = 45)
     private String ipAddress;
 
     // Constructors

@@ -1,8 +1,9 @@
 package com.example.Auth.repository;
 
 import com.example.Auth.entity.UserProfile;
-import org.springframework.data.mongodb.repository.MongoRepository;
-import org.springframework.data.mongodb.repository.Query;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -12,10 +13,10 @@ import java.util.UUID;
 /**
  * Repository interface for UserProfile entity operations.
  * Provides CRUD operations and custom queries for user profile management.
- * Note: Update operations are handled in the DAO layer using MongoTemplate.
+ * Note: Update operations are handled in the DAO layer using EntityManager.
  */
 @Repository
-public interface UserProfileRepository extends MongoRepository<UserProfile, UUID> {
+public interface UserProfileRepository extends JpaRepository<UserProfile, UUID> {
 
         /**
          * Find a user profile by user ID.
@@ -23,8 +24,8 @@ public interface UserProfileRepository extends MongoRepository<UserProfile, UUID
          * @param userId the user ID
          * @return Optional containing the profile if found
          */
-        @Query("{ 'user.$id': ?0 }")
-        Optional<UserProfile> findByUserId(UUID userId);
+        @Query("SELECT up FROM UserProfile up WHERE up.user.id = :userId")
+        Optional<UserProfile> findByUserId(@Param("userId") UUID userId);
 
         /**
          * Find a user profile by display name (case-insensitive).
@@ -99,7 +100,7 @@ public interface UserProfileRepository extends MongoRepository<UserProfile, UUID
         List<UserProfile> findByTwoFactorEnabledTrue();
 
         // Note: Update operations (updateEmailVerified, updatePremiumStatus, etc.)
-        // are handled in the DAO layer using MongoTemplate
+        // are handled in the DAO layer using EntityManager
 
         /**
          * Count premium users.

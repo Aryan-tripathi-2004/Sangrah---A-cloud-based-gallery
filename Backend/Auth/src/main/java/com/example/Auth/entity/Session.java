@@ -1,13 +1,11 @@
 package com.example.Auth.entity;
 
+import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import org.springframework.data.annotation.CreatedDate;
-import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.mapping.DBRef;
-import org.springframework.data.mongodb.core.mapping.Document;
-import org.springframework.data.mongodb.core.index.Indexed;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -17,22 +15,30 @@ import java.util.UUID;
  * Sessions track active user logins across different devices and browsers.
  * Each session has a unique identifier and is linked to Redis for fast lookup.
  */
-@Document(collection = "sessions")
+@Entity
+@Table(name = "sessions", indexes = {
+        @Index(name = "idx_session_user", columnList = "user_id"),
+        @Index(name = "idx_session_expires", columnList = "expires_at"),
+        @Index(name = "idx_session_fingerprint", columnList = "device_fingerprint")
+})
+@EntityListeners(AuditingEntityListener.class)
 public class Session {
 
     @Id
+    @Column(name = "session_id", updatable = false, nullable = false, columnDefinition = "BINARY(16)")
     private UUID sessionId;
 
-    @DBRef
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", nullable = false)
     @NotNull(message = "User is required")
-    @Indexed
     private User user;
 
     @CreatedDate
+    @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
     @NotNull(message = "Expiry time is required")
-    @Indexed
+    @Column(name = "expires_at", nullable = false)
     private Instant expiresAt;
 
     /**
@@ -40,12 +46,14 @@ public class Session {
      * Updated on each request to track session activity.
      */
     @NotNull(message = "Last accessed time is required")
+    @Column(name = "last_accessed_at", nullable = false)
     private Instant lastAccessedAt;
 
     /**
      * IP address from which this session was created.
      */
     @Size(max = 45, message = "IP address cannot exceed 45 characters")
+    @Column(name = "ip_address", length = 45)
     private String ipAddress;
 
     /**
@@ -53,6 +61,7 @@ public class Session {
      * Used for device identification and security monitoring.
      */
     @Size(max = 500, message = "User agent cannot exceed 500 characters")
+    @Column(name = "user_agent", length = 500)
     private String userAgent;
 
     /**
@@ -61,15 +70,17 @@ public class Session {
      */
     @NotBlank(message = "Device fingerprint is required")
     @Size(min = 64, max = 64, message = "Device fingerprint must be 64 characters (SHA-256)")
-    @Indexed
+    @Column(name = "device_fingerprint", nullable = false, length = 64)
     private String deviceFingerprint;
 
     /**
      * Flag indicating if this session has been revoked.
      * Revoked sessions cannot be used for authentication.
      */
+    @Column(name = "revoked", nullable = false)
     private boolean revoked = false;
 
+    @Column(name = "revoked_at")
     private Instant revokedAt;
 
     /**
@@ -78,6 +89,7 @@ public class Session {
      * "PASSWORD_CHANGED"
      */
     @Size(max = 100, message = "Revocation reason cannot exceed 100 characters")
+    @Column(name = "revocation_reason", length = 100)
     private String revocationReason;
 
     // Constructors

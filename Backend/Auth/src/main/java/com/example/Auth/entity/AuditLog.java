@@ -1,11 +1,12 @@
 package com.example.Auth.entity;
 
+import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import org.springframework.data.annotation.CreatedDate;
-import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.mapping.Document;
-import org.springframework.data.mongodb.core.index.Indexed;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.time.Instant;
 import java.util.HashMap;
@@ -17,16 +18,24 @@ import java.util.UUID;
  * Tracks all security-relevant actions performed by users and the system.
  * Provides comprehensive audit trail for compliance and security monitoring.
  */
-@Document(collection = "audit_logs")
+@Entity
+@Table(name = "audit_logs", indexes = {
+        @Index(name = "idx_audit_user", columnList = "user_id"),
+        @Index(name = "idx_audit_action", columnList = "action"),
+        @Index(name = "idx_audit_entity", columnList = "entity_type, entity_id"),
+        @Index(name = "idx_audit_created", columnList = "created_at")
+})
+@EntityListeners(AuditingEntityListener.class)
 public class AuditLog {
 
     @Id
+    @Column(name = "id", updatable = false, nullable = false, columnDefinition = "BINARY(16)")
     private UUID id;
 
     /**
      * User who performed the action (nullable for system actions).
      */
-    @Indexed
+    @Column(name = "user_id", columnDefinition = "BINARY(16)")
     private UUID userId;
 
     /**
@@ -34,43 +43,48 @@ public class AuditLog {
      */
     @NotBlank(message = "Action is required")
     @Size(max = 100, message = "Action cannot exceed 100 characters")
-    @Indexed
+    @Column(name = "action", nullable = false, length = 100)
     private String action;
 
     /**
      * Type of entity affected (e.g., "User", "Session", "RefreshToken").
      */
     @Size(max = 50, message = "Entity type cannot exceed 50 characters")
-    @Indexed
+    @Column(name = "entity_type", length = 50)
     private String entityType;
 
     /**
      * ID of the entity affected.
      */
     @Size(max = 100, message = "Entity ID cannot exceed 100 characters")
+    @Column(name = "entity_id", length = 100)
     private String entityId;
 
     /**
      * Additional details about the action in JSON format.
      * Example: {"oldEmail": "old@example.com", "newEmail": "new@example.com"}
-     * MongoDB natively stores this as BSON document - no special handling needed
+     * Stored as JSON in MySQL 5.7+ or TEXT in earlier versions
      */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "details", columnDefinition = "JSON")
     private Map<String, Object> details = new HashMap<>();
 
     /**
      * IP address from which the action was performed.
      */
     @Size(max = 45, message = "IP address cannot exceed 45 characters")
+    @Column(name = "ip_address", length = 45)
     private String ipAddress;
 
     /**
      * User agent string from the client.
      */
     @Size(max = 500, message = "User agent cannot exceed 500 characters")
+    @Column(name = "user_agent", length = 500)
     private String userAgent;
 
     @CreatedDate
-    @Indexed
+    @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
     // Constructors
