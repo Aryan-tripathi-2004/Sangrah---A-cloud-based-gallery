@@ -1,0 +1,1 @@
+{"timestamp":"2026-03-26T00:32:49.6768973","status":500,"message":"An unexpected error occurred","details":{"error":"No static resource api/v1/billing/invoices/pdf."},"path":"/api/v1/billing/invoices//pdf"}

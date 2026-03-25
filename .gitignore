@@ -1,0 +1,36 @@
+# Environment Variables (NEVER commit)
+.env
+.env.local
+.env.*.local
+*.env
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Node (Frontend)
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Java (Backend)
+target/
+build/
+.gradle/
+*.jar
+*.war
+
+# Compiled files
+*.class
+*.o
+*.so
+
+# Logs
+logs/
+*.log

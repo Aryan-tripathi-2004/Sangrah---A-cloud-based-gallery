@@ -1,0 +1,122 @@
+import { Component, inject } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { Router, RouterLink } from '@angular/router';
+import { AuthService } from '../../core/auth/auth.service';
+import { LayoutComponent } from '../../shared/layout/layout.component';
+
+@Component({
+  selector: 'app-login',
+  standalone: true,
+  imports: [CommonModule, ReactiveFormsModule, RouterLink, LayoutComponent],
+  template: `
+    <app-layout>
+      <div class="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 -mx-4 sm:-mx-6 lg:-mx-8">
+        <div class="w-full max-w-md">
+          <!-- Logo -->
+          <div class="text-center mb-8">
+            <div class="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center font-bold text-2xl mx-auto mb-4">S</div>
+            <h1 class="text-3xl font-bold">Welcome Back</h1>
+            <p class="text-slate-400 mt-2">Sign in to your Sangrah account</p>
+          </div>
+
+          <!-- Form -->
+          <form [formGroup]="form" (ngSubmit)="onSubmit()" class="space-y-6">
+            <!-- Email -->
+            <div>
+              <label class="block text-sm font-medium mb-2">Email Address</label>
+              <input
+                type="email"
+                formControlName="email"
+                class="w-full px-4 py-3 rounded-lg bg-slate-800/50 border border-slate-700 focus:border-blue-500 focus:outline-none transition text-slate-100 placeholder-slate-500"
+                placeholder="you@example.com"
+              />
+              <div *ngIf="form.get('email')?.invalid && form.get('email')?.touched" class="text-red-400 text-sm mt-1">
+                Please enter a valid email
+              </div>
+            </div>
+
+            <!-- Password -->
+            <div>
+              <label class="block text-sm font-medium mb-2">Password</label>
+              <input
+                type="password"
+                formControlName="password"
+                class="w-full px-4 py-3 rounded-lg bg-slate-800/50 border border-slate-700 focus:border-blue-500 focus:outline-none transition text-slate-100 placeholder-slate-500"
+                placeholder="••••••••"
+              />
+              <div *ngIf="form.get('password')?.invalid && form.get('password')?.touched" class="text-red-400 text-sm mt-1">
+                Password is required
+              </div>
+            </div>
+
+            <!-- Error Message -->
+            <div *ngIf="errorMessage" class="p-4 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400">
+              {{ errorMessage }}
+            </div>
+
+            <!-- Success Message -->
+            <div *ngIf="successMessage" class="p-4 rounded-lg bg-green-500/10 border border-green-500/30 text-green-400">
+              {{ successMessage }}
+            </div>
+
+            <!-- Submit Button -->
+            <button
+              type="submit"
+              [disabled]="form.invalid || isLoading"
+              class="w-full px-4 py-3 rounded-lg bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed font-semibold transition"
+            >
+              {{ isLoading ? 'Signing in...' : 'Sign In' }}
+            </button>
+          </form>
+
+          <!-- Signup Link -->
+          <p class="text-center text-slate-400 mt-6">
+            Don't have an account?
+            <a routerLink="/signup" class="text-blue-400 hover:text-blue-300 font-semibold transition">
+              Sign Up
+            </a>
+          </p>
+        </div>
+      </div>
+    </app-layout>
+  `,
+})
+export class LoginComponent {
+  private authService = inject(AuthService);
+  private router = inject(Router);
+  private fb = inject(FormBuilder);
+
+  form = this.fb.group({
+    email: ['', [Validators.required, Validators.email]],
+    password: ['', [Validators.required, Validators.minLength(6)]],
+  });
+
+  isLoading = false;
+  errorMessage = '';
+  successMessage = '';
+
+  onSubmit(): void {
+    if (this.form.invalid) return;
+
+    this.isLoading = true;
+    this.errorMessage = '';
+    this.successMessage = '';
+
+    const { email, password } = this.form.value;
+    if (!email || !password) return;
+
+    this.authService.login(email, password).subscribe({
+      next: () => {
+        this.successMessage = 'Login successful! Redirecting...';
+        setTimeout(() => {
+          this.router.navigate(['/dashboard']);
+        }, 1000);
+      },
+      error: (err) => {
+        this.isLoading = false;
+        this.errorMessage = err.error?.message || 'Login failed. Please try again.';
+      },
+    });
+  }
+}
