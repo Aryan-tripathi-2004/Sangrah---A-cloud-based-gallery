@@ -49,15 +49,30 @@ public class StripePaymentService {
     private String stripeApiKey;
 
     /**
-     * Initialize Stripe API key on startup
+     * Initialize Stripe API key on startup.
+     * Falls back to System environment variable and System property if the Spring
+     * {@code @Value} binding resolved to an empty string (e.g. when the {@link
+     * com.example.Billing.config.EnvConfig} .env loader runs after property binding).
      */
     @PostConstruct
     public void initializeStripe() {
-        if (stripeApiKey != null && !stripeApiKey.isEmpty()) {
-            Stripe.apiKey = stripeApiKey;
+        String resolvedKey = stripeApiKey;
+
+        // Fallback 1: OS-level environment variable (available before Spring starts)
+        if (resolvedKey == null || resolvedKey.isEmpty()) {
+            resolvedKey = System.getenv("STRIPE_API_KEY");
+        }
+
+        // Fallback 2: System property (set by EnvConfig from .env file via @PostConstruct)
+        if (resolvedKey == null || resolvedKey.isEmpty()) {
+            resolvedKey = System.getProperty("STRIPE_API_KEY");
+        }
+
+        if (resolvedKey != null && !resolvedKey.isEmpty()) {
+            Stripe.apiKey = resolvedKey;
             log.info("💳 Stripe API initialized");
         } else {
-            log.warn("⚠️ WARNING: Stripe API key not configured. Payment processing disabled.");
+            log.warn("⚠️ WARNING: Stripe API key not configured. Set the STRIPE_API_KEY environment variable. Payment processing disabled.");
         }
     }
 
@@ -70,6 +85,10 @@ public class StripePaymentService {
      */
     public String createPaymentIntent(String userId, String invoiceId, Double amount)
             throws StripeException {
+        if (Stripe.apiKey == null || Stripe.apiKey.isEmpty()) {
+            throw new IllegalStateException(
+                "Stripe API key not configured. Set the STRIPE_API_KEY environment variable.");
+        }
         log.info("💳 Creating payment intent for invoice: {}, amount: ${}", invoiceId, amount);
 
         // Get or create Stripe customer

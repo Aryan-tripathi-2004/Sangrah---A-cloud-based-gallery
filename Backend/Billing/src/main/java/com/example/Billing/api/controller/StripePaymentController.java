@@ -89,6 +89,9 @@ public class StripePaymentController {
                 .currency("usd")
                 .build());
 
+        } catch (IllegalStateException e) {
+            log.error("❌ Stripe not configured: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
         } catch (Exception e) {
             log.error("❌ Error creating checkout session", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
