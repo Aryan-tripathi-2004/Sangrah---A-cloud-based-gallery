@@ -92,7 +92,23 @@ public class UserController {
 
     @GetMapping("/{userId}")
     @Operation(summary = "Get user by id")
-    public ResponseEntity<Map<String, String>> byId(@PathVariable String userId) {
-        return ResponseEntity.ok(Map.of("userId", userId));
+    public ResponseEntity<Map<String, Object>> byId(@PathVariable String userId) {
+        try {
+            log.info("👤 Fetching user data for userId: {}", userId);
+            UserDTO user = authService.getUserById(userId);
+            log.info("✅ User found: {}", user.getEmail());
+
+            // Return UserDTO wrapped in data object for consistency with API responses
+            return ResponseEntity.ok(Map.of(
+                "data", user,
+                "status", "success"
+            ));
+        } catch (Exception e) {
+            log.error("❌ Error fetching user {}: {}", userId, e.getMessage());
+            return ResponseEntity.status(500).body(Map.of(
+                "status", "error",
+                "message", "User not found"
+            ));
+        }
     }
 }

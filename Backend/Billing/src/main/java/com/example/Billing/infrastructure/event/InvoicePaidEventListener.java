@@ -8,8 +8,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestTemplate;
 
 import java.time.Instant;
+import java.util.Map;
 
 @Component
 @RequiredArgsConstructor
@@ -19,6 +21,29 @@ public class InvoicePaidEventListener {
     private final PDFGenerationService pdfGenerationService;
     private final InvoiceRepository invoiceRepository;
     private final EmailServiceClient emailServiceClient;
+    private final RestTemplate restTemplate;
+
+    /**
+     * Fetch user email from Auth Service
+     * Fallback for old invoices without userEmail
+     */
+    private String getUserEmailFromAuthService(String userId) {
+        try {
+            log.debug("📧 [Event Hook] Fetching user email from Auth Service for user: {}", userId);
+            String url = "http://localhost:8081/api/v1/users/" + userId;
+            Map<String, Object> response = restTemplate.getForObject(url, Map.class);
+            if (response != null && response.containsKey("data")) {
+                Map<String, Object> data = (Map<String, Object>) response.get("data");
+                String email = (String) data.get("email");
+                if (email != null && !email.isEmpty()) {
+                    return email;
+                }
+            }
+        } catch (Exception e) {
+            log.warn("⚠️ Failed to fetch user email: {}", e.getMessage());
+        }
+        return "billing@sangrah.com"; // Fallback
+    }
 
     @EventListener
     public void onInvoicePaid(InvoicePaidEvent event) {
@@ -41,6 +66,16 @@ public class InvoicePaidEventListener {
 
             log.info("📋 [Step 1/3] Invoice found - Email: {} | Status: {} | Amount: ${}",
                     invoice.getUserEmail(), invoice.getStatus(), invoice.getCharges().getTotalAmount());
+
+            // ✨ NEW: Ensure userEmail is populated (fallback for old test invoices)
+            String targetEmail = invoice.getUserEmail();
+            if (targetEmail == null || targetEmail.isEmpty()) {
+                log.warn("⚠️ Invoice {} missing userEmail, fetching from Auth Service...", invoice.getInvoiceId());
+                targetEmail = getUserEmailFromAuthService(event.getUserId());
+                invoice.setUserEmail(targetEmail);
+                // Save it so it's not missing next time
+                invoiceRepository.save(invoice);
+            }
 
             // Verify PDF exists (should have been generated at invoice creation)
             if (invoice.getPdfContent() == null || invoice.getPdfContent().length == 0) {
@@ -77,7 +112,7 @@ public class InvoicePaidEventListener {
             // Step 3: Send email with PDF showing PAID status
             log.info("📧 [Step 3/3] Sending payment confirmation email...");
             log.info("📧 [Step 3/3] To: {} | Invoice: {} | Amount: ${} | PDF: {} bytes",
-                    invoice.getUserEmail(), event.getInvoiceId(), invoice.getCharges().getTotalAmount(),
+                    targetEmail, event.getInvoiceId(), invoice.getCharges().getTotalAmount(),
                     invoice.getPdfContent().length);
 
             try {
@@ -87,7 +122,7 @@ public class InvoicePaidEventListener {
                                 .userId(event.getUserId())
                                 .amount(invoice.getCharges().getTotalAmount())
                                 .pdfContent(invoice.getPdfContent())
-                                .userEmail(invoice.getUserEmail())
+                                .userEmail(targetEmail)
                                 .emailType("invoice-paid")
                                 .build()
                 );
@@ -100,7 +135,7 @@ public class InvoicePaidEventListener {
             log.info("✅ ╔═══════════════════════════════════════════════════════════════╗");
             log.info("✅ ║ [PAYMENT EVENT] COMPLETED SUCCESSFULLY                       ║");
             log.info("✅ ║ Invoice: {} | Status: PAID | Email: {}",
-                    event.getInvoiceId(), invoice.getUserEmail());
+                    event.getInvoiceId(), targetEmail);
             log.info("✅ ╚═══════════════════════════════════════════════════════════════╝");
 
         } catch (Exception e) {

@@ -14,6 +14,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -31,6 +32,7 @@ public class BillingService {
     private final CostEstimationService costEstimationService;
     private final BillingCalculator calculator;
     private final PDFGenerationService pdfGenerationService;
+    private final RestTemplate restTemplate;
 
     /**
      * Get invoice details
@@ -152,10 +154,15 @@ public class BillingService {
         UserBillingSettingsDocument settings = userSettingsRepository.findByUserId(userId)
             .orElseGet(() -> createDefaultUserSettings(userId));
 
+        // ✨ NEW: Fetch user email from Auth Service
+        String userEmail = getUserEmailFromAuthService(userId);
+        log.info("📧 [Invoice Creation] User email fetched: {}", userEmail);
+
         // Build invoice
         InvoiceDocument invoice = InvoiceDocument.builder()
             .invoiceId(invoiceId)
             .userId(userId)
+            .userEmail(userEmail)  // ✨ NEW: Set user email on invoice
             .billingPeriod(InvoiceDocument.BillingPeriod.builder()
                 .startDate(startDate)
                 .endDate(endDate)
@@ -184,7 +191,7 @@ public class BillingService {
 
         // Save invoice to database first
         InvoiceDocument savedInvoice = invoiceRepository.save(invoice);
-        log.info("✅ Invoice created: {} (total: ${})", invoiceId, costs.getTotalCost());
+        log.info("✅ Invoice created: {} (total: ${}) (email: {})", invoiceId, costs.getTotalCost(), userEmail);
 
         // ✨ BEST PRACTICE: Generate PDF immediately when invoice is created (not on payment)
         // This allows users to download and review the invoice BEFORE paying
@@ -312,5 +319,35 @@ public class BillingService {
             .stripeChargeId(doc.getStripeChargeId())
             .failureReason(doc.getFailureReason())
             .build();
+    }
+
+    /**
+     * Fetch user email from Auth Service
+     * Called when creating invoice to ensure email is available for payment notifications
+     */
+    private String getUserEmailFromAuthService(String userId) {
+        try {
+            log.debug("📧 Fetching user email from Auth Service for user: {}", userId);
+            String url = "http://localhost:8081/api/v1/users/" + userId;
+
+            Map<String, Object> response = restTemplate.getForObject(url, Map.class);
+
+            if (response != null && response.containsKey("data")) {
+                Map<String, Object> data = (Map<String, Object>) response.get("data");
+                String email = (String) data.get("email");
+
+                if (email != null && !email.isEmpty()) {
+                    log.info("✅ User email fetched from Auth Service: {}", email);
+                    return email;
+                }
+            }
+
+            log.warn("⚠️ Could not fetch user email from Auth Service, using fallback");
+            return "billing@sangrah.com";  // Default sender if user email not found
+
+        } catch (Exception e) {
+            log.warn("⚠️ Failed to fetch user email from Auth Service: {}", e.getMessage());
+            return "billing@sangrah.com";  // Fallback email
+        }
     }
 }
