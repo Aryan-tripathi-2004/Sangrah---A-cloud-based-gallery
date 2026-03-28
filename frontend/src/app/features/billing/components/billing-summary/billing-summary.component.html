@@ -1,0 +1,149 @@
+<div class="space-y-6">
+  <!-- KPI Cards Grid -->
+  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+    <!-- Current Cost Card -->
+    <div class="bg-gradient-to-br from-blue-500/10 to-purple-500/10 border border-blue-500/20 rounded-xl p-6 hover:border-blue-500/40 transition-all">
+      <div class="text-blue-400 text-sm font-semibold mb-2">💰 Current Month Cost</div>
+      <div class="text-3xl font-bold text-blue-300 mb-2">
+        {{ ((costEstimate$ | async)?.currentMonthData.estimatedCost || 0) | currency }}
+      </div>
+      <div class="text-xs text-slate-400">
+        {{ getContextualMessage(costEstimate$ | async) }}
+      </div>
+    </div>
+
+    <!-- Days Elapsed Card -->
+    <div class="bg-gradient-to-br from-green-500/10 to-emerald-500/10 border border-green-500/20 rounded-xl p-6 hover:border-green-500/40 transition-all">
+      <div class="text-green-400 text-sm font-semibold mb-2">📅 Days Elapsed</div>
+      <div class="text-3xl font-bold text-green-300">
+        {{ ((costEstimate$ | async)?.currentMonthData.daysElapsed || 0) }}<span class="text-lg">/31</span>
+      </div>
+      <div class="text-xs text-slate-400 mt-2">
+        of current month
+      </div>
+    </div>
+
+    <!-- Projected Total Card -->
+    <div class="bg-gradient-to-br from-purple-500/10 to-pink-500/10 border border-purple-500/20 rounded-xl p-6 hover:border-purple-500/40 transition-all">
+      <div class="text-purple-400 text-sm font-semibold mb-2">📊 Projected Total</div>
+      <div class="text-3xl font-bold text-purple-300 mb-2">
+        {{ ((costEstimate$ | async)?.currentMonthData.projectedMonthlyTotal || 0) | currency }}
+      </div>
+      <div class="text-xs text-slate-400">
+        if trend continues
+      </div>
+    </div>
+
+    <!-- Cost per Day Card -->
+    <div class="bg-gradient-to-br from-yellow-500/10 to-orange-500/10 border border-yellow-500/20 rounded-xl p-6 hover:border-yellow-500/40 transition-all">
+      <div class="text-yellow-400 text-sm font-semibold mb-2">💵 Cost per Day</div>
+      <div class="text-3xl font-bold text-yellow-300">
+        {{ ((costEstimate$ | async)?.costPerDay || 0) | currency }}
+      </div>
+      <div class="text-xs text-slate-400 mt-2">
+        average daily cost
+      </div>
+    </div>
+  </div>
+
+  <!-- Storage Breakdown -->
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <!-- Storage Breakdown Card -->
+    <div class="bg-slate-800/30 border border-slate-700/50 rounded-xl p-6">
+      <h3 class="text-lg font-semibold text-slate-100 mb-6">📁 Storage Breakdown</h3>
+
+      <div class="space-y-6">
+        <!-- Images -->
+        <div>
+          <div class="flex justify-between items-center mb-2">
+            <span class="text-slate-300">Images</span>
+            <span class="text-sm text-slate-400 font-mono">
+              {{ ((costEstimate$ | async)?.storageBreakdown.images.gbDays || 0).toFixed(2) }} GB-days
+            </span>
+          </div>
+          <div class="bg-slate-700 rounded h-2 overflow-hidden">
+            <div
+              class="bg-blue-500 h-2 rounded transition-all duration-300"
+              [style.width.%]="getImagePercentage(costEstimate$ | async)">
+            </div>
+          </div>
+          <div class="text-xs text-slate-400 mt-1">
+            {{ ((costEstimate$ | async)?.storageBreakdown.images.cost || 0) | currency }}
+          </div>
+        </div>
+
+        <!-- Videos -->
+        <div>
+          <div class="flex justify-between items-center mb-2">
+            <span class="text-slate-300">Videos</span>
+            <span class="text-sm text-slate-400 font-mono">
+              {{ ((costEstimate$ | async)?.storageBreakdown.videos.gbDays || 0).toFixed(2) }} GB-days
+            </span>
+          </div>
+          <div class="bg-slate-700 rounded h-2 overflow-hidden">
+            <div
+              class="bg-purple-500 h-2 rounded transition-all duration-300"
+              [style.width.%]="getVideoPercentage(costEstimate$ | async)">
+            </div>
+          </div>
+          <div class="text-xs text-slate-400 mt-1">
+            {{ ((costEstimate$ | async)?.storageBreakdown.videos.cost || 0) | currency }}
+          </div>
+        </div>
+
+        <!-- Total -->
+        <div class="border-t border-slate-700 pt-4 flex justify-between items-center font-semibold">
+          <span class="text-slate-200">Total Storage</span>
+          <span class="text-blue-400">
+            {{ ((costEstimate$ | async)?.storageBreakdown.images.gbDays || 0) + ((costEstimate$ | async)?.storageBreakdown.videos.gbDays || 0) | number: '1.2-2' }} GB-days
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pricing Info Card -->
+    <div class="bg-slate-800/30 border border-slate-700/50 rounded-xl p-6">
+      <h3 class="text-lg font-semibold text-slate-100 mb-6">💳 Pricing Information</h3>
+
+      <div class="space-y-4">
+        <!-- Storage Rate -->
+        <div class="flex justify-between items-center">
+          <span class="text-slate-300">Storage Rate</span>
+          <span class="font-mono text-green-400">
+            ${{ (costEstimate$ | async)?.ratePerGBDay || '0.01' }}/GB-day
+          </span>
+        </div>
+
+        <!-- Rate Type -->
+        <div class="flex justify-between items-center">
+          <span class="text-slate-300">Rate Type</span>
+          <span class="font-mono text-blue-400">Pay-as-you-use</span>
+        </div>
+
+        <!-- Billing Cycle -->
+        <div class="flex justify-between items-center">
+          <span class="text-slate-300">Billing Cycle</span>
+          <span class="font-mono text-purple-400">Monthly</span>
+        </div>
+
+        <!-- Next Invoice -->
+        <div class="border-t border-slate-700 pt-4 mt-4">
+          <div class="text-xs text-slate-400 mb-2">Next Invoice</div>
+          <div class="text-lg font-semibold text-slate-100">
+            April 1, 2026
+          </div>
+          <div class="text-xs text-slate-400 mt-1">
+            For March 1-31 usage
+          </div>
+        </div>
+      </div>
+
+      <!-- Info Box -->
+      <div class="mt-6 bg-blue-500/10 border border-blue-500/20 rounded-lg p-4">
+        <div class="text-xs text-blue-300">
+          💡 Pay only for the storage you use. No subscriptions, no hidden fees.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f9f9f9;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .header {
+            border-bottom: 3px solid #4CAF50;
+            padding-bottom: 20px;
+            text-align: center;
+        }
+        .header h1 {
+            color: #4CAF50;
+            margin: 0;
+            font-size: 24px;
+        }
+        .content {
+            padding: 20px 0;
+        }
+        .content p {
+            margin: 10px 0;
+        }
+        .invoice-details {
+            background-color: #f0f0f0;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 20px 0;
+        }
+        .invoice-details p {
+            margin: 8px 0;
+        }
+        .button {
+            display: inline-block;
+            padding: 12px 30px;
+            background-color: #4CAF50;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            margin: 20px 0;
+        }
+        .footer {
+            border-top: 1px solid #ddd;
+            padding-top: 20px;
+            text-align: center;
+            font-size: 12px;
+            color: #999;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>✓ Payment Confirmation</h1>
+        </div>
+
+        <div class="content">
+            <p>Dear User,</p>
+
+            <p>Your payment has been successfully processed! Thank you for using Sangrah Cloud Storage.</p>
+
+            <div class="invoice-details">
+                <p><strong>Invoice ID:</strong> <span th:text="${invoiceId}">INV-xxxxx</span></p>
+                <p><strong>Amount Paid:</strong> <span th:text="${amount}">$99.99</span></p>
+                <p><strong>Payment Date:</strong> <span th:text="${paidDate}">2026-03-25</span></p>
+                <p><strong>Status:</strong> <span style="color: #4CAF50; font-weight: bold;">PAID</span></p>
+            </div>
+
+            <p>A PDF copy of your invoice is attached to this email for your records.</p>
+
+            <p>You can also download your invoice anytime from your dashboard:</p>
+            <a th:href="${downloadLink}" class="button">Download Invoice</a>
+
+            <p style="margin-top: 30px;">If you have any questions about your payment, please don't hesitate to contact our support team.</p>
+
+            <p>Best regards,<br>
+            <strong>Sangrah Cloud Storage Team</strong></p>
+        </div>
+
+        <div class="footer">
+            <p>This is an automated email. Please do not reply to this message.</p>
+            <p>© 2026 Sangrah Cloud Storage. All rights reserved.</p>
+            <p>For support, visit <a href="https://www.sangrah.com">www.sangrah.com</a> or email support@sangrah.com</p>
+        </div>
+    </div>
+</body>
+</html>

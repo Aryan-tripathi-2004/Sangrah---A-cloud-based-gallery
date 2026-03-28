@@ -1,0 +1,120 @@
+<div class="space-y-6">
+  <!-- Filter Buttons -->
+  <div class="flex gap-2 flex-wrap">
+    <button
+      *ngFor="let status of statuses"
+      [ngClass]="{
+        'bg-blue-500/20 border-blue-500/50 text-blue-300': selectedStatus === (status === 'All' ? null : status),
+        'bg-slate-700/50 border-slate-600 text-slate-300 hover:text-slate-100': selectedStatus !== (status === 'All' ? null : status)
+      }"
+      class="px-4 py-2 rounded-lg border font-semibold text-sm transition-colors"
+      (click)="filterBy(status)">
+      {{ status }}
+    </button>
+  </div>
+
+  <!-- Desktop Table -->
+  <div class="hidden md:block bg-slate-800/30 border border-slate-700/50 rounded-xl overflow-hidden">
+    <table class="w-full">
+      <thead class="bg-slate-700/50 border-b border-slate-700">
+        <tr>
+          <th class="px-6 py-3 text-left text-sm font-semibold text-slate-300">Invoice ID</th>
+          <th class="px-6 py-3 text-left text-sm font-semibold text-slate-300">Period</th>
+          <th class="px-6 py-3 text-right text-sm font-semibold text-slate-300">Amount</th>
+          <th class="px-6 py-3 text-left text-sm font-semibold text-slate-300">Status</th>
+          <th class="px-6 py-3 text-left text-sm font-semibold text-slate-300">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-700/30">
+        <tr *ngFor="let invoice of (invoices$ | async)" class="hover:bg-slate-700/20 transition-colors">
+          <td class="px-6 py-4 font-mono text-sm text-slate-300">{{ invoice.invoiceId }}</td>
+          <td class="px-6 py-4 text-sm text-slate-400">
+            {{ invoice.billingPeriod.startDate | date: 'MMM d' }} - {{ invoice.billingPeriod.endDate | date: 'MMM d, yyyy' }}
+          </td>
+          <td class="px-6 py-4 text-right font-semibold text-slate-100">
+            {{ invoice.charges.totalAmount | currency }}
+          </td>
+          <td class="px-6 py-4">
+            <app-status-badge [status]="invoice.status" />
+          </td>
+          <td class="px-6 py-4 space-x-2 flex">
+            <button
+              (click)="viewDetails(invoice)"
+              class="px-3 py-1 bg-slate-700 hover:bg-slate-600 text-slate-100 rounded text-sm font-semibold transition-colors">
+              View
+            </button>
+            <button
+              *ngIf="invoice.status === 'PENDING'"
+              (click)="onPayClick(invoice.invoiceId)"
+              class="px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded text-sm font-semibold transition-colors">
+              Pay
+            </button>
+            <button
+              (click)="downloadPDF(invoice.id)"
+              class="px-3 py-1 bg-slate-700 hover:bg-slate-600 text-slate-100 rounded text-sm font-semibold transition-colors">
+              PDF
+            </button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- Empty State -->
+    <div *ngIf="((invoices$ | async) || []).length === 0" class="px-6 py-12 text-center">
+      <div class="text-3xl mb-2">📄</div>
+      <div class="text-slate-400">No invoices found</div>
+    </div>
+  </div>
+
+  <!-- Mobile Cards -->
+  <div class="md:hidden space-y-4">
+    <div *ngFor="let invoice of (invoices$ | async)" class="bg-slate-800/30 border border-slate-700/50 rounded-xl p-4">
+      <div class="flex justify-between items-start mb-3">
+        <span class="font-mono text-sm text-slate-300">{{ invoice.invoiceId }}</span>
+        <app-status-badge [status]="invoice.status" />
+      </div>
+      <div class="text-sm text-slate-400 mb-4">
+        {{ invoice.billingPeriod.startDate | date: 'MMM d' }} - {{ invoice.billingPeriod.endDate | date: 'MMM d, yyyy' }}
+      </div>
+      <div class="text-2xl font-bold text-slate-100 mb-4">
+        {{ invoice.charges.totalAmount | currency }}
+      </div>
+      <div class="flex gap-2">
+        <button
+          (click)="viewDetails(invoice)"
+          class="flex-1 px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-100 rounded text-sm font-semibold transition-colors">
+          View
+        </button>
+        <button
+          *ngIf="invoice.status === 'PENDING'"
+          (click)="onPayClick(invoice.invoiceId)"
+          class="flex-1 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded text-sm font-semibold transition-colors">
+          Pay
+        </button>
+      </div>
+    </div>
+
+    <!-- Empty State -->
+    <div *ngIf="((invoices$ | async) || []).length === 0" class="text-center py-12">
+      <div class="text-3xl mb-2">📄</div>
+      <div class="text-slate-400">No invoices found</div>
+    </div>
+  </div>
+
+  <!-- Pagination -->
+  <div *ngIf="totalPages > 1" class="flex justify-center items-center gap-4 mt-8">
+    <button
+      (click)="previousPage()"
+      [disabled]="currentPage === 0"
+      class="px-4 py-2 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed text-slate-100 rounded font-semibold transition-colors">
+      ← Previous
+    </button>
+    <span class="text-slate-400">Page {{ currentPage + 1 }} of {{ totalPages }}</span>
+    <button
+      (click)="nextPage()"
+      [disabled]="currentPage >= totalPages - 1"
+      class="px-4 py-2 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed text-slate-100 rounded font-semibold transition-colors">
+      Next →
+    </button>
+  </div>
+</div>

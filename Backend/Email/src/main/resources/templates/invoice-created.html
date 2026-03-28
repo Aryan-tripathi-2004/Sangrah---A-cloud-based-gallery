@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f9f9f9;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .header {
+            border-bottom: 3px solid #FF9800;
+            padding-bottom: 20px;
+            text-align: center;
+        }
+        .header h1 {
+            color: #FF9800;
+            margin: 0;
+            font-size: 24px;
+        }
+        .content {
+            padding: 20px 0;
+        }
+        .content p {
+            margin: 10px 0;
+        }
+        .invoice-details {
+            background-color: #fff3e0;
+            padding: 15px;
+            border-radius: 4px;
+            border-left: 4px solid #FF9800;
+            margin: 20px 0;
+        }
+        .invoice-details p {
+            margin: 8px 0;
+        }
+        .button {
+            display: inline-block;
+            padding: 12px 30px;
+            background-color: #FF9800;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            margin: 20px 0;
+        }
+        .footer {
+            border-top: 1px solid #ddd;
+            padding-top: 20px;
+            text-align: center;
+            font-size: 12px;
+            color: #999;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📋 New Invoice</h1>
+        </div>
+
+        <div class="content">
+            <p>Dear User,</p>
+
+            <p>A new invoice has been generated for your Sangrah Cloud Storage account. Please review the details below and pay by the due date.</p>
+
+            <div class="invoice-details">
+                <p><strong>Invoice ID:</strong> <span th:text="${invoiceId}">INV-xxxxx</span></p>
+                <p><strong>Amount Due:</strong> <span th:text="${amount}" style="font-size: 18px; color: #FF9800;">$99.99</span></p>
+                <p><strong>Due Date:</strong> <span th:text="${dueDate}">2026-04-25</span></p>
+                <p><strong>Status:</strong> <span style="color: #FF9800; font-weight: bold;">PENDING</span></p>
+            </div>
+
+            <p>Please pay this invoice by the due date to avoid service interruptions.</p>
+
+            <a th:href="${payLink}" class="button">Pay Now</a>
+
+            <p style="margin-top: 30px;">You can also manage your invoices and make payments from your Sangrah dashboard at any time.</p>
+
+            <p>If you have any questions or need to discuss payment arrangements, please contact our billing team:</p>
+            <p><strong>Email:</strong> billing@sangrah.com<br>
+            <strong>Phone:</strong> Support available 24/7</p>
+
+            <p>Thank you for using Sangrah Cloud Storage!</p>
+        </div>
+
+        <div class="footer">
+            <p>This is an automated email. Please do not reply to this message.</p>
+            <p>© 2026 Sangrah Cloud Storage. All rights reserved.</p>
+            <p>For support, visit <a href="https://www.sangrah.com">www.sangrah.com</a> or email support@sangrah.com</p>
+        </div>
+    </div>
+</body>
+</html>

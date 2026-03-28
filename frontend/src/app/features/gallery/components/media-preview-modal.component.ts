@@ -1,0 +1,138 @@
+import { Component, Input, Output, EventEmitter, inject, ChangeDetectionStrategy } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { MediaItem, SangrahApiService } from '../../../core/api/sangrah-api.service';
+
+@Component({
+  selector: 'app-media-preview-modal',
+  standalone: true,
+  imports: [CommonModule],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    <div *ngIf="isOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+      <!-- Modal Container -->
+      <div class="relative w-full h-full max-w-5xl max-h-screen flex flex-col bg-slate-900">
+
+        <!-- Header -->
+        <div class="flex items-center justify-between p-4 border-b border-slate-700 bg-slate-800/50">
+          <div class="flex-1">
+            <h2 class="text-lg font-semibold text-white truncate">{{ media?.originalFileName }}</h2>
+            <p class="text-xs text-slate-400 mt-1">
+              {{ media?.type === 'IMAGE' ? '🖼️ Image' : '🎬 Video' }} • {{ formatSize(media?.sizeBytes || 0) }} • {{ media?.uploadedAt | date: 'MMM d, yyyy' }}
+            </p>
+          </div>
+          <button
+            (click)="close()"
+            class="px-4 py-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition"
+            title="Close (ESC)"
+          >
+            ✕
+          </button>
+        </div>
+
+        <!-- Media Content -->
+        <div class="flex-1 flex items-center justify-center overflow-auto bg-black p-4">
+          <!-- Image -->
+          <img
+            *ngIf="media?.type === 'IMAGE'"
+            [src]="fileUrl"
+            [alt]="media?.originalFileName"
+            class="max-w-full max-h-full object-contain rounded-lg"
+            (error)="onMediaError()"
+          />
+
+          <!-- Video -->
+          <video
+            *ngIf="media?.type === 'VIDEO'"
+            controls
+            class="max-w-full max-h-full rounded-lg"
+            (error)="onMediaError()"
+          >
+            <source [src]="fileUrl" />
+            Your browser does not support the video tag.
+          </video>
+
+          <!-- Fallback -->
+          <div *ngIf="!media" class="text-center">
+            <div class="text-6xl mb-4">⚠️</div>
+            <p class="text-slate-400">Failed to load media</p>
+          </div>
+        </div>
+
+        <!-- Footer with Actions -->
+        <div class="flex items-center justify-between p-4 border-t border-slate-700 bg-slate-800/50">
+          <div class="text-xs text-slate-400">
+            {{ media?.type === 'IMAGE' ? '💡 Tip: Use scroll to zoom' : '💡 Tip: Use video controls to play/pause' }}
+          </div>
+          <div class="flex gap-2">
+            <button
+              (click)="downloadMedia()"
+              class="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded font-medium text-sm transition"
+              title="Download"
+            >
+              ⬇️ Download
+            </button>
+            <button
+              (click)="close()"
+              class="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded font-medium text-sm transition"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `,
+  styles: [
+    `
+      :host {
+        display: block;
+      }
+      img, video {
+        -webkit-user-select: none;
+        user-select: none;
+      }
+    `,
+  ],
+})
+export class MediaPreviewModalComponent {
+  private api = inject(SangrahApiService);
+
+  @Input() isOpen = false;
+  @Input() media: MediaItem | null = null;
+  @Output() closeModal = new EventEmitter<void>();
+
+  fileUrl: string = '';
+
+  ngOnChanges(): void {
+    if (this.media && this.isOpen) {
+      this.fileUrl = this.api.getGalleryMediaFile(this.media.id);
+    }
+  }
+
+  close(): void {
+    this.closeModal.emit();
+  }
+
+  onMediaError(): void {
+    console.error('Failed to load media:', this.media?.id);
+  }
+
+  downloadMedia(): void {
+    if (!this.media) return;
+
+    const link = document.createElement('a');
+    link.href = this.fileUrl;
+    link.download = this.media.originalFileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  formatSize(bytes: number): string {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round((bytes / Math.pow(k, i)) * 10) / 10 + ' ' + sizes[i];
+  }
+}
