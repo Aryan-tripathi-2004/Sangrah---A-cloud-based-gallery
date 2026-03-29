@@ -9,10 +9,10 @@
 		<relativePath/>
 	</parent>
 	<groupId>com.example</groupId>
-	<artifactId>Gallery</artifactId>
+	<artifactId>Media</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
-	<name>Gallery</name>
-	<description>Microservice for gallery</description>
+	<name>Media</name>
+	<description>Microservice for unified media storage</description>
 	<url/>
 	<licenses>
 		<license/>
@@ -46,10 +46,6 @@
 		<dependency>
 			<groupId>org.springframework.cloud</groupId>
 			<artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
-		</dependency>
-		<dependency>
-			<groupId>org.springframework.cloud</groupId>
-			<artifactId>spring-cloud-starter-openfeign</artifactId>
 		</dependency>
 		<dependency>
 			<groupId>org.springdoc</groupId>
