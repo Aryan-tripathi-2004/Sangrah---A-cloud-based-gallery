@@ -30,7 +30,8 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
     private final List<String> openApiEndpoints = List.of(
             "/api/v1/auth/register",
             "/api/v1/auth/login",
-            "/api/v1/auth/token/refresh",  // ⭐ FIXED: Correct path for token refresh
+            "/api/v1/auth/token/refresh",
+            "/api/v1/auth/token/validate",
             "/swagger-ui/",
             "/v3/api-docs/",
             "/health",
@@ -61,34 +62,26 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
             return chain.filter(exchange);
         }
 
-        // Allow file serving endpoint without Authorization header (JWT can be in query param)
-        log.debug("🔍 Checking bypass - path contains /gallery/media/: {} | contains /file: {}",
-            path.contains("/gallery/media/"), path.contains("/file"));
-        if (path.contains("/gallery/media/") && path.contains("/file")) {
-            log.info("✅📁 FILE ENDPOINT BYPASSED - forwarding to Gallery Service (JWT in query param)");
-            log.info("   Path: {} | Auth header presence: {}", path, !exchange.getRequest().getHeaders().getOrEmpty("Authorization").isEmpty());
-            return chain.filter(exchange);
-        }
-
-        // Extract Authorization header
+        // Extract Authorization header or token query parameter
+        String token = null;
         List<String> authHeaders = exchange.getRequest().getHeaders().getOrEmpty("Authorization");
-        log.info("📋 Authorization headers present: {}", !authHeaders.isEmpty());
+        
+        if (!authHeaders.isEmpty() && authHeaders.get(0).startsWith("Bearer ")) {
+            token = authHeaders.get(0).substring(7);
+            log.info("📋 Authorization header present");
+        } else {
+            // Check query parameter (used by <img> and <video> tags where Authorization header cannot be set)
+            token = exchange.getRequest().getQueryParams().getFirst("token");
+            if (token != null && !token.isBlank()) {
+                log.info("📋 Token query parameter present");
+            }
+        }
 
-        if (authHeaders.isEmpty()) {
-            log.warn("❌ No Authorization header for protected route: {}", path);
+        if (token == null || token.isBlank()) {
+            log.warn("❌ No token found for protected route: {}", path);
             exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
             return exchange.getResponse().setComplete();
         }
-
-        String authHeader = authHeaders.get(0);
-
-        // Validate Bearer token format
-        if (!authHeader.startsWith("Bearer ")) {
-            exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
-            return exchange.getResponse().setComplete();
-        }
-
-        String token = authHeader.substring(7); // Remove "Bearer " prefix
 
         try {
             // Validate JWT token

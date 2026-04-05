@@ -17,6 +17,20 @@ export const errorInterceptor: HttpInterceptorFn = (req, next) => {
       // Handle 401 Unauthorized - attempt to refresh token
       if (error.status === 401) {
         
+        // CRITICAL: If the 401 is from the refresh endpoint itself, we are fully logged out.
+        // Don't try to intercept it again, just fail immediately.
+        if (req.url.includes('/auth/token/refresh')) {
+          console.error('❌ Refresh token 401 - Session dead');
+          isRefreshing = false;
+          refreshTokenSubject.next('REFRESH_FAILED');
+          if (typeof window !== 'undefined') {
+            localStorage.removeItem('token');
+            localStorage.removeItem('refreshToken');
+          }
+          router.navigate(['/login']);
+          return throwError(() => error);
+        }
+
         if (!isRefreshing) {
           isRefreshing = true;
           refreshTokenSubject.next(null);
@@ -54,6 +68,9 @@ export const errorInterceptor: HttpInterceptorFn = (req, next) => {
                 localStorage.removeItem('token');
                 localStorage.removeItem('refreshToken');
               }
+              // Unblock queued requests by emitting a failure indicator
+              refreshTokenSubject.next('REFRESH_FAILED');
+              
               router.navigate(['/login']);
               return throwError(() => new Error('Session expired. Please log in again.'));
             })
@@ -64,11 +81,18 @@ export const errorInterceptor: HttpInterceptorFn = (req, next) => {
             filter(token => token != null),
             take(1),
             switchMap(token => {
+              if (token === 'REFRESH_FAILED') {
+                return throwError(() => new Error('Session expired. Please log in again.'));
+              }
               return next(req.clone({
                 setHeaders: {
                   Authorization: `Bearer ${token}`
                 }
               }));
+            }),
+            catchError(err => {
+              // If the subject errors out (e.g. refresh failed), propagate that error
+              return throwError(() => err);
             })
           );
         }

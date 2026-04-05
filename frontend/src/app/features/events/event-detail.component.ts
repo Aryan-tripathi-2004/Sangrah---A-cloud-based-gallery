@@ -1,19 +1,38 @@
-import { Component, OnInit, inject } from '@angular/core';
+﻿import { Component, OnInit, inject, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { ActivatedRoute, RouterLink } from '@angular/router';
-import { SangrahApiService, Event, Gallery } from '../../core/api/sangrah-api.service';
+import { FormsModule } from '@angular/forms';
+import { ActivatedRoute, RouterLink, Router } from '@angular/router';
+import { SangrahApiService, Event } from '../../core/api/sangrah-api.service';
 import { LayoutComponent } from '../../shared/layout/layout.component';
+import { EventMediaUploadComponent } from './components/event-media-upload.component';
+import { EventMediaApprovalComponent } from './components/event-media-approval.component';
+import { EventTimelineComponent } from './components/event-timeline.component';
+import { EventAccessRequestComponent } from './components/event-access-request.component';
+import { EventAccessRequestsComponent } from './components/event-access-requests.component';
+import { EventCollaboratorsComponent } from './components/event-collaborators.component';
+import { EventService } from './event.service';
 
 @Component({
   selector: 'app-event-detail',
   standalone: true,
-  imports: [CommonModule, RouterLink, LayoutComponent],
+  imports: [
+    CommonModule,
+    FormsModule,
+    RouterLink,
+    LayoutComponent,
+    EventMediaUploadComponent,
+    EventMediaApprovalComponent,
+    EventTimelineComponent,
+    EventAccessRequestComponent,
+    EventAccessRequestsComponent,
+    EventCollaboratorsComponent,
+  ],
   template: `
     <app-layout>
       <div class="space-y-8">
         <!-- Back Button -->
         <a routerLink="/event" class="inline-flex items-center gap-2 text-blue-400 hover:text-blue-300 transition">
-          ← Back to Events
+          &larr; Back to Events
         </a>
 
         <!-- Event Header -->
@@ -23,14 +42,25 @@ import { LayoutComponent } from '../../shared/layout/layout.component';
               <h1 class="text-4xl font-bold mb-2">{{ event.title }}</h1>
               <p class="text-slate-300">{{ event.description }}</p>
             </div>
-            <div class="text-right">
-              <div class="text-3xl mb-2">
-                <span *ngIf="event.visibility === 'PUBLIC'">🌐</span>
-                <span *ngIf="event.visibility === 'PROTECTED'">🔒</span>
-              </div>
-              <span class="px-3 py-1 rounded-full text-sm font-semibold" [ngClass]="{'bg-green-500/20 text-green-400': event.visibility === 'PUBLIC', 'bg-yellow-500/20 text-yellow-400': event.visibility === 'PROTECTED'}">
+            <div class="text-right space-y-3">
+              <!-- visibility badge -->
+              <span class="px-3 py-1 rounded-full text-sm font-semibold block" [ngClass]="{'bg-green-500/20 text-green-400': event.visibility === 'PUBLIC', 'bg-yellow-500/20 text-yellow-400': event.visibility === 'PROTECTED', 'bg-red-500/20 text-red-400': event.visibility === 'PRIVATE'}">
                 {{ event.visibility }}
               </span>
+              
+              <!-- Action Buttons (Owner only) -->
+              <div *ngIf="isEventOwner" class="flex gap-2">
+                <button
+                  (click)="openEditEventModal()"
+                  class="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg font-semibold transition text-sm">
+                  Edit Event
+                </button>
+                <button
+                  (click)="deleteEvent()"
+                  class="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg font-semibold transition text-sm">
+                  Delete Event
+                </button>
+              </div>
             </div>
           </div>
 
@@ -48,114 +78,246 @@ import { LayoutComponent } from '../../shared/layout/layout.component';
               <p class="text-lg font-semibold">{{ event.createdAt | date:'MMM d, y' }}</p>
             </div>
           </div>
+
+          <!-- Moderation Badge -->
+          <div class="mt-6 flex items-center gap-2">
+            <span *ngIf="event.moderationEnabled" class="px-3 py-1 bg-yellow-500/20 border border-yellow-500/30 rounded-full text-xs font-semibold text-yellow-400">
+              Moderation Enabled
+            </span>
+            <span *ngIf="!event.moderationEnabled" class="px-3 py-1 bg-green-500/20 border border-green-500/30 rounded-full text-xs font-semibold text-green-400">
+              Auto-approved uploads
+            </span>
+          </div>
         </div>
 
-        <!-- Tabs -->
-        <div class="flex gap-4 border-b border-slate-800">
+        <!-- Tabs (only show if user has approval) -->
+        <div *ngIf="event && !requiresApproval" class="flex gap-4 border-b border-slate-800 overflow-x-auto">
           <button
-            (click)="currentTab = 'media'"
-            [class.border-b-2]="currentTab === 'media'"
-            [class.border-blue-500]="currentTab === 'media'"
-            class="px-4 py-3 font-semibold transition hover:text-slate-100"
+            (click)="currentTab = 'timeline'"
+            [class.border-b-2]="currentTab === 'timeline'"
+            [class.border-blue-500]="currentTab === 'timeline'"
+            class="px-4 py-3 font-semibold transition hover:text-slate-100 whitespace-nowrap"
           >
-            📸 Media
+            Timeline
           </button>
           <button
-            (click)="currentTab = 'requests'"
-            [class.border-b-2]="currentTab === 'requests'"
-            [class.border-blue-500]="currentTab === 'requests'"
-            class="px-4 py-3 font-semibold transition hover:text-slate-100"
+            (click)="currentTab = 'upload'"
+            [class.border-b-2]="currentTab === 'upload'"
+            [class.border-blue-500]="currentTab === 'upload'"
+            class="px-4 py-3 font-semibold transition hover:text-slate-100 whitespace-nowrap"
           >
-            ⏳ Access Requests
+            Upload
           </button>
           <button
-            (click)="currentTab = 'settings'"
-            [class.border-b-2]="currentTab === 'settings'"
-            [class.border-blue-500]="currentTab === 'settings'"
-            class="px-4 py-3 font-semibold transition hover:text-slate-100"
+            *ngIf="isEventOwner"
+            (click)="currentTab = 'approvals'"
+            [class.border-b-2]="currentTab === 'approvals'"
+            [class.border-blue-500]="currentTab === 'approvals'"
+            class="px-4 py-3 font-semibold transition hover:text-slate-100 whitespace-nowrap"
           >
-            ⚙️ Settings
+            Approvals
+          </button>
+
+          <!-- NEW: Owner tabs for collaborators, policies, and access requests -->
+          <button
+            *ngIf="isEventOwner"
+            (click)="currentTab = 'collaborators'"
+            [class.border-b-2]="currentTab === 'collaborators'"
+            [class.border-blue-500]="currentTab === 'collaborators'"
+            class="px-4 py-3 font-semibold transition hover:text-slate-100 whitespace-nowrap"
+          >
+            Collaborators
+          </button>
+          <!-- Policies tab removed -->
+          <button
+            *ngIf="isEventOwner && event?.visibility === 'PROTECTED'"
+            (click)="currentTab = 'access-requests'"
+            [class.border-b-2]="currentTab === 'access-requests'"
+            [class.border-blue-500]="currentTab === 'access-requests'"
+            class="px-4 py-3 font-semibold transition hover:text-slate-100 whitespace-nowrap"
+          >
+            Access Requests ({{ pendingAccessCount }})
           </button>
         </div>
 
-        <!-- Media Tab -->
-        <div *ngIf="currentTab === 'media'" class="space-y-6">
-          <div class="flex items-center justify-between">
-            <h2 class="text-2xl font-bold">Event Media</h2>
-            <button class="px-6 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg font-semibold transition">
-              Upload Media
-            </button>
-          </div>
-
-          <div *ngIf="eventMedia.length > 0" class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            <div *ngFor="let media of eventMedia" class="group rounded-lg overflow-hidden bg-slate-800/30 border border-slate-700/50 hover:border-slate-600 transition">
-              <div class="h-40 bg-gradient-to-br from-blue-600/20 to-purple-600/20 flex items-center justify-center text-3xl">
-                🖼️
-              </div>
-              <div class="p-3">
-                <p class="font-semibold text-sm truncate">{{ media.originalFileName }}</p>
-                <p class="text-xs text-slate-400">{{ media.uploadedAt | date:'short' }}</p>
-              </div>
-            </div>
-          </div>
-
-          <div *ngIf="eventMedia.length === 0" class="text-center py-12 rounded-lg bg-slate-800/20 border border-slate-700/50">
-            <p class="text-slate-400 mb-4">No media uploaded yet</p>
-            <button class="px-6 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg font-semibold transition">
-              Upload First Media
-            </button>
-          </div>
+        <!-- Timeline Tab -->
+        <div *ngIf="currentTab === 'timeline' && !requiresApproval">
+          <app-event-timeline [eventId]="eventId"></app-event-timeline>
         </div>
 
-        <!-- Access Requests Tab -->
-        <div *ngIf="currentTab === 'requests'" class="space-y-6">
-          <h2 class="text-2xl font-bold">Access Requests</h2>
-          <p class="text-slate-400">Users who have requested access to this protected event.</p>
-          <div class="bg-slate-800/20 border border-slate-700/50 rounded-lg p-6 text-center">
-            <p class="text-slate-400">0 pending access requests</p>
-          </div>
+        <!-- Upload Tab -->
+        <div *ngIf="currentTab === 'upload' && !requiresApproval">
+          <app-event-media-upload
+            [eventId]="eventId"
+            [isOwner]="isEventOwner"
+            [isModerated]="event?.moderationEnabled || false"
+            (uploadComplete)="onUploadComplete()"
+          ></app-event-media-upload>
         </div>
 
-        <!-- Settings Tab -->
-        <div *ngIf="currentTab === 'settings'" class="space-y-6">
-          <h2 class="text-2xl font-bold">Event Settings</h2>
-          <div class="bg-slate-800/20 border border-slate-700/50 rounded-lg p-6">
-            <div class="space-y-4">
-              <div>
-                <label class="block text-sm font-semibold mb-2">Moderation Enabled</label>
-                <div class="flex items-center gap-2">
-                  <input type="checkbox" [checked]="event?.moderationEnabled" class="w-4 h-4" />
-                  <span class="text-slate-400">Require approval for submitted media</span>
-                </div>
-              </div>
-              <button class="px-6 py-2 bg-red-600 hover:bg-red-700 rounded-lg font-semibold transition">
-                Delete Event
-              </button>
-            </div>
-          </div>
+        <!-- Approvals Tab (Owner only) -->
+        <div *ngIf="currentTab === 'approvals' && isEventOwner && !requiresApproval">
+          <app-event-media-approval
+            [eventId]="eventId"
+            [isOwner]="isEventOwner"
+            (mediaUpdated)="onMediaUpdated()"
+          ></app-event-media-approval>
+        </div>
+
+        <!-- NEW: Collaborators Tab (Owner only) -->
+        <div *ngIf="currentTab === 'collaborators' && isEventOwner && !requiresApproval">
+          <app-event-collaborators [eventId]="eventId"></app-event-collaborators>
+        </div>
+
+        <!-- Policies feature removed -->
+
+        <!-- NEW: Access Requests Tab (Owner only, PROTECTED events) -->
+        <div *ngIf="currentTab === 'access-requests' && isEventOwner && !requiresApproval">
+          <app-event-access-requests [eventId]="eventId"></app-event-access-requests>
+        </div>
+
+        <!-- NEW: Access Request Component for non-owners (PROTECTED events without approval) -->
+        <app-event-access-request
+          *ngIf="requiresApproval && event?.visibility === 'PROTECTED' && !isEventOwner"
+          [eventId]="eventId"
+          [event]="event">
+        </app-event-access-request>
+
+        <!-- NEW: Access Request Component for non-owners (PROTECTED events with approval) -->
+        <app-event-access-request
+          *ngIf="!requiresApproval && event?.visibility === 'PROTECTED' && !isEventOwner && !event?.accessStatus"
+          [eventId]="eventId"
+          [event]="event">
+        </app-event-access-request>
+
+        <!-- NEW: Private Event Message for non-owners -->
+        <div *ngIf="event?.visibility === 'PRIVATE' && !isEventOwner && !isCollaborator"
+             class="bg-red-500/10 border border-red-500/30 rounded-lg p-6 text-center">
+          <p class="text-red-400 font-semibold text-lg">This is a Private Event</p>
+          <p class="text-slate-400 mt-2">Only the event owner and assigned collaborators can access this event.</p>
         </div>
 
         <!-- Loading State -->
         <div *ngIf="isLoading" class="text-center py-16">
           <p class="text-slate-400">Loading event details...</p>
         </div>
+
+        <!-- Edit Event Modal -->
+        <div *ngIf="showEditModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div class="bg-slate-900 border border-slate-700 rounded-lg p-6 w-full max-w-2xl max-h-96 overflow-y-auto">
+            <h2 class="text-2xl font-bold mb-6">Edit Event</h2>
+
+            <div class="space-y-4">
+              <!-- Title -->
+              <div>
+                <label class="block text-sm font-semibold mb-2">Event Title</label>
+                <input
+                  [(ngModel)]="editFormData.title"
+                  type="text"
+                  class="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <!-- Description -->
+              <div>
+                <label class="block text-sm font-semibold mb-2">Description</label>
+                <textarea
+                  [(ngModel)]="editFormData.description"
+                  rows="3"
+                  class="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                ></textarea>
+              </div>
+
+              <!-- Event Date -->
+              <div>
+                <label class="block text-sm font-semibold mb-2">Event Date</label>
+                <input
+                  [(ngModel)]="editFormData.eventDate"
+                  type="date"
+                  class="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <!-- Visibility -->
+              <div>
+                <label class="block text-sm font-semibold mb-2">Visibility</label>
+                <select
+                  [(ngModel)]="editFormData.visibility"
+                  class="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                >
+                  <option value="PUBLIC">Public</option>
+                  <option value="PROTECTED">Protected</option>
+                  <option value="PRIVATE">Private</option>
+                </select>
+              </div>
+
+              <!-- Moderation -->
+              <div class="flex items-center gap-3">
+                <input
+                  [(ngModel)]="editFormData.moderationEnabled"
+                  type="checkbox"
+                  id="moderation"
+                  class="w-4 h-4"
+                />
+                <label for="moderation" class="text-sm font-semibold">Require moderation for uploads</label>
+              </div>
+            </div>
+
+            <!-- Buttons -->
+            <div class="flex gap-3 mt-6">
+              <button
+                (click)="saveEventChanges()"
+                [disabled]="isSavingEvent"
+                class="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-600 rounded-lg font-semibold transition"
+              >
+                {{ isSavingEvent ? 'Saving...' : 'Save Changes' }}
+              </button>
+              <button
+                (click)="closeEditModal()"
+                class="flex-1 px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg font-semibold transition"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     </app-layout>
   `,
 })
+
 export class EventDetailComponent implements OnInit {
   private api = inject(SangrahApiService);
   private route = inject(ActivatedRoute);
+  private router = inject(Router);
+  private eventService = inject(EventService);
+  private cdr = inject(ChangeDetectorRef);
 
   event: Event | null = null;
-  eventMedia: Gallery[] = [];
+  eventId = '';
   isLoading = true;
-  currentTab = 'media';
+  requiresApproval = false;
+  currentTab = 'timeline';
+  isEventOwner = true;
+  isCollaborator = false;
+  pendingAccessCount = 0;
+
+  // Edit modal properties
+  showEditModal = false;
+  isSavingEvent = false;
+  editFormData = {
+    title: '',
+    description: '',
+    eventDate: '',
+    visibility: 'PUBLIC',
+    moderationEnabled: false,
+  };
 
   ngOnInit(): void {
     this.route.paramMap.subscribe((params) => {
       const eventId = params.get('id');
       if (eventId) {
+        this.eventId = eventId;
         this.loadEvent(eventId);
       }
     });
@@ -163,26 +325,112 @@ export class EventDetailComponent implements OnInit {
 
   loadEvent(eventId: string): void {
     this.api.getEventById(eventId).subscribe({
-      next: (event) => {
+      next: (event: any) => {
         this.event = event;
-        this.loadEventMedia(eventId);
+        // Check if user needs to request access for PROTECTED events
+        this.requiresApproval = event.requiresApproval === true;
+        
+        // TODO: Check if current user is event owner
+        this.isEventOwner = true; // For now, assume user is owner
+        
+        // Only load media if user has approval or event is public
+        if (!this.requiresApproval) {
+          this.loadEventMedia(eventId);
+        } else {
+          this.isLoading = false;
+        }
       },
-      error: () => {
+      error: (error) => {
+        console.error('Failed to load event:', error);
         this.isLoading = false;
       },
     });
   }
 
   loadEventMedia(eventId: string): void {
-    this.api.getEventMedia(eventId).subscribe({
-      next: (media) => {
-        this.eventMedia = media;
+    this.eventService.loadEventMedia(eventId).subscribe({
+      next: () => {
         this.isLoading = false;
+        // ensure UI updates immediately after media loads
+        try { this.cdr.detectChanges(); } catch {}
       },
-      error: () => {
-        this.eventMedia = [];
+      error: (error) => {
+        console.error('Failed to load event media:', error);
         this.isLoading = false;
+        try { this.cdr.detectChanges(); } catch {}
+      },
+    });
+  }
+
+  onUploadComplete(): void {
+    // Reload media list after upload
+    this.loadEventMedia(this.eventId);
+  }
+
+  onMediaUpdated(): void {
+    // Reload media list after approval/rejection
+    this.loadEventMedia(this.eventId);
+  }
+
+  openEditEventModal(): void {
+    if (this.event) {
+      this.editFormData = {
+        title: this.event.title,
+        description: this.event.description,
+        eventDate: this.event.eventDate,
+        visibility: this.event.visibility,
+        moderationEnabled: this.event.moderationEnabled || false,
+      };
+      this.showEditModal = true;
+    }
+  }
+
+  closeEditModal(): void {
+    this.showEditModal = false;
+  }
+
+  saveEventChanges(): void {
+    if (!this.eventId || !this.editFormData.title) {
+      alert('Please fill in all required fields');
+      return;
+    }
+
+    this.isSavingEvent = true;
+    this.api.updateEvent(this.eventId, this.editFormData).subscribe({
+      next: (updatedEvent: any) => {
+        this.event = updatedEvent;
+        this.showEditModal = false;
+        this.isSavingEvent = false;
+        alert('Event updated successfully');
+      },
+      error: (error) => {
+        this.isSavingEvent = false;
+        console.error('Failed to update event:', error);
+        alert('Failed to update event: ' + (error.error?.error || error.message));
+      },
+    });
+  }
+
+  deleteEvent(): void {
+    if (!confirm('Are you sure you want to delete this event? This action cannot be undone.')) {
+      return;
+    }
+
+    this.api.deleteEvent(this.eventId).subscribe({
+      next: () => {
+        alert('Event deleted successfully');
+        this.router.navigate(['/event']);
+      },
+      error: (error) => {
+        console.error('Failed to delete event:', error);
+        alert('Failed to delete event: ' + (error.error?.error || error.message));
       },
     });
   }
 }
+
+
+
+
+
+

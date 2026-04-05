@@ -1,13 +1,15 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, inject, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterLink } from '@angular/router';
+import { RouterLink, Router, ActivatedRoute } from '@angular/router';
 import { SangrahApiService, Event } from '../../core/api/sangrah-api.service';
 import { LayoutComponent } from '../../shared/layout/layout.component';
+import { map } from 'rxjs/operators';
+import { EventAccessRequestComponent } from './components/event-access-request.component';
 
 @Component({
   selector: 'app-events-list',
   standalone: true,
-  imports: [CommonModule, RouterLink, LayoutComponent],
+  imports: [CommonModule, RouterLink, LayoutComponent, EventAccessRequestComponent],
   template: `
     <app-layout>
       <div class="space-y-8">
@@ -17,17 +19,43 @@ import { LayoutComponent } from '../../shared/layout/layout.component';
             <h1 class="text-4xl font-bold mb-2">Events</h1>
             <p class="text-slate-400">Discover and join events happening around you</p>
           </div>
-          <a href="#" class="px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 rounded-lg font-semibold transition">
+          <a routerLink="/event/create" class="px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 rounded-lg font-semibold transition">
             Create Event
           </a>
         </div>
 
         <!-- Filters -->
         <div class="flex gap-4 flex-wrap">
-          <button class="px-4 py-2 rounded-lg bg-blue-600 text-white font-medium">All Events</button>
-          <button class="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 font-medium transition">Public</button>
-          <button class="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 font-medium transition">Protected</button>
-          <button class="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 font-medium transition">My Events</button>
+          <button
+            (click)="selectFilter('all')"
+            [ngClass]="{'bg-blue-600 text-white': selectedFilter === 'all', 'bg-slate-700 hover:bg-slate-600 text-slate-300': selectedFilter !== 'all'}"
+            class="px-4 py-2 rounded-lg font-medium transition">
+            All Events
+          </button>
+          <button
+            (click)="selectFilter('public')"
+            [ngClass]="{'bg-blue-600 text-white': selectedFilter === 'public', 'bg-slate-700 hover:bg-slate-600 text-slate-300': selectedFilter !== 'public'}"
+            class="px-4 py-2 rounded-lg font-medium transition">
+            Public
+          </button>
+          <button
+            (click)="selectFilter('protected')"
+            [ngClass]="{'bg-blue-600 text-white': selectedFilter === 'protected', 'bg-slate-700 hover:bg-slate-600 text-slate-300': selectedFilter !== 'protected'}"
+            class="px-4 py-2 rounded-lg font-medium transition">
+            Protected
+          </button>
+          <button
+            (click)="selectFilter('private')"
+            [ngClass]="{'bg-blue-600 text-white': selectedFilter === 'private', 'bg-slate-700 hover:bg-slate-600 text-slate-300': selectedFilter !== 'private'}"
+            class="px-4 py-2 rounded-lg font-medium transition">
+            Private
+          </button>
+          <button
+            (click)="selectFilter('myEvents')"
+            [ngClass]="{'bg-blue-600 text-white': selectedFilter === 'myEvents', 'bg-slate-700 hover:bg-slate-600 text-slate-300': selectedFilter !== 'myEvents'}"
+            class="px-4 py-2 rounded-lg font-medium transition">
+            My Events
+          </button>
         </div>
 
         <!-- Events Grid -->
@@ -54,17 +82,35 @@ import { LayoutComponent } from '../../shared/layout/layout.component';
                 <div class="flex items-center gap-2">
                   <span *ngIf="event.visibility === 'PUBLIC'">🌐</span>
                   <span *ngIf="event.visibility === 'PROTECTED'">🔒</span>
+                  <span *ngIf="event.visibility === 'PRIVATE'">🔐</span>
                   <span>{{ event.visibility }}</span>
                 </div>
               </div>
 
               <!-- Action Button -->
-              <a [routerLink]="['/event', event.id]" class="block w-full text-center px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg font-semibold transition">
-                View Event
-              </a>
+              <div class="mt-4">
+                <button *ngIf="event.visibility === 'PROTECTED' && event.accessStatus === 'PENDING'"
+                        class="block w-full text-center px-4 py-2 bg-yellow-500 cursor-not-allowed rounded-lg font-semibold transition" disabled>
+                  ⏳ Request Pending
+                </button>
+                <button *ngIf="!(event.visibility === 'PROTECTED' && event.accessStatus === 'PENDING')"
+                        (click)="viewEventOrRequest(event)"
+                        class="block w-full text-center px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg font-semibold transition">
+                  View Event
+                </button>
+              </div>
             </div>
           </div>
         </div>
+
+        <!-- Request Access Modal (reused component) -->
+        <app-event-access-request *ngIf="showRequestModal"
+                                  [eventId]="pendingRequestEvent?.id"
+                                  [event]="pendingRequestEvent"
+                                  [autoOpen]="true"
+                                  (requestSubmitted)="onRequestSubmitted()"
+                                  (requestWithdrawn)="onRequestWithdrawn()">
+        </app-event-access-request>
 
         <!-- Loading State -->
         <div *ngIf="isLoading" class="text-center py-16">
@@ -86,24 +132,143 @@ import { LayoutComponent } from '../../shared/layout/layout.component';
 })
 export class EventsListComponent implements OnInit {
   private api = inject(SangrahApiService);
+  private cdr = inject(ChangeDetectorRef);
+  private router = inject(Router);
+  private activatedRoute = inject(ActivatedRoute);
+
+  showRequestModal = false;
+  pendingRequestEvent: any = null;
 
   events: Event[] = [];
   isLoading = true;
+  selectedFilter: 'all' | 'public' | 'protected' | 'private' | 'myEvents' = 'all';
 
   ngOnInit(): void {
+    this.loadEvents();
+
+    // Open request modal when redirected here with a requestEventId query param
+    try {
+      this.activatedRoute.queryParamMap.subscribe(params => {
+        const reqId = params.get('requestEventId');
+        if (reqId) {
+          this.api.getEventById(reqId).subscribe({
+            next: (ev: any) => {
+              this.pendingRequestEvent = ev;
+              this.showRequestModal = true;
+              this.cdr.detectChanges();
+            },
+            error: () => {
+              this.pendingRequestEvent = { id: reqId };
+              this.showRequestModal = true;
+              this.cdr.detectChanges();
+            }
+          });
+        }
+      });
+    } catch (e) { }
+  }
+
+  selectFilter(filter: 'all' | 'public' | 'protected' | 'private' | 'myEvents'): void {
+    this.selectedFilter = filter;
     this.loadEvents();
   }
 
   loadEvents(): void {
-    this.api.getGlobalEvents().subscribe({
+    this.isLoading = true;
+    let request;
+
+    switch (this.selectedFilter) {
+      case 'all':
+        request = this.api.getGlobalEvents();
+        break;
+      case 'public':
+        // Get global events and filter for PUBLIC visibility
+        request = this.api.getGlobalEvents().pipe(
+          map(events => events.filter(e => e.visibility === 'PUBLIC'))
+        );
+        break;
+      case 'protected':
+        // Get global events and filter for PROTECTED visibility
+        request = this.api.getGlobalEvents().pipe(
+          map(events => events.filter(e => e.visibility === 'PROTECTED'))
+        );
+        break;
+      case 'private':
+        // Get global events and filter for PRIVATE visibility
+        request = this.api.getGlobalEvents().pipe(
+          map(events => events.filter(e => e.visibility === 'PRIVATE'))
+        );
+        break;
+      case 'myEvents':
+        request = this.api.getMyEvents();
+        break;
+    }
+
+    request.subscribe({
       next: (events) => {
-        this.events = events;
+        console.log('✅ [EventsListComponent] Successfully loaded events:', events);
+        this.events = events || [];
         this.isLoading = false;
+        this.cdr.detectChanges();
       },
-      error: () => {
+      error: (err) => {
+        console.error('❌ [EventsListComponent] Failed to load events:', err);
         this.events = [];
         this.isLoading = false;
+        this.cdr.detectChanges();
       },
     });
+  }
+
+  viewEventOrRequest(event: Event): void {
+    // Check server for access requirements before navigating
+    this.api.getEventById(event.id).subscribe({
+      next: (fullEvent: any) => {
+        // If protected and requiresApproval flag set, show request modal instead of navigating
+        if (fullEvent && fullEvent.visibility === 'PROTECTED' && fullEvent.requiresApproval === true) {
+          this.pendingRequestEvent = fullEvent;
+          this.showRequestModal = true;
+          this.cdr.detectChanges();
+          return;
+        }
+        // Otherwise navigate to event detail
+        this.router.navigate(['/event', event.id]);
+      },
+      error: (err) => {
+        // If backend returns 403 for protected event, open request modal
+        if (err && err.status === 403) {
+          this.pendingRequestEvent = event;
+          this.showRequestModal = true;
+          this.cdr.detectChanges();
+          return;
+        }
+        console.error('Failed to check event access:', err);
+      }
+    });
+  }
+
+  onRequestSubmitted(): void {
+    // Mark the corresponding event in the list as pending
+    if (!this.pendingRequestEvent) return;
+    const id = this.pendingRequestEvent.id || this.pendingRequestEvent.eventId;
+    const found = this.events.find(e => e.id === id);
+    if (found) {
+      (found as any).accessStatus = 'PENDING';
+    }
+    this.showRequestModal = false;
+    this.pendingRequestEvent = null;
+    this.cdr.detectChanges();
+  }
+
+  onRequestWithdrawn(): void {
+    if (!this.pendingRequestEvent) return;
+    const id = this.pendingRequestEvent.id || this.pendingRequestEvent.eventId;
+    const found = this.events.find(e => e.id === id);
+    if (found) {
+      (found as any).accessStatus = undefined;
+    }
+    this.showRequestModal = false;
+    this.pendingRequestEvent = null;
+    this.cdr.detectChanges();
   }
 }

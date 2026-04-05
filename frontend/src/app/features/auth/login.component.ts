@@ -1,7 +1,7 @@
 import { Component, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
+import { Router, RouterLink, ActivatedRoute } from '@angular/router';
 import { AuthService } from '../../core/auth/auth.service';
 import { LayoutComponent } from '../../shared/layout/layout.component';
 
@@ -85,6 +85,7 @@ import { LayoutComponent } from '../../shared/layout/layout.component';
 export class LoginComponent {
   private authService = inject(AuthService);
   private router = inject(Router);
+  private route = inject(ActivatedRoute);
   private fb = inject(FormBuilder);
 
   form = this.fb.group({
@@ -109,8 +110,9 @@ export class LoginComponent {
     this.authService.login(email, password).subscribe({
       next: () => {
         this.successMessage = 'Login successful! Redirecting...';
+        const returnUrl = this.route.snapshot.queryParamMap.get('returnUrl') || '/dashboard';
         setTimeout(() => {
-          this.router.navigate(['/dashboard']);
+          this.router.navigateByUrl(returnUrl);
         }, 1000);
       },
       error: (err) => {

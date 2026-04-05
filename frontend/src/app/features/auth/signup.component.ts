@@ -1,7 +1,7 @@
 import { Component, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators, AbstractControl, ValidationErrors } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
+import { Router, RouterLink, ActivatedRoute } from '@angular/router';
 import { AuthService } from '../../core/auth/auth.service';
 import { LayoutComponent } from '../../shared/layout/layout.component';
 
@@ -114,6 +114,7 @@ import { LayoutComponent } from '../../shared/layout/layout.component';
 export class SignupComponent {
   private authService = inject(AuthService);
   private router = inject(Router);
+  private route = inject(ActivatedRoute);
   private fb = inject(FormBuilder);
 
   form = this.fb.group(
@@ -153,8 +154,9 @@ export class SignupComponent {
     this.authService.register(email, password, displayName).subscribe({
       next: () => {
         this.successMessage = 'Account created successfully! Redirecting...';
+        const returnUrl = this.route.snapshot.queryParamMap.get('returnUrl') || '/dashboard';
         setTimeout(() => {
-          this.router.navigate(['/dashboard']);
+          this.router.navigateByUrl(returnUrl);
         }, 1000);
       },
       error: (err) => {

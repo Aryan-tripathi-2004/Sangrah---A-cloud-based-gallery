@@ -143,6 +143,17 @@ public class AuthService {
         return mapToUserDTO(user);
     }
 
+    public UserDTO getUserByEmail(String email) {
+        log.info("📋 Fetching user profile for email: {}", email);
+        UserDocument user = userRepository.findByEmail(email)
+                .orElseThrow(() -> {
+                    log.warn("❌ User not found with email: {}", email);
+                    return new RuntimeException("User not found with email: " + email);
+                });
+        log.info("✅ User found with email: {}", email);
+        return mapToUserDTO(user);
+    }
+
     public UserDTO updateUser(String userId, UserDTO updateRequest) {
         log.info("📝 Updating user profile for userId: {}", userId);
         UserDocument user = userRepository.findById(userId)

@@ -99,13 +99,20 @@ export class MediaPreviewModalComponent {
 
   @Input() isOpen = false;
   @Input() media: MediaItem | null = null;
+  @Input() fileUrlOverride?: string | null;
   @Output() closeModal = new EventEmitter<void>();
 
   fileUrl: string = '';
 
   ngOnChanges(): void {
-    if (this.media && this.isOpen) {
-      this.fileUrl = this.api.getGalleryMediaFile(this.media.id);
+    if (this.isOpen) {
+      if (this.fileUrlOverride && this.fileUrlOverride.length > 0) {
+        this.fileUrl = this.fileUrlOverride;
+      } else if (this.media) {
+        this.fileUrl = this.api.getGalleryMediaFile(this.media.id);
+      } else {
+        this.fileUrl = '';
+      }
     }
   }
 

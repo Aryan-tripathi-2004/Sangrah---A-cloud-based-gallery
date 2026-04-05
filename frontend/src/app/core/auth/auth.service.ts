@@ -65,4 +65,16 @@ export class AuthService {
     }
     return localStorage.getItem('token');
   }
+
+  /**
+   * Restore auth state from localStorage.
+   * Called on app initialization to ensure auth state is maintained on page refresh.
+   */
+  restoreAuthState(): void {
+    const hasToken = this.hasToken();
+    this.isAuthenticatedSubject.next(hasToken);
+    if (hasToken) {
+      console.log('🔄 [AuthService] Auth state restored from localStorage');
+    }
+  }
 }

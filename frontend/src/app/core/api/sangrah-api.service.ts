@@ -20,6 +20,11 @@ export interface Event {
   moderationEnabled: boolean;
   status: string;
   createdAt: string;
+  uploadPolicy?: string;
+  moderationRequired?: boolean;
+  requiresApproval?: boolean; // NEW: Flag indicating user needs to request access
+  accessStatus?: string; // NEW: Access status (NO_ACCESS, APPROVED, PENDING)
+  message?: string; // NEW: Message about access status
 }
 
 export interface Gallery {
@@ -245,7 +250,7 @@ export class SangrahApiService {
   uploadGalleryMedia(file: File): Observable<MediaItem> {
     const formData = new FormData();
     formData.append('file', file);
-    return this.http.post<MediaItem>(`${this.baseUrl}/gallery/upload`, formData);
+    return this.http.post<MediaItem>(`${this.baseUrl}/gallery/media`, formData);
   }
 
   listGalleryMedia(): Observable<{ count: number; items: MediaItem[] }> {
@@ -263,6 +268,12 @@ export class SangrahApiService {
   getGalleryMediaFile(mediaId: string): string {
     const token = this.getTokenFromStorage();
     const url = `${this.baseUrl}/gallery/media/${mediaId}/file`;
+    return token ? `${url}?token=${encodeURIComponent(token)}` : url;
+  }
+
+  getEventMediaFile(eventId: string, mediaId: string): string {
+    const token = this.getTokenFromStorage();
+    const url = `${this.baseUrl}/events/${eventId}/media/${mediaId}/file`;
     return token ? `${url}?token=${encodeURIComponent(token)}` : url;
   }
 
@@ -312,16 +323,30 @@ export class SangrahApiService {
     return this.http.get<Event[]>(`${this.baseUrl}/events/global`);
   }
 
+  getPublicEvents(): Observable<Event[]> {
+    return this.http.get<Event[]>(`${this.baseUrl}/events/global?visibility=PUBLIC`);
+  }
+
+  getMyEvents(): Observable<Event[]> {
+    return this.http.get<Event[]>(`${this.baseUrl}/events/my-events`);
+  }
+
   getEventById(eventId: string): Observable<Event> {
     return this.http.get<Event>(`${this.baseUrl}/events/${eventId}`);
   }
 
-  createEvent(payload: Partial<Event>): Observable<Event> {
-    return this.http.post<Event>(`${this.baseUrl}/events`, payload);
+  createEvent(payload: Partial<Event>): Observable<any> {
+    return this.http.post<any>(`${this.baseUrl}/events`, payload).pipe(
+      map(response => ({ ...response, id: response.eventId || response.id })),
+      catchError(error => {
+        console.error('Create event failed:', error);
+        return throwError(() => error);
+      })
+    );
   }
 
   updateEvent(eventId: string, payload: Partial<Event>): Observable<Event> {
-    return this.http.put<Event>(`${this.baseUrl}/events/${eventId}`, payload);
+    return this.http.patch<Event>(`${this.baseUrl}/events/${eventId}`, payload);
   }
 
   deleteEvent(eventId: string): Observable<void> {
@@ -332,29 +357,23 @@ export class SangrahApiService {
     return this.http.get<Gallery[]>(`${this.baseUrl}/events/${eventId}/media`);
   }
 
-  uploadEventMedia(eventId: string, formData: FormData): Observable<Gallery> {
-    return this.http.post<Gallery>(`${this.baseUrl}/events/${eventId}/media`, formData);
+  uploadEventMedia(eventId: string, file: File): Observable<any> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    return this.http.post<any>(`${this.baseUrl}/events/${eventId}/media`, formData);
   }
 
-  // Access request endpoints
-  requestEventAccess(eventId: string): Observable<void> {
-    return this.http.post<void>(`${this.baseUrl}/events/${eventId}/request-access`, {});
+  approveEventMedia(eventId: string, mediaId: string): Observable<any> {
+    return this.http.patch<any>(`${this.baseUrl}/events/${eventId}/media/${mediaId}/approve`, {});
   }
 
-  getPendingAccessRequests(): Observable<Event[]> {
-    return this.http.get<Event[]>(`${this.baseUrl}/events/pending-requests`);
+  rejectEventMedia(eventId: string, mediaId: string, reason: string): Observable<any> {
+    return this.http.patch<any>(`${this.baseUrl}/events/${eventId}/media/${mediaId}/reject`, { reason });
   }
 
-  getEventAccessRequests(eventId: string): Observable<unknown[]> {
-    return this.http.get<unknown[]>(`${this.baseUrl}/events/${eventId}/access-requests`);
-  }
-
-  approveAccessRequest(eventId: string, userId: string): Observable<void> {
-    return this.http.post<void>(`${this.baseUrl}/events/${eventId}/approve-access/${userId}`, {});
-  }
-
-  rejectAccessRequest(eventId: string, userId: string): Observable<void> {
-    return this.http.post<void>(`${this.baseUrl}/events/${eventId}/reject-access/${userId}`, {});
+  deleteEventMedia(eventId: string, mediaId: string): Observable<any> {
+    return this.http.delete<any>(`${this.baseUrl}/events/${eventId}/media/${mediaId}`);
   }
 
   // Notification endpoints
@@ -445,5 +464,72 @@ export class SangrahApiService {
         return throwError(() => err);
       })
     );
+  }
+
+  // ===== EVENT ACCESS REQUEST METHODS =====
+
+  requestEventAccess(eventId: string, message?: string): Observable<any> {
+    return this.http.post(`${this.baseUrl}/events/${eventId}/access-requests`,
+      message ? { message } : {});
+  }
+
+  /**
+   * Get the URL for accessing event media file (image/video).
+   * This includes the token as a query parameter for authenticated access.
+   */
+  getEventMediaFileUrl(eventId: string, mediaId: string): string {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    const baseUrl = `${this.baseUrl}/events/${eventId}/media/${mediaId}/file`;
+    return token ? `${baseUrl}?token=${encodeURIComponent(token)}` : baseUrl;
+  }
+
+  getPendingAccessRequests(): Observable<any> {
+    return this.http.get<any>(`${this.baseUrl}/events/pending-requests`);
+  }
+
+  getEventAccessRequests(eventId: string): Observable<any[]> {
+    return this.http.get<any[]>(`${this.baseUrl}/events/${eventId}/access-requests`);
+  }
+
+  listAccessRequests(eventId: string): Observable<any[]> {
+    return this.http.get<any[]>(`${this.baseUrl}/events/${eventId}/access-requests`);
+  }
+
+  approveAccessRequest(eventId: string, requestId: string, payload?: any): Observable<any> {
+    return this.http.patch(`${this.baseUrl}/events/${eventId}/access-requests/${requestId}/approve`,
+      payload || {});
+  }
+
+  rejectAccessRequest(eventId: string, requestId: string, payload?: any): Observable<any> {
+    return this.http.patch(`${this.baseUrl}/events/${eventId}/access-requests/${requestId}/reject`,
+      payload || {});
+  }
+
+  // ===== EVENT COLLABORATOR METHODS =====
+
+  getEventCollaborators(eventId: string): Observable<any> {
+    return this.http.get(`${this.baseUrl}/events/${eventId}/collaborators`);
+  }
+
+  addEventCollaborator(eventId: string, payload: any): Observable<any> {
+    return this.http.post(`${this.baseUrl}/events/${eventId}/collaborators`, payload);
+  }
+
+  removeEventCollaborator(eventId: string, userId: string): Observable<any> {
+    return this.http.delete(`${this.baseUrl}/events/${eventId}/collaborators/${userId}`);
+  }
+
+  updateCollaboratorPermissions(eventId: string, userId: string, payload: any): Observable<any> {
+    return this.http.patch(`${this.baseUrl}/events/${eventId}/collaborators/${userId}`, payload);
+  }
+
+  // ===== EVENT POLICY METHODS =====
+
+  getEventPolicies(eventId: string): Observable<any> {
+    return this.http.get(`${this.baseUrl}/events/${eventId}/policies`);
+  }
+
+  updateEventPolicies(eventId: string, payload: any): Observable<any> {
+    return this.http.patch(`${this.baseUrl}/events/${eventId}/policies`, payload);
   }
 }

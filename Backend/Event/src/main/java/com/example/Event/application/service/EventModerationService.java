@@ -1,53 +1,148 @@
 package com.example.Event.application.service;
 
+import com.example.Event.infrastructure.persistence.document.EventMediaApprovalDocument;
+import com.example.Event.infrastructure.persistence.repository.EventMediaApprovalRepository;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.time.Instant;
+import java.util.Optional;
 
+@Slf4j
 @Service
+@RequiredArgsConstructor
 public class EventModerationService {
-    private final Map<String, Boolean> moderationByEvent = new ConcurrentHashMap<>();
-    private final Map<String, String> accessStatusByRequest = new ConcurrentHashMap<>();
-    private final Map<String, String> mediaStatusByMediaId = new ConcurrentHashMap<>();
 
-    public String createAccessRequest(String requestId) {
-        accessStatusByRequest.put(requestId, "PENDING");
-        return "PENDING";
-    }
+    private final EventMediaApprovalRepository approvalRepository;
 
-    public String approveAccess(String requestId) {
-        accessStatusByRequest.put(requestId, "APPROVED");
-        return "APPROVED";
-    }
+    /**
+     * Create media approval record (store in MongoDB instead of in-memory)
+     * Determine status based on event moderation setting
+     */
+    public String createMedia(String eventId, String mediaId, String uploaderUserId, boolean moderationEnabled) {
+        log.info("📝 [Moderation] Creating approval for media {} in event {}", mediaId, eventId);
 
-    public String rejectAccess(String requestId) {
-        accessStatusByRequest.put(requestId, "REJECTED");
-        return "REJECTED";
-    }
+        String status = moderationEnabled ? "PENDING" : "APPROVED";
 
-    public String createMedia(String eventId, String mediaId) {
-        String status = moderationByEvent.getOrDefault(eventId, true) ? "PENDING" : "APPROVED";
-        mediaStatusByMediaId.put(mediaId, status);
+        EventMediaApprovalDocument approval = EventMediaApprovalDocument.builder()
+                .eventId(eventId)
+                .mediaId(mediaId)
+                .uploaderUserId(uploaderUserId)
+                .status(status)
+                .createdAt(Instant.now())
+                .updatedAt(Instant.now())
+                .build();
+
+        approvalRepository.save(approval);
+        log.info("✅ [Moderation] Approval created with status: {}", status);
+
         return status;
     }
 
-    public String approveMedia(String mediaId) {
-        mediaStatusByMediaId.put(mediaId, "APPROVED");
+    /**
+     * Approve media (requires event owner/moderator)
+     */
+    public String approveMedia(String eventId, String mediaId, String reviewedByUserId) {
+        log.info("✅ [Moderation] Approving media {} in event {}", mediaId, eventId);
+
+        Optional<EventMediaApprovalDocument> existing = approvalRepository.findByEventIdAndMediaId(eventId, mediaId);
+
+        if (existing.isEmpty()) {
+            log.error("❌ [Moderation] Approval not found for media {} in event {}", mediaId, eventId);
+            throw new RuntimeException("Media approval not found");
+        }
+
+        EventMediaApprovalDocument approval = existing.get();
+        approval.setStatus("APPROVED");
+        approval.setReviewedByUserId(reviewedByUserId);
+        approval.setReviewedAt(Instant.now());
+        approval.setUpdatedAt(Instant.now());
+
+        approvalRepository.save(approval);
+        log.info("✅ [Moderation] Media approved successfully");
+
         return "APPROVED";
     }
 
-    public String rejectMedia(String mediaId) {
-        mediaStatusByMediaId.put(mediaId, "REJECTED");
+    /**
+     * Reject media with reason
+     */
+    public String rejectMedia(String eventId, String mediaId, String reviewedByUserId, String reason) {
+        log.info("❌ [Moderation] Rejecting media {} in event {}, reason: {}", mediaId, eventId, reason);
+
+        Optional<EventMediaApprovalDocument> existing = approvalRepository.findByEventIdAndMediaId(eventId, mediaId);
+
+        if (existing.isEmpty()) {
+            log.error("❌ [Moderation] Approval not found for media {} in event {}", mediaId, eventId);
+            throw new RuntimeException("Media approval not found");
+        }
+
+        EventMediaApprovalDocument approval = existing.get();
+        approval.setStatus("REJECTED");
+        approval.setReviewedByUserId(reviewedByUserId);
+        approval.setReviewedAt(Instant.now());
+        approval.setRejectionReason(reason);
+        approval.setUpdatedAt(Instant.now());
+
+        approvalRepository.save(approval);
+        log.info("✅ [Moderation] Media rejected");
+
         return "REJECTED";
     }
 
-    public boolean setModeration(String eventId, boolean enabled) {
-        moderationByEvent.put(eventId, enabled);
-        return enabled;
+    /**
+     * Get approval status for a media
+     */
+    public String getMediaStatus(String eventId, String mediaId) {
+        Optional<EventMediaApprovalDocument> approval = approvalRepository.findByEventIdAndMediaId(eventId, mediaId);
+
+        if (approval.isEmpty()) {
+            log.warn("⚠️ [Moderation] Approval not found for media {}", mediaId);
+            return "NOT_FOUND";
+        }
+
+        return approval.get().getStatus();
     }
 
-    public boolean getModeration(String eventId) {
-        return moderationByEvent.getOrDefault(eventId, true);
+    /**
+     * Check if media is approved
+     */
+    public boolean isMediaApproved(String eventId, String mediaId) {
+        Optional<EventMediaApprovalDocument> approval = approvalRepository.findByEventIdAndMediaId(eventId, mediaId);
+        return approval.isPresent() && approval.get().isApproved();
+    }
+
+    /**
+     * Set event moderation requirement
+     * Note: This is stored in EventDocument, not here
+     * This service only manages media approvals
+     */
+    public void setModeration(String eventId, boolean enabled) {
+        log.info("📋 [Moderation] Event {} moderation set to: {}", eventId, enabled);
+        // This would be set in EventService/EventDocument
+        // Not stored in this service
+    }
+
+    /**
+     * Delete media approval record
+     */
+    public void deleteMedia(String eventId, String mediaId) {
+        try {
+            log.info("🗑️ [Moderation] Deleting approval for media {} in event {}", mediaId, eventId);
+
+            Optional<EventMediaApprovalDocument> approval = approvalRepository.findByEventIdAndMediaId(eventId, mediaId);
+            
+            if (approval.isPresent()) {
+                approvalRepository.delete(approval.get());
+                log.info("✅ [Moderation] Approval deleted for media {}", mediaId);
+            } else {
+                log.warn("⚠️ [Moderation] Approval not found for media {}", mediaId);
+            }
+        } catch (Exception e) {
+            log.error("❌ [Moderation] Failed to delete approval: {}", e.getMessage());
+            throw new RuntimeException("Failed to delete media approval: " + e.getMessage());
+        }
     }
 }
+

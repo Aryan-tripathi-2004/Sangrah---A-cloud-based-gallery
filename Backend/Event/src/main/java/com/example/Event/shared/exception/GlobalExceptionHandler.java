@@ -55,11 +55,14 @@ public class GlobalExceptionHandler {
             WebRequest request) {
         log.error("Unexpected error occurred", ex);
 
+        Map<String, Object> details = new HashMap<>();
+        details.put("error", ex.getMessage() != null ? ex.getMessage() : "Unknown error");
+
         ErrorResponse errorResponse = ErrorResponse.builder()
                 .timestamp(LocalDateTime.now())
                 .status(HttpStatus.INTERNAL_SERVER_ERROR.value())
                 .message("An unexpected error occurred")
-                .details(Map.of("error", ex.getMessage()))
+                .details(details)
                 .path(request.getDescription(false).replace("uri=", ""))
                 .build();
 

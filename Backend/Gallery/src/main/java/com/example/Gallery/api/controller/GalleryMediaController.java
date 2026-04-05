@@ -40,10 +40,10 @@ public class GalleryMediaController {
 
     /**
      * Upload single or multiple media files
-     * POST /api/v1/gallery/upload
+     * POST /api/v1/gallery/media
      * No quota limits (pay-as-you-use model)
      */
-    @PostMapping("/upload")
+    @PostMapping("/media")
     @Operation(summary = "Upload media file(s)", description = "Upload one or more images/videos. No quota limits in pay-as-you-use model.")
     public ResponseEntity<?> upload(
             @RequestParam("file") MultipartFile file,

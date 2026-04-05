@@ -64,7 +64,7 @@ export class PendingRequestsComponent implements OnInit {
 
   loadPendingRequests(): void {
     this.api.getPendingAccessRequests().subscribe({
-      next: (response) => {
+      next: (response: any) => {
         // Handle both array and paginated response
         const events = Array.isArray(response) ? response : (response as any).content || [];
         this.pendingEvents = events;
@@ -72,7 +72,7 @@ export class PendingRequestsComponent implements OnInit {
         if (Array.isArray(events)) {
           events.forEach((event) => {
             this.api.getEventAccessRequests(event.id).subscribe({
-              next: (requests) => {
+              next: (requests: any) => {
                 this.pendingCounts[event.id] = requests.length;
               },
             });

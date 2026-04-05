@@ -2,17 +2,18 @@ package com.example.Gallery.application.service;
 
 import com.example.Gallery.api.dto.response.MediaItemResponse;
 import com.example.Gallery.api.dto.response.StorageUsageResponse;
+import com.example.Gallery.infrastructure.client.MediaServiceClient;
 import com.example.Gallery.infrastructure.persistence.document.GalleryMediaDocument;
 import com.example.Gallery.infrastructure.persistence.document.StorageUsageLedgerDocument;
 import com.example.Gallery.infrastructure.persistence.repository.GalleryMediaRepository;
 import com.example.Gallery.infrastructure.persistence.repository.StorageUsageLedgerRepository;
-import com.example.Gallery.infrastructure.storage.StorageProvider;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.core.io.Resource;
+import org.springframework.core.io.ByteArrayResource;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -29,81 +30,63 @@ public class MediaService {
 
     private final GalleryMediaRepository mediaRepository;
     private final StorageUsageLedgerRepository storageUsageLedgerRepository;
-    private final StorageProvider storageProvider;
+    private final MediaServiceClient mediaServiceClient;
 
     /**
-     * Upload media file with deduplication and ledger tracking
+     * Upload media file - delegates to Media Service
      */
     @Transactional
     public MediaItemResponse uploadMedia(String userId, MultipartFile file) throws IOException {
-        log.info("📤 Uploading media for user: {}, file: {}", userId, file.getOriginalFilename());
+        log.info("📤 Uploading media for user: {} via Media Service, file: {}", userId, file.getOriginalFilename());
 
-        // 1. Calculate SHA-256 hash for deduplication
-        String sha256Hash = calculateSha256Hash(file.getBytes());
-        log.debug("Hash computed: {}", sha256Hash);
-
-        // 2. Check for duplicates (user already uploaded this file?)
-        Optional<GalleryMediaDocument> existingMedia =
-                mediaRepository.findByUserIdAndChecksumSha256(userId, sha256Hash);
-
-        if (existingMedia.isPresent() && !existingMedia.get().isDeleted()) {
-            log.info("✅ Duplicate detected! Returning existing media: {}", existingMedia.get().getId());
-            return mapToResponse(existingMedia.get());
-        }
-
-        // 3. Store file via StorageProvider
-        String storageKey;
         try {
-            storageKey = storageProvider.save(file);
-            log.info("💾 File saved to storage: {}", storageKey);
+            // Call Media Service to handle actual file upload
+            Map<String, Object> mediaResponse = mediaServiceClient.uploadMedia(
+                    file,
+                    "GALLERY",
+                    null,
+                    userId
+            );
+            log.info("✅ File uploaded to Media Service, response: {}", mediaResponse);
+
+            String mediaId = (String) mediaResponse.get("id");
+            String storageKey = (String) mediaResponse.get("storageKey");
+            String checksum = (String) mediaResponse.get("checksumSha256");
+
+            // Store gallery-specific metadata in local database for fast queries
+            String type = file.getContentType() != null && file.getContentType().startsWith("video/") ? "VIDEO" : "IMAGE";
+            GalleryMediaDocument galleryMedia = GalleryMediaDocument.builder()
+                    .id(mediaId)  // Use same ID from Media Service
+                    .userId(userId)
+                    .ownerUserId(userId)
+                    .originalFileName(file.getOriginalFilename())
+                    .mimeType(file.getContentType())
+                    .sizeBytes(file.getSize())
+                    .storageKey(storageKey)
+                    .storageProvider("MEDIA_SERVICE")
+                    .checksumSha256(checksum)
+                    .type(type)
+                    .visibility("PRIVATE")
+                    .uploadedAt(Instant.now())
+                    .deletedAt(null)
+                    .createdAt(Instant.now())
+                    .updatedAt(Instant.now())
+                    .metadata(extractMetadata(file))
+                    .build();
+
+            GalleryMediaDocument savedGalleryMedia = mediaRepository.save(galleryMedia);
+            log.info("✅ Gallery metadata saved: {}", savedGalleryMedia.getId());
+
+            return mapToResponse(savedGalleryMedia);
+
         } catch (Exception e) {
-            log.error("❌ Storage save failed: {}", e.getMessage(), e);
-            throw new RuntimeException("Failed to save file: " + e.getMessage());
+            log.error("❌ Upload to Media Service failed: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to upload file: " + e.getMessage(), e);
         }
-
-        // 4. Create MediaDocument
-        String type = file.getContentType() != null && file.getContentType().startsWith("video/") ? "VIDEO" : "IMAGE";
-        GalleryMediaDocument media = GalleryMediaDocument.builder()
-                .userId(userId)
-                .ownerUserId(userId)
-                .originalFileName(file.getOriginalFilename())
-                .mimeType(file.getContentType())
-                .sizeBytes(file.getSize())
-                .storageKey(storageKey)
-                .storageProvider("LOCAL")
-                .checksumSha256(sha256Hash)
-                .type(type)
-                .visibility("PRIVATE")
-                .uploadedAt(Instant.now())
-                .deletedAt(null)  // Not deleted
-                .createdAt(Instant.now())
-                .updatedAt(Instant.now())
-                .metadata(extractMetadata(file))
-                .build();
-
-        GalleryMediaDocument savedMedia = mediaRepository.save(media);
-        log.info("✅ MediaDocument saved: {}", savedMedia.getId());
-
-        // 5. CREATE STORAGE USAGE LEDGER ENTRY (CRITICAL FOR BILLING!)
-        StorageUsageLedgerDocument ledgerEntry = StorageUsageLedgerDocument.builder()
-                .userId(userId)
-                .domain("GALLERY")
-                .domainRefId(savedMedia.getId())
-                .sizeBytes(file.getSize())
-                .startAt(Instant.now())
-                .endAt(null)  // Not deleted yet - null means active
-                .sourceService("Gallery")
-                .createdAt(Instant.now())
-                .build();
-
-        StorageUsageLedgerDocument savedLedger = storageUsageLedgerRepository.save(ledgerEntry);
-        log.info("🔍 StorageUsageLedger entry created: {} (CRITICAL FOR BILLING)", savedLedger.getId());
-
-        return mapToResponse(savedMedia);
     }
 
     /**
-     * Get user's current storage usage (informational, NOT a quota limit)
+     * Get user's current storage usage
      */
     public StorageUsageResponse getStorageUsage(String userId) {
         log.info("📊 Fetching storage usage for user: {}", userId);
@@ -138,7 +121,7 @@ public class MediaService {
     }
 
     /**
-     * Get media file for download/streaming
+     * Get media file for download/streaming - delegates to Media Service
      */
     public Resource getMediaFile(String userId, String mediaId) {
         log.info("📥 Fetching media file {} for user {}", mediaId, userId);
@@ -150,14 +133,27 @@ public class MediaService {
             throw new RuntimeException("Media has been deleted");
         }
 
-        // Load file from storage
-        Resource resource = storageProvider.load(media.getStorageKey());
-        log.info("✅ File loaded: {}", media.getStorageKey());
-        return resource;
+        try {
+            // Fetch file bytes from Media Service
+            byte[] fileBytes = mediaServiceClient.getMediaFile(mediaId, userId);
+            log.info("✅ File retrieved from Media Service: {} bytes", fileBytes.length);
+
+            // Return as ByteArrayResource for Spring to stream
+            return new ByteArrayResource(fileBytes) {
+                @Override
+                public String getFilename() {
+                    return media.getOriginalFileName();
+                }
+            };
+
+        } catch (Exception e) {
+            log.error("❌ Failed to fetch file from Media Service: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to load file from Media Service: " + e.getMessage(), e);
+        }
     }
 
     /**
-     * Delete media (soft delete - mark deletedAt, don't actually remove file)
+     * Delete media (soft delete) - delegates to Media Service
      */
     @Transactional
     public void deleteMedia(String userId, String mediaId) {
@@ -171,25 +167,33 @@ public class MediaService {
             return;
         }
 
-        // 1. Mark media as deleted (soft delete)
-        media.setDeletedAt(Instant.now());
-        media.setUpdatedAt(Instant.now());
-        mediaRepository.save(media);
-        log.info("✅ Media marked as deleted: {}", mediaId);
+        try {
+            // Call Media Service to soft delete
+            mediaServiceClient.deleteMedia(mediaId, userId);
+            log.info("✅ Media Service deletion confirmed");
 
-        // 2. MARK STORAGE LEDGER ENTRY AS DELETED (CRITICAL FOR BILLING!)
-        List<StorageUsageLedgerDocument> ledgerEntries = storageUsageLedgerRepository.findByDomainRefId(mediaId);
-        for (StorageUsageLedgerDocument entry : ledgerEntries) {
-            entry.setEndAt(Instant.now());
-            storageUsageLedgerRepository.save(entry);
-            log.info("🔍 StorageUsageLedger entry marked deleted: {} (CRITICAL FOR BILLING)", entry.getId());
+            // Mark in local gallery database
+            media.setDeletedAt(Instant.now());
+            media.setUpdatedAt(Instant.now());
+            mediaRepository.save(media);
+            log.info("✅ Gallery metadata marked deleted: {}", mediaId);
+
+            // Mark ledger entry as deleted (if exists in Gallery)
+            List<StorageUsageLedgerDocument> ledgerEntries = storageUsageLedgerRepository.findByDomainRefId(mediaId);
+            for (StorageUsageLedgerDocument entry : ledgerEntries) {
+                entry.setEndAt(Instant.now());
+                storageUsageLedgerRepository.save(entry);
+                log.info("📊 Gallery ledger entry marked deleted: {}", entry.getId());
+            }
+
+        } catch (Exception e) {
+            log.error("❌ Delete failed: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to delete media: " + e.getMessage(), e);
         }
-
-        log.info("✅ Soft delete complete for media: {}", mediaId);
     }
 
     /**
-     * List all NON-DELETED media for a user (for timeline/gallery view)
+     * List all NON-DELETED media for a user
      */
     public List<MediaItemResponse> listUserMedia(String userId) {
         log.info("📋 Listing media for user: {}", userId);
@@ -199,26 +203,22 @@ public class MediaService {
 
         return media.stream()
                 .map(this::mapToResponse)
-                .sorted(Comparator.comparing(MediaItemResponse::getUploadedAt).reversed())  // Newest first
+                .sorted(Comparator.comparing(MediaItemResponse::getUploadedAt).reversed())
                 .collect(Collectors.toList());
     }
 
     /**
      * Get storage ledger entries for a date range (for Billing service)
-     * This is exposed via REST API so other services can query Gallery's ledger data
-     * without direct database access (microservice principle)
      */
     public List<com.example.Gallery.api.dto.StorageUsageLedgerDTO> getLedgerEntriesBetweenDates(
             Instant startDate, Instant endDate) {
         log.info("📊 Querying ledger entries from {} to {}", startDate, endDate);
 
-        // Query storage ledger for entries in this date range
         List<StorageUsageLedgerDocument> ledgerEntries =
             storageUsageLedgerRepository.findByStartAtBetween(startDate, endDate);
 
         log.info("📋 Found {} ledger entries in date range", ledgerEntries.size());
 
-        // Convert documents to DTOs for REST API response
         return ledgerEntries.stream()
                 .map(this::mapLedgerToDTO)
                 .collect(Collectors.toList());
@@ -227,39 +227,10 @@ public class MediaService {
     // ============ HELPER METHODS ============
 
     /**
-     * Calculate SHA-256 hash for file deduplication
-     */
-    private String calculateSha256Hash(byte[] fileBytes) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] encodedhash = digest.digest(fileBytes);
-            return bytesToHex(encodedhash);
-        } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException("SHA-256 algorithm not available", e);
-        }
-    }
-
-    private String bytesToHex(byte[] hash) {
-        StringBuilder hexString = new StringBuilder(2 * hash.length);
-        for (byte b : hash) {
-            String hex = Integer.toHexString(0xff & b);
-            if (hex.length() == 1) hexString.append('0');
-            hexString.append(hex);
-        }
-        return hexString.toString();
-    }
-
-    /**
-     * Extract metadata from uploaded file (width, height, duration, EXIF)
-     * For v1.0: just basic info, can expand in v2.0 with image processing libraries
+     * Extract metadata from uploaded file
      */
     private Map<String, Object> extractMetadata(MultipartFile file) {
         Map<String, Object> metadata = new HashMap<>();
-        // TODO: In v2.0, use image/video processing libraries to extract:
-        // - Image dimensions (width, height)
-        // - Video duration
-        // - EXIF data (camera, lens, ISO, etc.)
-        // For now, just store basic info
         metadata.put("filename", file.getOriginalFilename());
         metadata.put("contentType", file.getContentType());
         return metadata;
@@ -285,7 +256,6 @@ public class MediaService {
 
     /**
      * Map StorageUsageLedgerDocument to DTO for REST API
-     * Used when exposing ledger data to other services (Billing)
      */
     private com.example.Gallery.api.dto.StorageUsageLedgerDTO mapLedgerToDTO(StorageUsageLedgerDocument ledger) {
         return com.example.Gallery.api.dto.StorageUsageLedgerDTO.builder()
@@ -297,7 +267,6 @@ public class MediaService {
                 .startAt(ledger.getStartAt())
                 .endAt(ledger.getEndAt())
                 .sourceService(ledger.getSourceService())
-                .createdAt(ledger.getCreatedAt())
                 .build();
     }
 }

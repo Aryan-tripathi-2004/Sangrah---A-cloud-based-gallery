@@ -30,19 +30,12 @@ import { LayoutComponent } from '../../shared/layout/layout.component';
 
         <!-- Gallery Grid -->
         <div *ngIf="!isLoading && gallery.length > 0" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-          <div *ngFor="let item of gallery" class="group relative rounded-lg overflow-hidden aspect-square cursor-pointer">
-            <!-- Thumbnail -->
-            <div class="w-full h-full bg-gradient-to-br from-blue-600/30 to-purple-600/30 flex items-center justify-center text-4xl group-hover:from-blue-600/50 group-hover:to-purple-600/50 transition">
-              🖼️
-            </div>
-
-            <!-- Overlay -->
-            <div class="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition flex items-end justify-between p-3">
-              <div class="opacity-0 group-hover:opacity-100 transition">
-                <p class="text-sm font-semibold truncate">{{ item.originalFileName }}</p>
-                <p class="text-xs text-slate-300">{{ item.uploadedAt | date:'short' }}</p>
-              </div>
-            </div>
+          <div *ngFor="let item of gallery" class="relative rounded-lg overflow-hidden aspect-square">
+            <img
+              [src]="api.getGalleryMediaFile(item.id)"
+              [alt]="item.originalFileName"
+              class="w-full h-full object-cover"
+            />
           </div>
         </div>
 

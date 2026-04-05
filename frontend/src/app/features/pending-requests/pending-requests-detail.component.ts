@@ -81,7 +81,7 @@ export class PendingRequestsDetailComponent implements OnInit {
     });
 
     this.api.getEventAccessRequests(eventId).subscribe({
-      next: (requests) => {
+      next: (requests: any) => {
         this.accessRequests = requests;
         this.isLoading = false;
       },
@@ -102,7 +102,7 @@ export class PendingRequestsDetailComponent implements OnInit {
 
   rejectRequest(requestId: string): void {
     if (this.event) {
-      this.api.rejectAccessRequest(this.event.id, requestId).subscribe(() => {
+      this.api.rejectAccessRequest(this.event.id, requestId, {}).subscribe(() => {
         this.accessRequests = this.accessRequests.filter((r) => r.id !== requestId);
       });
     }

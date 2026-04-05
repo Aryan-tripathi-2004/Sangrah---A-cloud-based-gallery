@@ -22,6 +22,11 @@ export const publicGuard: CanActivateFn = (route, state) => {
     return true;
   }
 
-  router.navigate(['/dashboard']);
+  const returnUrl = route.queryParamMap.get('returnUrl');
+  if (returnUrl) {
+    router.navigateByUrl(returnUrl);
+  } else {
+    router.navigate(['/dashboard']);
+  }
   return false;
 };

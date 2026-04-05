@@ -100,14 +100,43 @@ public class UserController {
 
             // Return UserDTO wrapped in data object for consistency with API responses
             return ResponseEntity.ok(Map.of(
-                "data", user,
-                "status", "success"
+                    "data", user,
+                    "status", "success"
             ));
         } catch (Exception e) {
             log.error("❌ Error fetching user {}: {}", userId, e.getMessage());
             return ResponseEntity.status(500).body(Map.of(
-                "status", "error",
-                "message", "User not found"
+                    "status", "error",
+                    "message", "User not found"
+            ));
+        }
+    }
+
+    /**
+     * Get user by email (for collaborator lookup)
+     * GET /api/v1/users/by-email/{email}
+     */
+    @GetMapping("/by-email/{email}")
+    @Operation(summary = "Get user by email")
+    public ResponseEntity<Map<String, Object>> byEmail(@PathVariable String email) {
+        try {
+            log.info("👤 Fetching user data for email: {}", email);
+            UserDTO user = authService.getUserByEmail(email);
+            log.info("✅ User found with email: {}", email);
+
+            // Return UserDTO wrapped in data object for consistency with API responses
+            return ResponseEntity.ok(Map.of(
+                    "data", user,
+                    "userId", user.getId(),
+                    "email", user.getEmail(),
+                    "displayName", user.getDisplayName(),
+                    "status", "success"
+            ));
+        } catch (Exception e) {
+            log.error("❌ Error fetching user with email {}: {}", email, e.getMessage());
+            return ResponseEntity.status(404).body(Map.of(
+                    "status", "error",
+                    "message", "User not found with email: " + email
             ));
         }
     }

@@ -6,6 +6,8 @@ import { SignupComponent } from './features/auth/signup.component';
 import { DashboardComponent } from './features/dashboard/dashboard.component';
 import { EventsListComponent } from './features/events/events-list.component';
 import { EventDetailComponent } from './features/events/event-detail.component';
+import { EventCreateComponent } from './features/events/event-create.component';
+import { eventAccessGuard } from './features/events/event-access.guard';
 import { GalleryPageComponent } from './features/gallery/gallery-page.component';
 import { BillingPageComponent } from './features/billing/billing-page.component';
 import { PendingRequestsComponent } from './features/pending-requests/pending-requests.component';
@@ -23,7 +25,8 @@ export const routes: Routes = [
   // Protected routes
   { path: 'dashboard', component: DashboardComponent, canActivate: [authGuard], data: { title: 'Dashboard' } },
   { path: 'event', component: EventsListComponent, canActivate: [authGuard], data: { title: 'Events' } },
-  { path: 'event/:id', component: EventDetailComponent, canActivate: [authGuard], data: { title: 'Event Details' } },
+  { path: 'event/create', component: EventCreateComponent, canActivate: [authGuard], data: { title: 'Create Event' } },
+  { path: 'event/:id', component: EventDetailComponent, canActivate: [authGuard, eventAccessGuard], data: { title: 'Event Details' } },
   { path: 'gallery', component: GalleryPageComponent, canActivate: [authGuard], data: { title: 'Gallery' } },
   { path: 'billing', component: BillingPageComponent, canActivate: [authGuard], data: { title: 'Billing' } },
   { path: 'pending-requests', component: PendingRequestsComponent, canActivate: [authGuard], data: { title: 'Pending Requests' } },

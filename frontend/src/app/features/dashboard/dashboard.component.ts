@@ -105,7 +105,7 @@ export class DashboardComponent implements OnInit {
         this.pendingCount = Array.isArray(requests) ? requests.length : 0;
         console.log('Pending requests loaded:', this.pendingCount);
       },
-      error: (err) => {
+      error: (err: any) => {
         console.error('Failed to load pending requests:', err);
         this.pendingCount = 0;
       }

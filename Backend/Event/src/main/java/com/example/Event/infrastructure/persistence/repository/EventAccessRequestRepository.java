@@ -26,4 +26,14 @@ public interface EventAccessRequestRepository extends MongoRepository<EventAcces
      * Find pending requests for an event
      */
     List<EventAccessRequestDocument> findByEventIdAndStatus(String eventId, String status);
+
+    /**
+     * Find pending requests for an event (ordered by timestamp)
+     */
+    List<EventAccessRequestDocument> findByEventIdAndStatusOrderByRequestedAtDesc(String eventId, String status);
+
+    /**
+     * Check for duplicate pending request from same requester
+     */
+    Optional<EventAccessRequestDocument> findByEventIdAndRequesterUserIdAndStatus(String eventId, String requesterUserId, String status);
 }

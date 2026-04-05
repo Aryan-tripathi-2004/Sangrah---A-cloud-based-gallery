@@ -1,0 +1,201 @@
+import { Component, inject } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
+import { RouterLink, Router } from '@angular/router';
+import { SangrahApiService } from '../../core/api/sangrah-api.service';
+import { LayoutComponent } from '../../shared/layout/layout.component';
+
+@Component({
+  selector: 'app-event-create',
+  standalone: true,
+  imports: [CommonModule, ReactiveFormsModule, RouterLink, LayoutComponent],
+  template: `
+    <app-layout>
+      <div class="max-w-2xl mx-auto">
+        <!-- Back Button -->
+        <a routerLink="/event" class="inline-flex items-center gap-2 text-blue-400 hover:text-blue-300 transition mb-8">
+          ← Back to Events
+        </a>
+
+        <!-- Page Header -->
+        <div class="mb-8">
+          <h1 class="text-4xl font-bold mb-2">Create New Event</h1>
+          <p class="text-slate-400">Host your own event and share moments with others</p>
+        </div>
+
+        <!-- Form -->
+        <form [formGroup]="eventForm" (ngSubmit)="onSubmit()" class="space-y-6 bg-slate-800/30 border border-slate-700/50 rounded-lg p-8">
+          <!-- Title -->
+          <div>
+            <label class="block text-sm font-semibold mb-2">Event Title *</label>
+            <input
+              formControlName="title"
+              type="text"
+              placeholder="e.g., Birthday Party 2026"
+              class="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none"
+            />
+            <p *ngIf="eventForm.get('title')?.hasError('required') && eventForm.get('title')?.touched" class="text-red-400 text-sm mt-1">
+              Title is required
+            </p>
+          </div>
+
+          <!-- Description -->
+          <div>
+            <label class="block text-sm font-semibold mb-2">Description *</label>
+            <textarea
+              formControlName="description"
+              placeholder="Describe your event..."
+              rows="4"
+              class="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none"
+            ></textarea>
+            <p *ngIf="eventForm.get('description')?.hasError('required') && eventForm.get('description')?.touched" class="text-red-400 text-sm mt-1">
+              Description is required
+            </p>
+          </div>
+
+          <!-- Event Date -->
+          <div>
+            <label class="block text-sm font-semibold mb-2">Event Date *</label>
+            <input
+              formControlName="eventDate"
+              type="datetime-local"
+              class="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white focus:border-blue-500 focus:outline-none"
+            />
+            <p *ngIf="eventForm.get('eventDate')?.hasError('required') && eventForm.get('eventDate')?.touched" class="text-red-400 text-sm mt-1">
+              Event date is required
+            </p>
+          </div>
+
+          <!-- Visibility -->
+          <div>
+            <label class="block text-sm font-semibold mb-3">Visibility *</label>
+            <div class="space-y-3">
+              <label class="flex items-center gap-3 cursor-pointer p-3 border border-slate-700 rounded-lg hover:bg-slate-700/30 transition">
+                <input
+                  formControlName="visibility"
+                  type="radio"
+                  value="PUBLIC"
+                  class="w-4 h-4"
+                />
+                <div>
+                  <p class="font-medium">🌐 Public</p>
+                  <p class="text-xs text-slate-400">Anyone can view, access, and upload photos/videos</p>
+                </div>
+              </label>
+
+              <label class="flex items-center gap-3 cursor-pointer p-3 border border-slate-700 rounded-lg hover:bg-slate-700/30 transition">
+                <input
+                  formControlName="visibility"
+                  type="radio"
+                  value="PROTECTED"
+                  class="w-4 h-4"
+                />
+                <div>
+                  <p class="font-medium">🔒 Protected</p>
+                  <p class="text-xs text-slate-400">Anyone can view the event, but must request access to see media</p>
+                </div>
+              </label>
+
+              <label class="flex items-center gap-3 cursor-pointer p-3 border border-slate-700 rounded-lg hover:bg-slate-700/30 transition">
+                <input
+                  formControlName="visibility"
+                  type="radio"
+                  value="PRIVATE"
+                  class="w-4 h-4"
+                />
+                <div>
+                  <p class="font-medium">🔐 Private</p>
+                  <p class="text-xs text-slate-400">Only you and invited collaborators can view and upload</p>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <!-- Moderation -->
+          <div>
+            <label class="flex items-center gap-3 cursor-pointer">
+              <input
+                formControlName="moderationEnabled"
+                type="checkbox"
+                class="w-4 h-4"
+              />
+              <div>
+                <p class="font-medium">✋ Require moderation</p>
+                <p class="text-xs text-slate-400">Approve photos before they appear publicly</p>
+              </div>
+            </label>
+          </div>
+
+          <!-- Action Buttons -->
+          <div class="flex gap-4 pt-6 border-t border-slate-700">
+            <button
+              type="submit"
+              [disabled]="isSubmitting || !eventForm.valid"
+              class="flex-1 px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 disabled:from-slate-600 disabled:to-slate-600 rounded-lg font-semibold transition"
+            >
+              {{ isSubmitting ? '⏳ Creating...' : '✨ Create Event' }}
+            </button>
+            <a
+              routerLink="/event"
+              class="flex-1 px-6 py-3 bg-slate-700 hover:bg-slate-600 rounded-lg font-semibold transition text-center"
+            >
+              Cancel
+            </a>
+          </div>
+
+          <!-- Error Message -->
+          <div *ngIf="errorMessage" class="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
+            <p class="text-red-400">{{ errorMessage }}</p>
+          </div>
+        </form>
+      </div>
+    </app-layout>
+  `,
+  styles: []
+})
+export class EventCreateComponent {
+  private api = inject(SangrahApiService);
+  private fb = inject(FormBuilder);
+  private router = inject(Router);
+
+  eventForm: FormGroup;
+  isSubmitting = false;
+  errorMessage = '';
+
+  constructor() {
+    this.eventForm = this.fb.group({
+      title: ['', Validators.required],
+      description: ['', Validators.required],
+      eventDate: ['', Validators.required],
+      visibility: ['PUBLIC', Validators.required],
+      moderationEnabled: [true],
+    });
+  }
+
+  onSubmit(): void {
+    if (!this.eventForm.valid) return;
+
+    this.isSubmitting = true;
+    this.errorMessage = '';
+
+    const payload = {
+      title: this.eventForm.value.title,
+      description: this.eventForm.value.description,
+      eventDate: this.eventForm.value.eventDate,
+      visibility: this.eventForm.value.visibility,
+      moderationEnabled: this.eventForm.value.moderationEnabled,
+    };
+
+    this.api.createEvent(payload).subscribe({
+      next: (event) => {
+        this.isSubmitting = false;
+        this.router.navigate(['/event', event.id]);
+      },
+      error: (error) => {
+        this.isSubmitting = false;
+        this.errorMessage = error?.error?.message || 'Failed to create event';
+        console.error('Create event error:', error);
+      },
+    });
+  }
+}

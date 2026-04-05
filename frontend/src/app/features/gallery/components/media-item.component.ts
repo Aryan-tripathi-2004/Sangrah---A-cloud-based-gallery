@@ -37,35 +37,7 @@ import { MediaItem, SangrahApiService } from '../../../core/api/sangrah-api.serv
         </div>
       </div>
 
-      <!-- Overlay -->
-      <div
-        class="absolute inset-0 bg-black/0 group-hover:bg-black/50 transition flex flex-col justify-between p-3"
-      >
-        <!-- File Info -->
-        <div class="opacity-0 group-hover:opacity-100 transition self-start">
-          <p class="text-xs font-semibold truncate bg-black/50 px-2 py-1 rounded">
-            {{ media.type }}
-          </p>
-        </div>
-
-        <!-- Actions -->
-        <div class="opacity-0 group-hover:opacity-100 transition flex gap-2">
-          <button
-            (click)="onPreview()"
-            class="flex-1 px-2 py-1 bg-blue-600 hover:bg-blue-700 rounded text-xs font-semibold transition"
-            title="Preview"
-          >
-            👁️ Preview
-          </button>
-          <button
-            (click)="onDelete()"
-            class="px-2 py-1 bg-red-600 hover:bg-red-700 rounded text-xs font-semibold transition"
-            title="Delete"
-          >
-            🗑️
-          </button>
-        </div>
-      </div>
+      <!-- Overlay removed to prevent hover icon display -->
 
       <!-- Size Badge -->
       <div class="absolute top-2 right-2 bg-black/60 px-2 py-1 rounded text-xs font-medium text-slate-300">

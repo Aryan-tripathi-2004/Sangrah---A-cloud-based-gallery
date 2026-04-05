@@ -1,0 +1,285 @@
+﻿import { Component, OnInit, inject, ChangeDetectorRef } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { ActivatedRoute, RouterLink } from '@angular/router';
+import { SangrahApiService, Event } from '../../core/api/sangrah-api.service';
+import { LayoutComponent } from '../../shared/layout/layout.component';
+import { EventMediaUploadComponent } from './components/event-media-upload.component';
+import { EventMediaApprovalComponent } from './components/event-media-approval.component';
+import { EventTimelineComponent } from './components/event-timeline.component';
+import { EventAccessRequestComponent } from './components/event-access-request.component';
+import { EventAccessRequestsComponent } from './components/event-access-requests.component';
+import { EventCollaboratorsComponent } from './components/event-collaborators.component';
+import { EventService } from './event.service';
+
+@Component({
+  selector: 'app-event-detail',
+  standalone: true,
+  imports: [
+    CommonModule,
+    RouterLink,
+    LayoutComponent,
+    EventMediaUploadComponent,
+    EventMediaApprovalComponent,
+    EventTimelineComponent,
+    EventAccessRequestComponent,
+    EventAccessRequestsComponent,
+    EventCollaboratorsComponent,
+  ],
+  template: `
+    <app-layout>
+      <div class="space-y-8">
+        <!-- Back Button -->
+        <a routerLink="/event" class="inline-flex items-center gap-2 text-blue-400 hover:text-blue-300 transition">
+          â† Back to Events
+        </a>
+
+        <!-- Event Header -->
+        <div *ngIf="event && !isLoading" class="bg-gradient-to-r from-blue-600/20 to-purple-600/20 border border-blue-500/30 rounded-2xl p-8">
+          <div class="flex items-start justify-between mb-6">
+            <div>
+              <h1 class="text-4xl font-bold mb-2">{{ event.title }}</h1>
+              <p class="text-slate-300">{{ event.description }}</p>
+            </div>
+            <div class="text-right">
+              <div class="text-3xl mb-2">
+                <span *ngIf="event.visibility === 'PUBLIC'">ðŸŒ</span>
+                <span *ngIf="event.visibility === 'PROTECTED'">ðŸ”’</span>
+                <span *ngIf="event.visibility === 'PRIVATE'">ðŸ”</span>
+              </div>
+              <span class="px-3 py-1 rounded-full text-sm font-semibold" [ngClass]="{'bg-green-500/20 text-green-400': event.visibility === 'PUBLIC', 'bg-yellow-500/20 text-yellow-400': event.visibility === 'PROTECTED', 'bg-red-500/20 text-red-400': event.visibility === 'PRIVATE'}">
+                {{ event.visibility }}
+              </span>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div>
+              <p class="text-slate-400 text-sm">Event Date</p>
+              <p class="text-lg font-semibold">{{ event.eventDate | date:'MMM d, y' }}</p>
+            </div>
+            <div>
+              <p class="text-slate-400 text-sm">Status</p>
+              <p class="text-lg font-semibold capitalize">{{ event.status }}</p>
+            </div>
+            <div>
+              <p class="text-slate-400 text-sm">Created</p>
+              <p class="text-lg font-semibold">{{ event.createdAt | date:'MMM d, y' }}</p>
+            </div>
+          </div>
+
+          <!-- Moderation Badge -->
+          <div class="mt-6 flex items-center gap-2">
+            <span *ngIf="event.moderationEnabled" class="px-3 py-1 bg-yellow-500/20 border border-yellow-500/30 rounded-full text-xs font-semibold text-yellow-400">
+              âœ‹ Moderation Enabled
+            </span>
+            <span *ngIf="!event.moderationEnabled" class="px-3 py-1 bg-green-500/20 border border-green-500/30 rounded-full text-xs font-semibold text-green-400">
+              âœ“ Auto-approved uploads
+            </span>
+          </div>
+        </div>
+
+        <!-- Tabs (only show if user has approval) -->
+        <div *ngIf="event && !requiresApproval" class="flex gap-4 border-b border-slate-800 overflow-x-auto">
+          <button
+            (click)="currentTab = 'timeline'"
+            [class.border-b-2]="currentTab === 'timeline'"
+            [class.border-blue-500]="currentTab === 'timeline'"
+            class="px-4 py-3 font-semibold transition hover:text-slate-100 whitespace-nowrap"
+          >
+            ðŸ“¸ Timeline
+          </button>
+          <button
+            (click)="currentTab = 'upload'"
+            [class.border-b-2]="currentTab === 'upload'"
+            [class.border-blue-500]="currentTab === 'upload'"
+            class="px-4 py-3 font-semibold transition hover:text-slate-100 whitespace-nowrap"
+          >
+            â¬†ï¸ Upload
+          </button>
+          <button
+            *ngIf="isEventOwner"
+            (click)="currentTab = 'approvals'"
+            [class.border-b-2]="currentTab === 'approvals'"
+            [class.border-blue-500]="currentTab === 'approvals'"
+            class="px-4 py-3 font-semibold transition hover:text-slate-100 whitespace-nowrap"
+          >
+            âœ… Approvals
+          </button>
+
+          <!-- NEW: Owner tabs for collaborators, policies, and access requests -->
+          <button
+            *ngIf="isEventOwner"
+            (click)="currentTab = 'collaborators'"
+            [class.border-b-2]="currentTab === 'collaborators'"
+            [class.border-blue-500]="currentTab === 'collaborators'"
+            class="px-4 py-3 font-semibold transition hover:text-slate-100 whitespace-nowrap"
+          >
+            ðŸ‘¥ Collaborators
+          </button>
+          <button
+            *ngIf="isEventOwner"
+            (click)="currentTab = 'policies'"
+            [class.border-b-2]="REMOVE_THIS"
+            [class.border-blue-500]="REMOVE_THIS"
+            class="px-4 py-3 font-semibold transition hover:text-slate-100 whitespace-nowrap"
+          >
+            âš™ï¸ Policies
+          </button>
+          <button
+            *ngIf="isEventOwner && event?.visibility === 'PROTECTED'"
+            (click)="currentTab = 'access-requests'"
+            [class.border-b-2]="currentTab === 'access-requests'"
+            [class.border-blue-500]="currentTab === 'access-requests'"
+            class="px-4 py-3 font-semibold transition hover:text-slate-100 whitespace-nowrap"
+          >
+            ðŸ” Access Requests ({{ pendingAccessCount }})
+          </button>
+        </div>
+
+        <!-- Timeline Tab -->
+        <div *ngIf="currentTab === 'timeline' && !requiresApproval">
+          <app-event-timeline [eventId]="eventId"></app-event-timeline>
+        </div>
+
+        <!-- Upload Tab -->
+        <div *ngIf="currentTab === 'upload' && !requiresApproval">
+          <app-event-media-upload
+            [eventId]="eventId"
+            [isOwner]="isEventOwner"
+            [isModerated]="event?.moderationEnabled || false"
+            (uploadComplete)="onUploadComplete()"
+          ></app-event-media-upload>
+        </div>
+
+        <!-- Approvals Tab (Owner only) -->
+        <div *ngIf="currentTab === 'approvals' && isEventOwner && !requiresApproval">
+          <app-event-media-approval
+            [eventId]="eventId"
+            [isOwner]="isEventOwner"
+            (mediaUpdated)="onMediaUpdated()"
+          ></app-event-media-approval>
+        </div>
+
+        <!-- NEW: Collaborators Tab (Owner only) -->
+        <div *ngIf="currentTab === 'collaborators' && isEventOwner && !requiresApproval">
+          <app-event-collaborators [eventId]="eventId"></app-event-collaborators>
+        </div>
+
+        <!-- NEW: Policies Tab (Owner only) -->
+        <div *ngIf="REMOVE_THIS && isEventOwner && !requiresApproval">
+          <app-event-policies [eventId]="eventId"></app-event-policies>
+        </div>
+
+        <!-- NEW: Access Requests Tab (Owner only, PROTECTED events) -->
+        <div *ngIf="currentTab === 'access-requests' && isEventOwner && !requiresApproval">
+          <app-event-access-requests [eventId]="eventId"></app-event-access-requests>
+        </div>
+
+        <!-- NEW: Access Request Component for non-owners (PROTECTED events without approval) -->
+        <app-event-access-request
+          *ngIf="requiresApproval && event?.visibility === 'PROTECTED' && !isEventOwner"
+          [eventId]="eventId"
+          [event]="event">
+        </app-event-access-request>
+
+        <!-- NEW: Access Request Component for non-owners (PROTECTED events with approval) -->
+        <app-event-access-request
+          *ngIf="!requiresApproval && event?.visibility === 'PROTECTED' && !isEventOwner && !event?.accessStatus"
+          [eventId]="eventId"
+          [event]="event">
+        </app-event-access-request>
+
+        <!-- NEW: Private Event Message for non-owners -->
+        <div *ngIf="event?.visibility === 'PRIVATE' && !isEventOwner && !isCollaborator"
+             class="bg-red-500/10 border border-red-500/30 rounded-lg p-6 text-center">
+          <p class="text-red-400 font-semibold text-lg">ðŸ”’ This is a Private Event</p>
+          <p class="text-slate-400 mt-2">Only the event owner and assigned collaborators can access this event.</p>
+        </div>
+
+        <!-- Loading State -->
+        <div *ngIf="isLoading" class="text-center py-16">
+          <p class="text-slate-400">Loading event details...</p>
+        </div>
+      </div>
+    </app-layout>
+  `,
+})
+\n  REMOVE_THIS: boolean = false;
+  private api = inject(SangrahApiService);
+  private route = inject(ActivatedRoute);
+  private eventService = inject(EventService);
+
+  event: Event | null = null;
+  eventId = '';
+  isLoading = true;
+  requiresApproval = false; // NEW: Track if user needs to request access
+  currentTab = 'timeline';
+  // Show approvals button immediately in UI; ownership enforcement still validated on actions
+  isEventOwner = true;
+  isCollaborator = false;
+  pendingAccessCount = 0;
+
+  private cdr = inject(ChangeDetectorRef);
+
+  ngOnInit(): void {
+    this.route.paramMap.subscribe((params) => {
+      const eventId = params.get('id');
+      if (eventId) {
+        this.eventId = eventId;
+        this.loadEvent(eventId);
+      }
+    });
+  }
+
+  loadEvent(eventId: string): void {
+    this.api.getEventById(eventId).subscribe({
+      next: (event: any) => {
+        this.event = event;
+        // Check if user needs to request access for PROTECTED events
+        this.requiresApproval = event.requiresApproval === true;
+        
+        // TODO: Check if current user is event owner
+        this.isEventOwner = true; // For now, assume user is owner
+        
+        // Only load media if user has approval or event is public
+        if (!this.requiresApproval) {
+          this.loadEventMedia(eventId);
+        } else {
+          this.isLoading = false;
+        }
+      },
+      error: (error) => {
+        console.error('Failed to load event:', error);
+        this.isLoading = false;
+      },
+    });
+  }
+
+  loadEventMedia(eventId: string): void {
+    this.eventService.loadEventMedia(eventId).subscribe({
+      next: () => {
+        this.isLoading = false;
+        // ensure UI updates immediately after media loads
+        try { this.cdr.detectChanges(); } catch {}
+      },
+      error: (error) => {
+        console.error('Failed to load event media:', error);
+        this.isLoading = false;
+        try { this.cdr.detectChanges(); } catch {}
+      },
+    });
+  }
+
+  onUploadComplete(): void {
+    // Reload media list after upload
+    this.loadEventMedia(this.eventId);
+  }
+
+  onMediaUpdated(): void {
+    // Reload media list after approval/rejection
+    this.loadEventMedia(this.eventId);
+  }
+}
+
+
+
