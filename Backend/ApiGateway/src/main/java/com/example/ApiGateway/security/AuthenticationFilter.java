@@ -26,8 +26,10 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
 
     private final JwtUtil jwtUtil;
 
-    // Public endpoints that don't require authentication
-    private final List<String> openApiEndpoints = List.of(
+        // Public endpoints that don't require authentication
+        // Note: keep this list minimal. We allow gallery media file prefix here so
+        // downstream services can validate token query-parameters themselves.
+        private final List<String> openApiEndpoints = List.of(
             "/api/v1/auth/register",
             "/api/v1/auth/login",
             "/api/v1/auth/token/refresh",
@@ -36,7 +38,8 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
             "/v3/api-docs/",
             "/health",
             "/actuator/"
-    );
+            
+        );
 
     // Role-based access control mapping for protected endpoints
     private final Map<String, List<String>> routeRoleMap = Map.of(
@@ -138,10 +141,15 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
      * Check if path is a public/open API endpoint
      */
     private boolean isOpenApi(String path) {
-        // Use startsWith for exact path matching
+        // Fast prefix check for known open endpoints
         boolean isOpen = openApiEndpoints.stream().anyMatch(endpoint -> path.startsWith(endpoint));
-        log.debug("🔍 Checking if open API - Path: {} | Is Open: {}", path, isOpen);
-        return isOpen;
+        if (isOpen) {
+            log.debug("🔍 Checking if open API - Path: {} | Is Open: {}", path, true);
+            return true;
+        }
+
+        log.debug("🔍 Checking if open API - Path: {} | Is Open: {}", path, false);
+        return false;
     }
 
     /**
