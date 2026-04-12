@@ -295,11 +295,19 @@ export class EventCollaboratorsComponent implements OnInit {
 
     this.api.addEventCollaborator(this.eventId, payload).subscribe({
       next: (response) => {
-        this.resetForm();
-        this.isAdding = false;
+        // Ensure UI moves to the collaborators tab first, then refresh list.
         this.currentTab = 'collaborators';
+        this.isAdding = false;
+        this.resetForm();
         this.loadCollaborators();
         this.cdr.detectChanges();
+
+        // Extra safety: ensure change detection runs in next tick so any
+        // asynchronous template updates settle and the Add form is hidden.
+        setTimeout(() => {
+          this.currentTab = 'collaborators';
+          this.cdr.detectChanges();
+        }, 0);
       },
       error: (err) => {
         console.error('❌ [Add Collaborator] Failed:', err);

@@ -111,6 +111,7 @@ public class EventController {
                         Map<String, Object> map = new HashMap<>();
                         map.put("eventId", e.getId());
                         map.put("id", e.getId());
+                        map.put("ownerUserId", e.getOwnerUserId());
                         map.put("title", e.getTitle());
                         map.put("description", e.getDescription());
                         map.put("eventDate", e.getEventDate().toString());
@@ -151,11 +152,13 @@ public class EventController {
                         Map<String, Object> map = new HashMap<>();
                         map.put("eventId", e.getId());
                         map.put("id", e.getId());
+                        map.put("ownerUserId", e.getOwnerUserId());
                         map.put("title", e.getTitle());
                         map.put("description", e.getDescription());
                         map.put("eventDate", e.getEventDate().toString());
                         map.put("visibility", e.getVisibility());
                         map.put("moderationEnabled", e.isModerationEnabled());
+                        map.put("collaborators", e.getCollaborators());
                         map.put("createdAt", e.getCreatedAt().toString());
                         return map;
                     })
@@ -193,6 +196,29 @@ public class EventController {
             response.put("visibility", event.getVisibility());
             response.put("moderationEnabled", event.isModerationEnabled());
 
+            // NEW: Include collaborators in response so frontend can check permissions
+            response.put("collaborators", event.getCollaborators());
+
+            // DEBUG: Log collaborators for troubleshooting
+            if (event.getCollaborators() != null && !event.getCollaborators().isEmpty()) {
+                log.info("👥 [Event Detail] Event {} has {} collaborators: {}",
+                    eventId,
+                    event.getCollaborators().size(),
+                    event.getCollaborators().stream()
+                        .map(c -> c.getUserId())
+                        .collect(Collectors.toList()));
+
+                // DETAILED DEBUG: Log each collaborator's full details
+                event.getCollaborators().forEach(c -> {
+                    log.info("  👤 Collaborator userId='{}' (type: String) - canReviewMedia={}, canReviewAccessRequests={}, canEditEventDetails={}",
+                        c.getUserId(),
+                        c.getCanReviewMedia(),
+                        c.getCanReviewAccessRequests(),
+                        c.getCanEditEventDetails());
+                });
+            } else {
+                log.info("👥 [Event Detail] Event {} has no collaborators", eventId);
+            }
 
             response.put("status", event.getStatus());
             response.put("createdAt", event.getCreatedAt() != null ? event.getCreatedAt().toString() : null);
@@ -343,11 +369,22 @@ public class EventController {
             }
 
             String userEmail = (String) payload.get("userEmail");
-            String collaboratorId = userEmail;
+
+            // FIXED: Look up the actual user ID by email instead of using email as ID
+            String collaboratorId = null;
+            try {
+                // Call user service to get actual user ID from email
+                collaboratorId = userServiceClient.getUserIdByEmail(userEmail);
+                log.info("🔍 [Add Collaborator] Resolved email '{}' to user ID '{}'", userEmail, collaboratorId);
+            } catch (Exception e) {
+                log.error("❌ [Add Collaborator] Error looking up user by email '{}': {}", userEmail, e.getMessage());
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body(Map.of("error", "Failed to find user: " + e.getMessage()));
+            }
 
             if (collaboratorId == null || collaboratorId.isEmpty()) {
                 return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                        .body(Map.of("error", "User ID or email is required"));
+                        .body(Map.of("error", "User ID not found for email: " + userEmail));
             }
 
             // Extract permissions (handle both old and new format)
@@ -443,6 +480,10 @@ public class EventController {
                 enriched.put("canUploadMedia", collab.getCanUploadMedia());
                 enriched.put("canReviewMedia", collab.getCanReviewMedia());
                 enriched.put("canReviewAccessRequests", collab.getCanReviewAccessRequests());
+                // Include newer permission fields so frontend can reflect them
+                enriched.put("canDirectUpload", collab.getCanDirectUpload());
+                enriched.put("canDeleteMedia", collab.getCanDeleteMedia());
+                enriched.put("canEditEventDetails", collab.getCanEditEventDetails());
                 enriched.put("addedAt", collab.getAddedAt());
                 enriched.put("addedByUserId", collab.getAddedByUserId());
                 

@@ -10,6 +10,18 @@ export interface User {
   createdAt: string;
 }
 
+export interface EventCollaborator {
+  userId: string;
+  canUploadMedia?: boolean;
+  canReviewMedia?: boolean;
+  canReviewAccessRequests?: boolean;
+  canDirectUpload?: boolean;
+  canDeleteMedia?: boolean;
+  canEditEventDetails?: boolean;
+  addedAt?: string;
+  addedByUserId?: string;
+}
+
 export interface Event {
   id: string;
   ownerUserId: string;
@@ -25,6 +37,7 @@ export interface Event {
   requiresApproval?: boolean; // NEW: Flag indicating user needs to request access
   accessStatus?: string; // NEW: Access status (NO_ACCESS, APPROVED, PENDING)
   message?: string; // NEW: Message about access status
+  collaborators?: EventCollaborator[]; // NEW: List of collaborators with permissions
 }
 
 export interface Gallery {

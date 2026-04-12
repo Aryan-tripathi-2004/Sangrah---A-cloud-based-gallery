@@ -25,6 +25,13 @@ public class EventModerationService {
 
         String status = moderationEnabled ? "PENDING" : "APPROVED";
 
+        // Check if approval record already exists to avoid duplicates
+        Optional<EventMediaApprovalDocument> existing = approvalRepository.findByEventIdAndMediaId(eventId, mediaId);
+        if (existing.isPresent()) {
+            log.warn("⚠️ [Moderation] Approval already exists for media {} in event {}. Returning existing status.", mediaId, eventId);
+            return existing.get().getStatus();
+        }
+
         EventMediaApprovalDocument approval = EventMediaApprovalDocument.builder()
                 .eventId(eventId)
                 .mediaId(mediaId)

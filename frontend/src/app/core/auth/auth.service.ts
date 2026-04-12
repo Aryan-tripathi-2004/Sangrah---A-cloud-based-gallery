@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { Router } from '@angular/router';
-import { BehaviorSubject, Observable } from 'rxjs';
+import { BehaviorSubject, Observable, throwError } from 'rxjs';
+import { map, catchError } from 'rxjs/operators';
 import { SangrahApiService } from '../api/sangrah-api.service';
 
 @Injectable({ providedIn: 'root' })
@@ -76,5 +77,18 @@ export class AuthService {
     if (hasToken) {
       console.log('🔄 [AuthService] Auth state restored from localStorage');
     }
+  }
+
+  /**
+   * Get current user ID by fetching profile from API
+   */
+  getCurrentUserId(): Observable<string> {
+    return this.api.getProfile().pipe(
+      map((profile: any) => profile.id || profile.userId || ''),
+      catchError((error) => {
+        console.error('Failed to get current user ID:', error);
+        return throwError(() => error);
+      })
+    );
   }
 }

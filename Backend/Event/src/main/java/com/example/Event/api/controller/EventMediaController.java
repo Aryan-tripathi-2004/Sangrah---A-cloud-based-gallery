@@ -72,8 +72,19 @@ public class EventMediaController {
             }
 
             // First check if media exists and is approved for this event
-            EventMediaApprovalDocument approval = approvalRepository.findByEventIdAndMediaId(eventId, mediaId)
-                    .orElseThrow(() -> new RuntimeException("Media not found in event"));
+            // Try to fetch - if multiple records exist (shouldn't happen with new createMedia check),
+            // prefer APPROVED status
+            List<EventMediaApprovalDocument> approvals = approvalRepository.findByEventIdAndMediaIdOrderByStatusAsc(eventId, mediaId);
+            
+            if (approvals.isEmpty()) {
+                throw new RuntimeException("Media not found in event");
+            }
+            
+            // Prefer APPROVED status, but allow if user is owner or uploader even if PENDING
+            EventMediaApprovalDocument approval = approvals.stream()
+                    .filter(a -> "APPROVED".equals(a.getStatus()))
+                    .findFirst()
+                    .orElse(approvals.get(0)); // Fallback to first record if no APPROVED status
 
             // We stream it if:
             // 1. It's approved, OR
@@ -137,7 +148,8 @@ public class EventMediaController {
             HttpServletRequest request) {
         try {
             String userId = request.getHeader("X-User-Id");
-            log.info("📤 [Event Media] Uploading to event {}, user: {}, file: {}", eventId, userId, file.getOriginalFilename());
+            String userEmail = request.getHeader("X-User-Email"); // Added to support email matching
+            log.info("📤 [Event Media] Uploading to event {}, user: {} ({}), file: {}", eventId, userId, userEmail, file.getOriginalFilename());
 
             if (userId == null || userId.isEmpty()) {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
@@ -152,7 +164,7 @@ public class EventMediaController {
             EventDocument event = eventService.getEventById(eventId);
 
             // NEW: Determine moderation status based on user's permissions and event policies
-            String moderationStatus = determineModerationStatus(event, userId);
+            String moderationStatus = determineModerationStatus(event, userId, userEmail);
 
             // Call Media Service to upload (with eventId as entityRefId)
             Map<String, Object> mediaResponse = mediaServiceClient.uploadMedia(
@@ -165,8 +177,7 @@ public class EventMediaController {
             String mediaId = (String) mediaResponse.get("id");
             log.info("✅ Media uploaded to Media Service: {}", mediaId);
 
-            // Create approval record with determined moderation status
-            String approvalStatus = determineModerationStatus(event, userId);
+            String approvalStatus = moderationStatus; // Reuse the computed status
             boolean isPending = "PENDING".equals(approvalStatus);
             moderationService.createMedia(eventId, mediaId, userId, isPending);
             log.info("📝 Moderation status: {} (moderationEnabled: {})",
@@ -203,87 +214,75 @@ public class EventMediaController {
      * - Approved accessor on PROTECTED event: PENDING (needs review/approval)
      * - PRIVATE events: only owner and collaborators can upload
      */
-    private String determineModerationStatus(EventDocument event, String userId) {
+    private String determineModerationStatus(EventDocument event, String userId, String userEmail) {
         // Owner always gets auto-approval
         if (userId.equals(event.getOwnerUserId())) {
             log.info("✅ Auto-approving media for event owner");
             return "APPROVED";
         }
 
-        // Check event visibility
+        // 1. Initial Visibility (Door Guards)
         String visibility = event.getVisibility() != null ? event.getVisibility() : "PRIVATE";
+        EventDocument.EventCollaborator collaborator = getCollaboratorIfExists(event, userId, userEmail);
 
-        // Check if user is a collaborator
-        EventDocument.EventCollaborator collaborator = getCollaboratorIfExists(event, userId);
-
-        // For PRIVATE events: only owner and collaborators with upload permission
-        if ("PRIVATE".equals(visibility)) {
-            if (collaborator == null) {
-                throw new RuntimeException("Only event owner and collaborators can upload media to private events");
+        if (collaborator == null) {
+            if ("PRIVATE".equals(visibility)) {
+                throw new RuntimeException("Upload forbidden: Only event owner and collaborators can upload to private events.");
             }
-            return processCollaboratorUpload(event, userId, collaborator);
-        }
-
-        // For PROTECTED and PUBLIC events: check collaborator permissions first
-        if (collaborator != null) {
-            return processCollaboratorUpload(event, userId, collaborator);
-        }
-
-        // Non-collaborator (public/normal user)
-        if ("PROTECTED".equals(visibility)) {
-            // For PROTECTED events: check if user has approved access request
-            boolean hasApprovedAccess = accessService != null && accessService.isUserApproved(event.getId(), userId);
-            if (!hasApprovedAccess) {
-                throw new RuntimeException("You must request access to upload media to this protected event");
+            if ("PROTECTED".equals(visibility)) {
+                boolean hasApprovedAccess = accessService != null && accessService.isUserApproved(event.getId(), userId);
+                if (!hasApprovedAccess) {
+                    throw new RuntimeException("Upload forbidden: You must request access to upload media to this protected event.");
+                }
             }
-            // Approved accessor to protected event goes to PENDING for review
-            log.info("📝 User {} has approved access to protected event - media requires review", userId);
-            return "PENDING";
-        } else if ("PUBLIC".equals(visibility)) {
-            // For PUBLIC events: check if moderation is enabled
-            if (event.isModerationEnabled()) {
-                // Moderation enabled: only owner and collaborators can upload
-                throw new RuntimeException("Moderation is enabled for this event. Only owner and collaborators can upload media.");
+        }
+
+        // 2. Moderation Logic (Based on the Permission Flowchart)
+        boolean isRestrictiveMode = event.isModerationEnabled();
+
+        if (isRestrictiveMode) { // RESTRICTIVE ACCESS
+            if (collaborator != null) {
+                if (collaborator.getCanDirectUpload() != null && collaborator.getCanDirectUpload()) {
+                    log.info("✅ Restrictive Mode: Collaborator has canDirectUpload permission - APPROVED");
+                    return "APPROVED";
+                } else if (collaborator.getCanUploadMedia() != null && collaborator.getCanUploadMedia()) {
+                    log.info("📝 Restrictive Mode: Collaborator has canUploadMedia permission - PENDING");
+                    return "PENDING";
+                } else {
+                    throw new RuntimeException("Upload forbidden: Your collaborator permissions do not allow uploads to this event.");
+                }
+            } else {
+                log.warn("❌ Restrictive Mode: Normal user attempted to upload - BLOCKED");
+                throw new RuntimeException("Upload forbidden: Moderation is enabled for this event. General uploads are completely blocked.");
             }
-            // Moderation disabled: public users can upload but media goes to PENDING for review
-            log.info("📝 Public event without moderation lock - any user media requires review");
-            return "PENDING";
+        } else { // PERMISSIVE ACCESS
+            if (collaborator != null) {
+                if (collaborator.getCanDirectUpload() != null && collaborator.getCanDirectUpload()) {
+                    log.info("✅ Permissive Mode: Collaborator has canDirectUpload permission - APPROVED");
+                    return "APPROVED";
+                } else {
+                    log.info("📝 Permissive Mode: Collaborator denied canDirectUpload permission - PENDING");
+                    return "PENDING";
+                }
+            } else {
+                log.info("📝 Permissive Mode: Normal user upload - PENDING");
+                return "PENDING";
+            }
         }
-
-        // Default: deny access
-        throw new RuntimeException("You don't have permission to upload media to this event");
-    }
-
-    /**
-     * Process collaborator upload with their specific permissions
-     * - canDirectUpload: media gets APPROVED immediately
-     * - canUploadMedia: media goes to PENDING for review/approval
-     */
-    private String processCollaboratorUpload(EventDocument event, String userId, EventDocument.EventCollaborator collaborator) {
-        // Check canDirectUpload permission (bypasses all restrictions and moderation)
-        if (collaborator.getCanDirectUpload() != null && collaborator.getCanDirectUpload()) {
-            log.info("✅ Collaborator {} has canDirectUpload permission - auto-approving", userId);
-            return "APPROVED";
-        }
-
-        // Check canUploadMedia permission
-        if (collaborator.getCanUploadMedia() == null || !collaborator.getCanUploadMedia()) {
-            throw new RuntimeException("Your collaborator permissions do not allow uploads to this event");
-        }
-
-        // Collaborator has canUploadMedia - media always goes to PENDING for review/approval
-        // This applies regardless of moderationEnabled setting (event owner or canReviewMedia collaborators will approve)
-        log.info("📝 Collaborator {} media requires approval", userId);
-        return "PENDING";
     }
 
     /**
      * Get collaborator if exists for this event and user
      */
-    private EventDocument.EventCollaborator getCollaboratorIfExists(EventDocument event, String userId) {
+    private EventDocument.EventCollaborator getCollaboratorIfExists(EventDocument event, String userId, String userEmail) {
         if (event.getCollaborators() != null) {
             return event.getCollaborators().stream()
-                    .filter(c -> c.getUserId().equals(userId))
+                    .filter(c -> {
+                        String collId = c.getUserId();
+                        if (collId == null) return false;
+                        return collId.equals(userId) || 
+                               (userEmail != null && !userEmail.isEmpty() && collId.equalsIgnoreCase(userEmail));
+                    })
                     .findFirst()
                     .orElse(null);
         }

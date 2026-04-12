@@ -2,6 +2,7 @@ package com.example.Event.infrastructure.persistence.repository;
 
 import com.example.Event.infrastructure.persistence.document.EventMediaApprovalDocument;
 import org.springframework.data.mongodb.repository.MongoRepository;
+import org.springframework.data.mongodb.repository.Query;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -12,6 +13,9 @@ public interface EventMediaApprovalRepository extends MongoRepository<EventMedia
 
     // Find approval for a specific media in an event
     Optional<EventMediaApprovalDocument> findByEventIdAndMediaId(String eventId, String mediaId);
+
+    // Find all approvals for a specific media in an event (handles duplicates)
+    List<EventMediaApprovalDocument> findByEventIdAndMediaIdOrderByStatusAsc(String eventId, String mediaId);
 
     // Find all approvals for an event
     List<EventMediaApprovalDocument> findByEventId(String eventId);

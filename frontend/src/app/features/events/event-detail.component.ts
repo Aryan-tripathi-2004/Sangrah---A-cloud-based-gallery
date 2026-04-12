@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink, Router } from '@angular/router';
 import { SangrahApiService, Event } from '../../core/api/sangrah-api.service';
+import { AuthService } from '../../core/auth/auth.service';
 import { LayoutComponent } from '../../shared/layout/layout.component';
 import { EventMediaUploadComponent } from './components/event-media-upload.component';
 import { EventMediaApprovalComponent } from './components/event-media-approval.component';
@@ -48,14 +49,15 @@ import { EventService } from './event.service';
                 {{ event.visibility }}
               </span>
               
-              <!-- Action Buttons (Owner only) -->
-              <div *ngIf="isEventOwner" class="flex gap-2">
+              <!-- Action Buttons (Owner or canEditEventDetails) -->
+              <div *ngIf="isEventOwner || canEditEventDetails" class="flex gap-2">
                 <button
                   (click)="openEditEventModal()"
                   class="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg font-semibold transition text-sm">
                   Edit Event
                 </button>
                 <button
+                  *ngIf="isEventOwner"
                   (click)="deleteEvent()"
                   class="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg font-semibold transition text-sm">
                   Delete Event
@@ -101,6 +103,7 @@ import { EventService } from './event.service';
             Timeline
           </button>
           <button
+            *ngIf="isEventOwner || canUploadMedia || canDirectUpload || event?.visibility === 'PUBLIC'"
             (click)="currentTab = 'upload'"
             [class.border-b-2]="currentTab === 'upload'"
             [class.border-blue-500]="currentTab === 'upload'"
@@ -109,7 +112,7 @@ import { EventService } from './event.service';
             Upload
           </button>
           <button
-            *ngIf="isEventOwner"
+            *ngIf="isEventOwner || canReviewMedia"
             (click)="currentTab = 'approvals'"
             [class.border-b-2]="currentTab === 'approvals'"
             [class.border-blue-500]="currentTab === 'approvals'"
@@ -118,9 +121,9 @@ import { EventService } from './event.service';
             Approvals
           </button>
 
-          <!-- NEW: Owner tabs for collaborators, policies, and access requests -->
+          <!-- NEW: Owner or Collaborator tabs for collaborators, policies, and access requests -->
           <button
-            *ngIf="isEventOwner"
+            *ngIf="isEventOwner || isCollaborator"
             (click)="currentTab = 'collaborators'"
             [class.border-b-2]="currentTab === 'collaborators'"
             [class.border-blue-500]="currentTab === 'collaborators'"
@@ -130,7 +133,7 @@ import { EventService } from './event.service';
           </button>
           <!-- Policies tab removed -->
           <button
-            *ngIf="isEventOwner && event?.visibility === 'PROTECTED'"
+            *ngIf="(isEventOwner || canReviewAccessRequests) && event?.visibility === 'PROTECTED'"
             (click)="currentTab = 'access-requests'"
             [class.border-b-2]="currentTab === 'access-requests'"
             [class.border-blue-500]="currentTab === 'access-requests'"
@@ -146,7 +149,7 @@ import { EventService } from './event.service';
         </div>
 
         <!-- Upload Tab -->
-        <div *ngIf="currentTab === 'upload' && !requiresApproval">
+        <div *ngIf="currentTab === 'upload' && !requiresApproval && (isEventOwner || canUploadMedia || canDirectUpload || event?.visibility === 'PUBLIC')">
           <app-event-media-upload
             [eventId]="eventId"
             [isOwner]="isEventOwner"
@@ -155,8 +158,8 @@ import { EventService } from './event.service';
           ></app-event-media-upload>
         </div>
 
-        <!-- Approvals Tab (Owner only) -->
-        <div *ngIf="currentTab === 'approvals' && isEventOwner && !requiresApproval">
+        <!-- Approvals Tab (Owner or canReviewMedia permission) -->
+        <div *ngIf="currentTab === 'approvals' && (isEventOwner || canReviewMedia) && !requiresApproval">
           <app-event-media-approval
             [eventId]="eventId"
             [isOwner]="isEventOwner"
@@ -164,15 +167,15 @@ import { EventService } from './event.service';
           ></app-event-media-approval>
         </div>
 
-        <!-- NEW: Collaborators Tab (Owner only) -->
-        <div *ngIf="currentTab === 'collaborators' && isEventOwner && !requiresApproval">
+        <!-- NEW: Collaborators Tab (Owner or Collaborator) -->
+        <div *ngIf="currentTab === 'collaborators' && (isEventOwner || isCollaborator) && !requiresApproval">
           <app-event-collaborators [eventId]="eventId"></app-event-collaborators>
         </div>
 
         <!-- Policies feature removed -->
 
-        <!-- NEW: Access Requests Tab (Owner only, PROTECTED events) -->
-        <div *ngIf="currentTab === 'access-requests' && isEventOwner && !requiresApproval">
+        <!-- NEW: Access Requests Tab (Owner or canReviewAccessRequests permission, PROTECTED events) -->
+        <div *ngIf="currentTab === 'access-requests' && (isEventOwner || canReviewAccessRequests) && !requiresApproval">
           <app-event-access-requests [eventId]="eventId"></app-event-access-requests>
         </div>
 
@@ -190,7 +193,7 @@ import { EventService } from './event.service';
           [event]="event">
         </app-event-access-request>
 
-        <!-- NEW: Private Event Message for non-owners -->
+        <!-- NEW: Private Event Message for non-owners and non-collaborators -->
         <div *ngIf="event?.visibility === 'PRIVATE' && !isEventOwner && !isCollaborator"
              class="bg-red-500/10 border border-red-500/30 rounded-lg p-6 text-center">
           <p class="text-red-400 font-semibold text-lg">This is a Private Event</p>
@@ -290,6 +293,7 @@ export class EventDetailComponent implements OnInit {
   private api = inject(SangrahApiService);
   private route = inject(ActivatedRoute);
   private router = inject(Router);
+  private authService = inject(AuthService);
   private eventService = inject(EventService);
   private cdr = inject(ChangeDetectorRef);
 
@@ -298,8 +302,17 @@ export class EventDetailComponent implements OnInit {
   isLoading = true;
   requiresApproval = false;
   currentTab = 'timeline';
-  isEventOwner = true;
+  isEventOwner = false;
   isCollaborator = false;
+
+  // Collaborator-specific permissions
+  canUploadMedia = false;
+  canDirectUpload = false;
+  canDeleteMedia = false;
+  canReviewMedia = false;
+  canReviewAccessRequests = false;
+  canEditEventDetails = false;
+
   pendingAccessCount = 0;
 
   // Edit modal properties
@@ -327,21 +340,145 @@ export class EventDetailComponent implements OnInit {
     this.api.getEventById(eventId).subscribe({
       next: (event: any) => {
         this.event = event;
+        console.log('📌 [EventDetail] Event loaded:', {
+          eventId: event.id,
+          ownerUserId: event.ownerUserId,
+          collaborators: event.collaborators,
+          collaboratorCount: event.collaborators ? event.collaborators.length : 0
+        });
+
+        // CRITICAL: Log the raw collaborators array to see exact structure
+        if (event.collaborators && event.collaborators.length > 0) {
+          console.log('🔬 [EventDetail] RAW Collaborators Array:');
+          console.log(JSON.stringify(event.collaborators, null, 2));
+        }
+
         // Check if user needs to request access for PROTECTED events
         this.requiresApproval = event.requiresApproval === true;
-        
-        // TODO: Check if current user is event owner
-        this.isEventOwner = true; // For now, assume user is owner
-        
-        // Only load media if user has approval or event is public
-        if (!this.requiresApproval) {
-          this.loadEventMedia(eventId);
-        } else {
-          this.isLoading = false;
-        }
+
+        // Get current user ID and compare with event owner
+        this.authService.getCurrentUserId().subscribe({
+          next: (currentUserId: string) => {
+            console.log('👤 [EventDetail] Current user ID:', currentUserId);
+
+            this.isEventOwner = currentUserId === event.ownerUserId;
+            console.log('🔑 [EventDetail] Is event owner:', this.isEventOwner);
+
+            // If not owner, check if user is a collaborator with specific permissions
+            if (!this.isEventOwner && event.collaborators) {
+              console.log('🔍 [EventDetail] Checking collaborators for user:', currentUserId);
+              console.log('📋 [EventDetail] Available collaborators:', event.collaborators);
+
+              // Detailed debugging: log each collaborator's userId field
+              if (event.collaborators && event.collaborators.length > 0) {
+                console.log('🔎 [EventDetail] Collaborators detailed inspection:');
+                event.collaborators.forEach((c: any, index: number) => {
+                  console.log(`  [${index}] All available fields in collaborator object:`);
+                  console.log(`    Fields: ${Object.keys(c).join(', ')}`);
+                  Object.keys(c).forEach(key => {
+                    console.log(`      ${key}: ${JSON.stringify(c[key])} (type: ${typeof c[key]})`);
+                  });
+                });
+                console.log('🔎 [EventDetail] Current user ID to match: "' + currentUserId + '" (type: ' + typeof currentUserId + ')');
+              }
+
+              // Try to find collaborator with various field names (fallback if field name differs)
+              let collaborator = event.collaborators.find((c: any) => c.userId === currentUserId);
+
+              if (!collaborator) {
+                // Fallback 1: Try snake_case field name
+                collaborator = event.collaborators.find((c: any) => c.user_id === currentUserId);
+                if (collaborator) {
+                  console.log('ℹ️ [EventDetail] Found using fallback: user_id field');
+                }
+              }
+
+              if (!collaborator) {
+                // Fallback 2: Try lowercase comparison
+                collaborator = event.collaborators.find((c: any) =>
+                  (c.userId || c.user_id || '').toLowerCase() === currentUserId.toLowerCase()
+                );
+                if (collaborator) {
+                  console.log('ℹ️ [EventDetail] Found using fallback: case-insensitive match');
+                }
+              }
+
+              if (!collaborator) {
+                // Fallback 3: Try trimming whitespace
+                collaborator = event.collaborators.find((c: any) =>
+                  (c.userId || c.user_id || '').trim() === currentUserId.trim()
+                );
+                if (collaborator) {
+                  console.log('ℹ️ [EventDetail] Found using fallback: trimmed whitespace match');
+                }
+              }
+
+              if (!collaborator) {
+                // Fallback 4: Try matching ANY field value that contains the current user ID
+                console.log('🔍 [EventDetail] Fallback 4: Searching all fields for user ID match...');
+                for (let c of event.collaborators) {
+                  for (let key of Object.keys(c)) {
+                    if (c[key] === currentUserId) {
+                      console.log(`ℹ️ [EventDetail] Found user ID in field "${key}"`);
+                      collaborator = c;
+                      break;
+                    }
+                  }
+                  if (collaborator) break;
+                }
+              }
+
+              if (collaborator) {
+                console.log('✅ [EventDetail] User found as collaborator:', collaborator);
+                this.isCollaborator = true;
+                this.canUploadMedia = collaborator.canUploadMedia === true;
+                this.canDirectUpload = collaborator.canDirectUpload === true;
+                this.canDeleteMedia = collaborator.canDeleteMedia === true;
+                this.canReviewMedia = collaborator.canReviewMedia === true;
+                this.canReviewAccessRequests = collaborator.canReviewAccessRequests === true;
+                this.canEditEventDetails = collaborator.canEditEventDetails === true;
+                console.log('📊 [EventDetail] Collaborator permissions set:', {
+                  canUploadMedia: this.canUploadMedia,
+                  canDirectUpload: this.canDirectUpload,
+                  canDeleteMedia: this.canDeleteMedia,
+                  canReviewMedia: this.canReviewMedia,
+                  canReviewAccessRequests: this.canReviewAccessRequests,
+                  canEditEventDetails: this.canEditEventDetails
+                });
+              } else {
+                console.log('❌ [EventDetail] User NOT found in collaborators list - no match in any field name variation');
+                console.log('⚠️ [EventDetail] DEBUGGING: Expected user ID: ' + currentUserId);
+                console.log('⚠️ [EventDetail] DEBUGGING: Collaborator in array:', event.collaborators[0]);
+              }
+            } else if (this.isEventOwner) {
+              // Owner has all permissions
+              console.log('🔑 [EventDetail] Setting owner permissions (all enabled)');
+              this.isCollaborator = true;
+              this.canUploadMedia = true;
+              this.canDirectUpload = true;
+              this.canDeleteMedia = true;
+              this.canReviewMedia = true;
+              this.canReviewAccessRequests = true;
+              this.canEditEventDetails = true;
+            }
+
+            // Only load media if user has approval or event is public
+            if (!this.requiresApproval) {
+              this.loadEventMedia(eventId);
+            } else {
+              this.isLoading = false;
+            }
+          },
+          error: (error) => {
+            console.error('❌ Failed to get current user ID:', error);
+            this.isEventOwner = false;
+            this.isCollaborator = false;
+            this.isLoading = false;
+          },
+        });
       },
       error: (error) => {
-        console.error('Failed to load event:', error);
+        console.error('❌ Failed to load event:', error);
         this.isLoading = false;
       },
     });
