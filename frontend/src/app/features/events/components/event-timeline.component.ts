@@ -40,28 +40,26 @@ import { MediaPreviewModalComponent } from '../../gallery/components/media-previ
         <p class="text-slate-400">Preparing secure media access...</p>
       </div>
 
-      <!-- Timeline Grid -->
-      <div *ngIf="tokenReady && getApprovedMedia().length > 0" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-        <div *ngFor="let media of getSortedMedia()" class="relative rounded-lg overflow-hidden aspect-square bg-slate-800/50 group" (click)="onTileClick($event, media)">
+      <!-- Timeline Masonry Grid -->
+      <div *ngIf="tokenReady && getApprovedMedia().length > 0" class="columns-1 sm:columns-2 md:columns-3 lg:columns-4 xl:columns-5 gap-4 md:gap-5">
+        <div *ngFor="let media of getSortedMedia()" class="break-inside-avoid bg-slate-800/50 border border-slate-700/30 rounded-lg overflow-hidden transition-all hover:shadow-lg hover:bg-slate-800 hover:-translate-y-1 cursor-pointer group mb-4 md:mb-5" (click)="onTileClick($event, media)">
           <!-- Image or Video Thumbnail -->
-          <ng-container *ngIf="isVideo(media); else imageTpl">
-            <video
-              [src]="getMediaUrl(media.mediaId)"
-              class="w-full h-full object-cover"
-              controls
-              muted
-              preload="metadata"
-              (error)="onMediaError($event)"
-            ></video>
-          </ng-container>
-          <ng-template #imageTpl>
-            <img
-              [src]="getMediaUrl(media.mediaId)"
-              [alt]="media.fileName"
-              class="w-full h-full object-cover"
-              (error)="onImageError($event)"
-            />
-          </ng-template>
+          <img
+            *ngIf="!isVideo(media)"
+            [src]="getMediaUrl(media.mediaId)"
+            [alt]="media.fileName"
+            class="w-full h-auto"
+            (error)="onImageError($event)"
+          />
+          <video
+            *ngIf="isVideo(media)"
+            [src]="getMediaUrl(media.mediaId)"
+            class="w-full h-auto"
+            controls
+            muted
+            preload="metadata"
+            (error)="onMediaError($event)"
+          ></video>
 
           <!-- Delete Button Overlay -->
           <button

@@ -28,13 +28,13 @@ import { LayoutComponent } from '../../shared/layout/layout.component';
           <button class="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 font-medium transition">Private</button>
         </div>
 
-        <!-- Gallery Grid -->
-        <div *ngIf="!isLoading && gallery.length > 0" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-          <div *ngFor="let item of gallery" class="relative rounded-lg overflow-hidden aspect-square">
+        <!-- Gallery Masonry Grid -->
+        <div *ngIf="!isLoading && gallery.length > 0" class="columns-1 sm:columns-2 md:columns-3 lg:columns-4 xl:columns-5 gap-4 md:gap-5">
+          <div *ngFor="let item of gallery" class="break-inside-avoid bg-slate-800/50 border border-slate-700/30 rounded-lg overflow-hidden transition-all hover:shadow-lg hover:bg-slate-800 hover:-translate-y-1 cursor-pointer mb-4 md:mb-5">
             <img
               [src]="api.getGalleryMediaFile(item.id)"
               [alt]="item.originalFileName"
-              class="w-full h-full object-cover"
+              class="w-full h-auto"
             />
           </div>
         </div>
