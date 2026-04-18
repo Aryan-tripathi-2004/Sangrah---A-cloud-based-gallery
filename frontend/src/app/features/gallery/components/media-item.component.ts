@@ -8,36 +8,34 @@ import { MediaItem, SangrahApiService } from '../../../core/api/sangrah-api.serv
   imports: [CommonModule],
   template: `
     <div
-      class="group relative aspect-square rounded-lg overflow-hidden bg-slate-800 cursor-pointer transition-transform hover:scale-105"
+      class="group relative break-inside-avoid bg-slate-800/50 border border-slate-700/30 rounded-lg overflow-hidden cursor-pointer transition-all hover:shadow-lg hover:bg-slate-800 hover:-translate-y-1"
     >
       <!-- Image/Video Thumbnail -->
-      <div class="w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-700 to-slate-800">
-        <img
-          *ngIf="isImage"
-          [src]="fileUrl"
-          [alt]="media.originalFileName"
-          class="w-full h-full object-cover cursor-pointer"
-          (click)="onPreview()"
-          (load)="onImageLoad()"
-          (error)="onImageError()"
-        />
-        <video
-          *ngIf="isVideo"
-          [src]="fileUrl"
-          class="w-full h-full object-cover cursor-pointer"
-          (click)="onPreview()"
-          (loadedmetadata)="onImageLoad()"
-          (error)="onImageError()"
-        ></video>
+      <img
+        *ngIf="isImage"
+        [src]="fileUrl"
+        [alt]="media.originalFileName"
+        class="w-full h-auto cursor-pointer"
+        (click)="onPreview()"
+        (load)="onImageLoad()"
+        (error)="onImageError()"
+      />
+      <video
+        *ngIf="isVideo"
+        [src]="fileUrl"
+        class="w-full h-auto cursor-pointer"
+        (click)="onPreview()"
+        (loadedmetadata)="onImageLoad()"
+        (error)="onImageError()"
+      ></video>
 
-        <!-- Fallback Emoji if image fails to load -->
-        <div *ngIf="!imageLoaded" class="text-5xl">
+      <!-- Fallback Emoji if image fails to load -->
+      <div *ngIf="!imageLoaded" class="w-full py-24 flex items-center justify-center bg-gradient-to-br from-slate-700 to-slate-800">
+        <span class="text-5xl">
           <span *ngIf="isImage">🖼️</span>
           <span *ngIf="isVideo">🎬</span>
-        </div>
+        </span>
       </div>
-
-      <!-- Overlay removed to prevent hover icon display -->
 
       <!-- Size Badge -->
       <div class="absolute top-2 right-2 bg-black/60 px-2 py-1 rounded text-xs font-medium text-slate-300">

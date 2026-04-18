@@ -60,8 +60,8 @@ import { TimelineResponse, MediaItem } from '../../../core/api/sangrah-api.servi
             </div>
           </div>
 
-          <!-- Media Grid -->
-          <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          <!-- Media Masonry Grid -->
+          <div class="columns-1 sm:columns-2 md:columns-3 lg:columns-4 xl:columns-5 gap-4 md:gap-5">
             <app-media-item
               *ngFor="let item of group.items"
               [media]="item"
