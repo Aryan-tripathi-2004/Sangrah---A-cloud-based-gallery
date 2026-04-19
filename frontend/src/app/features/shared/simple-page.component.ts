@@ -4,12 +4,7 @@ import { ActivatedRoute } from '@angular/router';
 @Component({
   selector: 'app-simple-page',
   standalone: true,
-  template: `
-    <section style="padding: 1rem;">
-      <h2>{{ title }}</h2>
-      <p>{{ description }}</p>
-    </section>
-  `
+  templateUrl: './simple-page.component.html'
 })
 export class SimplePageComponent {
   private readonly route = inject(ActivatedRoute);

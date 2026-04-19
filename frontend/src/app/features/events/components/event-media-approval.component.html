@@ -1,0 +1,256 @@
+<div class="space-y-6">
+      <!-- Approval Header -->
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-2xl font-bold">Media Approvals</h2>
+          <p class="text-slate-400">Review and approve/reject submissions</p>
+        </div>
+        <div class="bg-blue-500/10 border border-blue-500/30 rounded-lg px-4 py-2">
+          <p class="text-sm">
+            <span class="font-semibold text-blue-400">{{ pendingCount }}</span>
+            <span class="text-blue-300">pending</span>
+          </p>
+        </div>
+      </div>
+
+      <!-- Two Views: Uploaders List or Media List -->
+      
+      <!-- View 1: List of Uploaders (default view) -->
+      <div *ngIf="!selectedUploader">
+        <!-- Filter Tabs -->
+        <div class="flex gap-3 border-b border-slate-800 mb-6">
+          <button
+            (click)="filterStatus = 'all'"
+            [class.border-b-2]="filterStatus === 'all'"
+            [class.border-blue-500]="filterStatus === 'all'"
+            [class.text-blue-400]="filterStatus === 'all'"
+            class="px-4 py-3 font-semibold transition hover:text-slate-100"
+          >
+            All Uploaders
+          </button>
+          <button
+            (click)="filterStatus = 'PENDING'"
+            [class.border-b-2]="filterStatus === 'PENDING'"
+            [class.border-blue-500]="filterStatus === 'PENDING'"
+            [class.text-blue-400]="filterStatus === 'PENDING'"
+            class="px-4 py-3 font-semibold transition hover:text-slate-100"
+          >
+            ⏳ Has Pending
+          </button>
+          <button
+            (click)="filterStatus = 'APPROVED'"
+            [class.border-b-2]="filterStatus === 'APPROVED'"
+            [class.border-blue-500]="filterStatus === 'APPROVED'"
+            [class.text-green-400]="filterStatus === 'APPROVED'"
+            class="px-4 py-3 font-semibold transition hover:text-slate-100"
+          >
+            ✅ All Approved
+          </button>
+        </div>
+
+        <!-- Uploaders Grid -->
+        <div *ngIf="getFilteredUploaders().length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div *ngFor="let group of getFilteredUploaders()"
+               (click)="selectedUploader = group"
+               class="rounded-lg bg-slate-800/30 border border-slate-700/50 hover:border-blue-500 cursor-pointer transition p-6 space-y-4">
+            <!-- Uploader Info -->
+            <div>
+              <p class="text-lg font-bold">👤 {{ getUploaderDisplayName(group) }}</p>
+            </div>
+
+            <!-- Media Counts -->
+            <div class="grid grid-cols-3 gap-3">
+              <div class="bg-slate-900/50 rounded p-3 text-center">
+                <p class="text-2xl font-bold text-yellow-400">{{ group.pendingCount }}</p>
+                <p class="text-xs text-slate-400">Pending</p>
+              </div>
+              <div class="bg-slate-900/50 rounded p-3 text-center">
+                <p class="text-2xl font-bold text-green-400">{{ group.approvedCount }}</p>
+                <p class="text-xs text-slate-400">Approved</p>
+              </div>
+              <div class="bg-slate-900/50 rounded p-3 text-center">
+                <p class="text-2xl font-bold text-red-400">{{ group.rejectedCount }}</p>
+                <p class="text-xs text-slate-400">Rejected</p>
+              </div>
+            </div>
+
+            <!-- Click Hint -->
+            <p class="text-xs text-blue-400 text-center">Click to view media →</p>
+          </div>
+        </div>
+
+        <!-- Empty State -->
+        <div *ngIf="getFilteredUploaders().length === 0" class="text-center py-12 rounded-lg bg-slate-800/20 border border-slate-700/50">
+          <p class="text-5xl mb-4">📭</p>
+          <p class="text-slate-400">No submissions yet</p>
+        </div>
+      </div>
+
+      <!-- View 2: Selected Uploader's Media -->
+      <div *ngIf="selectedUploader">
+        <!-- Back Button & Uploader Header -->
+        <div class="flex items-center gap-4 mb-6">
+          <button
+            (click)="selectedUploader = null"
+            class="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg font-semibold transition">
+            ← Back to Uploaders
+          </button>
+          <div>
+            <h3 class="text-xl font-bold">👤 {{ getUploaderDisplayName(selectedUploader) }}</h3>
+            <p class="text-sm text-slate-400">{{ selectedUploader.mediaList.length }} submissions</p>
+          </div>
+        </div>
+
+        <!-- Filter Tabs for Media -->
+        <div class="flex gap-3 border-b border-slate-800 mb-6">
+          <button
+            (click)="mediaFilterStatus = 'all'"
+            [class.border-b-2]="mediaFilterStatus === 'all'"
+            [class.border-blue-500]="mediaFilterStatus === 'all'"
+            [class.text-blue-400]="mediaFilterStatus === 'all'"
+            class="px-4 py-3 font-semibold transition hover:text-slate-100"
+          >
+            All ({{ selectedUploader.mediaList.length }})
+          </button>
+          <button
+            (click)="mediaFilterStatus = 'PENDING'"
+            [class.border-b-2]="mediaFilterStatus === 'PENDING'"
+            [class.border-blue-500]="mediaFilterStatus === 'PENDING'"
+            [class.text-yellow-400]="mediaFilterStatus === 'PENDING'"
+            class="px-4 py-3 font-semibold transition hover:text-slate-100"
+          >
+            ⏳ Pending ({{ selectedUploader.pendingCount }})
+          </button>
+          <button
+            (click)="mediaFilterStatus = 'APPROVED'"
+            [class.border-b-2]="mediaFilterStatus === 'APPROVED'"
+            [class.border-blue-500]="mediaFilterStatus === 'APPROVED'"
+            [class.text-green-400]="mediaFilterStatus === 'APPROVED'"
+            class="px-4 py-3 font-semibold transition hover:text-slate-100"
+          >
+            ✅ Approved ({{ selectedUploader.approvedCount }})
+          </button>
+          <button
+            (click)="mediaFilterStatus = 'REJECTED'"
+            [class.border-b-2]="mediaFilterStatus === 'REJECTED'"
+            [class.border-blue-500]="mediaFilterStatus === 'REJECTED'"
+            [class.text-red-400]="mediaFilterStatus === 'REJECTED'"
+            class="px-4 py-3 font-semibold transition hover:text-slate-100"
+          >
+            ❌ Rejected ({{ selectedUploader.rejectedCount }})
+          </button>
+        </div>
+
+        <!-- Media Items with Preview -->
+        <div *ngIf="getFilteredMediaFromUploader().length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div *ngFor="let media of getFilteredMediaFromUploader()" class="rounded-lg bg-slate-800/30 border border-slate-700/50 overflow-hidden">
+            <!-- Media Preview (Clickable) -->
+            <div class="h-48 bg-gradient-to-br from-blue-600/20 to-purple-600/20 flex items-center justify-center relative overflow-hidden"
+                 (click)="openPreview(media)">
+              <img *ngIf="isImageFile(media)" [src]="getMediaUrl(media)" 
+                   alt="Media preview" class="w-full h-full object-cover">
+              <video *ngIf="isVideoFile(media)" class="w-full h-full object-cover" muted>
+                <source [src]="getMediaUrl(media)" />
+              </video>
+              <p *ngIf="!isImageFile(media) && !isVideoFile(media)" class="text-4xl">📄</p>
+            </div>
+
+            <!-- Media Info -->
+            <div class="p-4">
+              <div class="flex items-start justify-between mb-3">
+                <div class="flex-1">
+                  <p class="font-semibold truncate">{{ media.fileName }}</p>
+                  <p class="text-xs text-slate-400">{{ media.uploadedAt | date: 'short' }}</p>
+                </div>
+                <div class="ml-2">
+                  <span
+                    class="px-2 py-1 rounded text-xs font-semibold whitespace-nowrap"
+                    [ngClass]="{
+                      'bg-yellow-500/20 text-yellow-400': media.status === 'PENDING',
+                      'bg-green-500/20 text-green-400': media.status === 'APPROVED',
+                      'bg-red-500/20 text-red-400': media.status === 'REJECTED'
+                    }"
+                  >
+                    {{ media.status }}
+                  </span>
+                </div>
+              </div>
+
+              <!-- Rejection Reason (if rejected) -->
+              <div *ngIf="media.status === 'REJECTED' && media.reason" class="bg-red-500/10 border border-red-500/30 rounded p-2 mb-3">
+                <p class="text-xs text-red-300"><span class="font-semibold">Reason:</span> {{ media.reason }}</p>
+              </div>
+
+              <!-- Action Buttons (only for PENDING) -->
+              <div *ngIf="media.status === 'PENDING'" class="space-y-3">
+                <!-- Approve Button -->
+                <button
+                  (click)="onApprove(media.mediaId)"
+                  [disabled]="processingId === media.mediaId"
+                  class="w-full px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-slate-600 rounded-lg font-semibold transition"
+                >
+                  {{ processingId === media.mediaId ? 'Approving...' : '✅ Approve' }}
+                </button>
+
+                <!-- Reject Button -->
+                <button
+                  (click)="showRejectForm(media.mediaId)"
+                  [disabled]="processingId === media.mediaId"
+                  class="w-full px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-slate-600 rounded-lg font-semibold transition"
+                >
+                  {{ rejectFormId === media.mediaId ? '❌ Cancel' : '❌ Reject' }}
+                </button>
+
+                <!-- Reject Form -->
+                <div *ngIf="rejectFormId === media.mediaId" class="space-y-2 bg-slate-900/50 p-3 rounded">
+                  <input
+                    [(ngModel)]="rejectionReason"
+                    type="text"
+                    placeholder="Reason for rejection..."
+                    class="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded text-sm placeholder-slate-500"
+                  />
+                  <button
+                    (click)="confirmReject(media.mediaId)"
+                    [disabled]="!rejectionReason.trim() || processingId === media.mediaId"
+                    class="w-full px-3 py-2 bg-red-600 hover:bg-red-700 disabled:bg-slate-600 rounded text-sm font-semibold transition"
+                  >
+                    Confirm Rejection
+                  </button>
+                </div>
+              </div>
+
+              <!-- Status Info (for already processed) -->
+              <div *ngIf="media.status === 'APPROVED'" class="px-4 py-2 bg-green-500/10 border border-green-500/30 rounded text-sm text-center text-green-300">
+                Approved and visible
+              </div>
+
+              <div *ngIf="media.status === 'REJECTED'" class="px-4 py-2 bg-red-500/10 border border-red-500/30 rounded text-sm text-center text-red-300">
+                Not visible to public
+              </div>
+
+              <!-- Delete Button (always available) -->
+              <button
+                (click)="deleteMedia(media.mediaId)"
+                [disabled]="processingId === media.mediaId"
+                class="w-full px-4 py-2 bg-red-600/20 hover:bg-red-600/30 border border-red-600/50 text-red-400 rounded-lg font-semibold transition text-sm mt-3"
+              >
+                {{ processingId === media.mediaId ? 'Deleting...' : 'Delete Media' }}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Empty State -->
+        <div *ngIf="getFilteredMediaFromUploader().length === 0" class="text-center py-12 rounded-lg bg-slate-800/20 border border-slate-700/50">
+          <p class="text-slate-400">No {{ mediaFilterStatus }} submissions from this uploader</p>
+        </div>
+      </div>
+
+      <!-- Preview Modal -->
+      <app-media-preview-modal
+        [isOpen]="previewOpen"
+        [media]="previewMedia"
+        [fileUrlOverride]="previewFileUrl"
+        (closeModal)="closePreview()"
+      ></app-media-preview-modal>
+    </div>

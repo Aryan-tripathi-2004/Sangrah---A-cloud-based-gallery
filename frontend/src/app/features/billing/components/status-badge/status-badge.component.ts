@@ -5,11 +5,7 @@ import { CommonModule } from '@angular/common';
   selector: 'app-status-badge',
   standalone: true,
   imports: [CommonModule],
-  template: `
-    <span [ngClass]="getStatusClasses()">
-      {{ status }}
-    </span>
-  `
+  templateUrl: './status-badge.component.html'
 })
 export class StatusBadgeComponent {
   @Input() status: 'PENDING' | 'PAID' | 'OVERDUE' = 'PENDING';
