@@ -1,0 +1,47 @@
+<app-layout>
+      <div class="space-y-8">
+        <!-- Header -->
+        <div class="flex items-center justify-between">
+          <div>
+            <h1 class="text-4xl font-bold mb-2">My Gallery</h1>
+            <p class="text-slate-400">Your personal collection of photos and memories</p>
+          </div>
+          <button class="px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 rounded-lg font-semibold transition">
+            Upload Photo
+          </button>
+        </div>
+
+        <!-- Filters -->
+        <div class="flex gap-4 flex-wrap">
+          <button class="px-4 py-2 rounded-lg bg-blue-600 text-white font-medium">All</button>
+          <button class="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 font-medium transition">Public</button>
+          <button class="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 font-medium transition">Private</button>
+        </div>
+
+        <!-- Gallery Masonry Grid -->
+        <div *ngIf="!isLoading && gallery.length > 0" class="columns-1 sm:columns-2 md:columns-3 lg:columns-4 xl:columns-5 gap-4 md:gap-5">
+          <div *ngFor="let item of gallery" class="break-inside-avoid bg-slate-800/50 border border-slate-700/30 rounded-lg overflow-hidden transition-all hover:shadow-lg hover:bg-slate-800 hover:-translate-y-1 cursor-pointer mb-4 md:mb-5">
+            <img
+              [src]="api.getGalleryMediaFile(item.id)"
+              [alt]="item.originalFileName"
+              class="w-full h-auto"
+            />
+          </div>
+        </div>
+
+        <!-- Loading State -->
+        <div *ngIf="isLoading" class="text-center py-16">
+          <p class="text-slate-400">Loading gallery...</p>
+        </div>
+
+        <!-- Empty State -->
+        <div *ngIf="!isLoading && gallery.length === 0" class="text-center py-16 bg-slate-800/20 border border-slate-700/50 rounded-lg">
+          <div class="text-5xl mb-4">📷</div>
+          <h3 class="text-2xl font-bold mb-2">No Photos Yet</h3>
+          <p class="text-slate-400 mb-6">Start sharing your moments</p>
+          <button class="px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg font-semibold transition">
+            Upload Your First Photo
+          </button>
+        </div>
+      </div>
+    </app-layout>

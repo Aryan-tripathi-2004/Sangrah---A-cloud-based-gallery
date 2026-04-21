@@ -1,0 +1,66 @@
+<!-- Shows if event is PROTECTED and user is not owner and doesn't have access -->
+    <div *ngIf="showRequestButton" class="space-y-4">
+      <!-- Status States -->
+      <div *ngIf="requestStatus === 'none'" class="text-center">
+        <button
+          (click)="openRequestForm()"
+          class="px-6 py-3 bg-orange-600 hover:bg-orange-700 rounded-lg font-semibold">
+          🔓 Request Access to This Event
+        </button>
+        <p class="text-slate-400 mt-2">This event is protected. Contact owner for access.</p>
+      </div>
+
+      <div *ngIf="requestStatus === 'pending'" class="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4">
+        <p class="text-yellow-400 font-semibold">⏳ Pending Approval</p>
+        <p class="text-sm text-slate-400">Waiting for owner to review your request</p>
+        <p class="text-xs text-slate-500 mt-2" *ngIf="requestCreatedAt">Requested: {{ requestCreatedAt | date:'short' }}</p>
+        <button
+          (click)="withdrawRequest()"
+          [disabled]="isSubmitting"
+          class="mt-3 px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-slate-600 rounded text-sm font-semibold">
+          {{ isSubmitting ? '⏳ Withdrawing...' : '✕ Withdraw Request' }}
+        </button>
+      </div>
+
+      <div *ngIf="requestStatus === 'approved'" class="bg-green-500/10 border border-green-500/30 rounded-lg p-4">
+        <p class="text-green-400 font-semibold">✅ Access Approved</p>
+        <p class="text-sm text-slate-400">You can now view and upload media to this event</p>
+      </div>
+
+      <div *ngIf="requestStatus === 'rejected'" class="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
+        <p class="text-red-400 font-semibold">❌ Request Denied</p>
+        <p class="text-sm text-slate-400">{{ rejectionReason }}</p>
+        <button
+          (click)="submitRequest()"
+          class="mt-3 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-sm font-semibold">
+          Request Again
+        </button>
+      </div>
+
+      <!-- Request Form Modal -->
+      <div *ngIf="showRequestForm" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div class="bg-slate-800 rounded-lg p-6 max-w-md w-full mx-4">
+          <h3 class="text-xl font-bold mb-4">Request Access</h3>
+          <p class="text-slate-400 mb-4">Send a message with your request (optional):</p>
+
+          <textarea
+            [(ngModel)]="requestMessage"
+            placeholder="Hey Owner..!! I want to Enter in your Event."
+            class="w-full bg-slate-700 rounded p-3 text-white mb-4 h-24 border border-slate-600 focus:border-blue-500 outline-none"></textarea>
+
+          <div class="flex gap-3">
+            <button
+              (click)="submitRequest()"
+              [disabled]="isSubmitting"
+              class="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-600 py-2 rounded font-semibold">
+              {{ isSubmitting ? '⏳ Requesting...' : '📤 Send Request' }}
+            </button>
+            <button
+              (click)="showRequestForm = false"
+              class="flex-1 bg-slate-700 hover:bg-slate-600 py-2 rounded font-semibold">
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>

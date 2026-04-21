@@ -1,0 +1,194 @@
+<app-layout>
+      <div class="space-y-8">
+        <!-- Header Section -->
+        <div class="space-y-4">
+          <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div>
+              <h1 class="text-4xl font-bold mb-2">My Gallery</h1>
+              <p class="text-slate-400">Organize and manage your photos and videos</p>
+            </div>
+            <div
+              class="flex items-center gap-3 bg-slate-800 px-4 py-3 rounded-lg border border-slate-700"
+            >
+              <div>
+                <p class="text-xs text-slate-400">Storage Used</p>
+                <p class="text-lg font-bold text-blue-400">{{ storageUsage?.formatted?.totalFormatted || '—' }}</p>
+              </div>
+              <div class="text-3xl">💾</div>
+            </div>
+          </div>
+
+          <!-- Info Message -->
+          <div class="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4 flex gap-3">
+            <div class="text-xl flex-shrink-0">ℹ️</div>
+            <div class="text-sm text-blue-200">
+              <p class="font-semibold mb-1">Pay-as-you-use storage model</p>
+              <p>You can upload unlimited files and only pay for what you use (charged by byte-days)</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="flex gap-2 border-b border-slate-700">
+          <button
+            (click)="activeTab = 'timeline'"
+            [class.text-blue-400]="activeTab === 'timeline'"
+            [class.border-b-2]="activeTab === 'timeline'"
+            [class.border-blue-500]="activeTab === 'timeline'"
+            [class.text-slate-400]="activeTab !== 'timeline'"
+            class="px-4 py-3 font-medium transition"
+          >
+            📅 Timeline
+          </button>
+          <button
+            (click)="activeTab = 'upload'"
+            [class.text-blue-400]="activeTab === 'upload'"
+            [class.border-b-2]="activeTab === 'upload'"
+            [class.border-blue-500]="activeTab === 'upload'"
+            [class.text-slate-400]="activeTab !== 'upload'"
+            class="px-4 py-3 font-medium transition"
+          >
+            ⬆️ Upload
+          </button>
+          <button
+            (click)="activeTab = 'stats'"
+            [class.text-blue-400]="activeTab === 'stats'"
+            [class.border-b-2]="activeTab === 'stats'"
+            [class.border-blue-500]="activeTab === 'stats'"
+            [class.text-slate-400]="activeTab !== 'stats'"
+            class="px-4 py-3 font-medium transition"
+          >
+            📊 Stats
+          </button>
+        </div>
+
+        <!-- Tab Content -->
+        <div>
+          <!-- Timeline Tab -->
+          <div *ngIf="activeTab === 'timeline'" class="space-y-6">
+            <app-timeline-view
+              (preview)="onMediaPreview($event)"
+              (delete)="onMediaDelete($event)"
+            ></app-timeline-view>
+          </div>
+
+          <!-- Upload Tab -->
+          <div *ngIf="activeTab === 'upload'" class="space-y-6">
+            <app-media-upload
+              (uploadComplete)="onUploadComplete($event)"
+            ></app-media-upload>
+          </div>
+
+          <!-- Stats Tab -->
+          <div *ngIf="activeTab === 'stats'" class="space-y-6">
+            <div *ngIf="storageUsage; else noStats" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <!-- Total Storage -->
+              <div class="bg-slate-800/50 border border-slate-700 rounded-lg p-6">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <p class="text-slate-400 text-sm mb-1">Total Storage</p>
+                    <p class="text-3xl font-bold text-blue-400">
+                      {{ storageUsage.formatted.totalFormatted }}
+                    </p>
+                  </div>
+                  <div class="text-4xl opacity-30">💾</div>
+                </div>
+              </div>
+
+              <!-- File Count -->
+              <div class="bg-slate-800/50 border border-slate-700 rounded-lg p-6">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <p class="text-slate-400 text-sm mb-1">Total Files</p>
+                    <p class="text-3xl font-bold text-purple-400">
+                      {{ storageUsage.fileCount }}
+                    </p>
+                  </div>
+                  <div class="text-4xl opacity-30">📷</div>
+                </div>
+              </div>
+
+              <!-- Images Storage -->
+              <div class="bg-slate-800/50 border border-slate-700 rounded-lg p-6">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <p class="text-slate-400 text-sm mb-1">Images</p>
+                    <p class="text-3xl font-bold text-green-400">
+                      {{ storageUsage.formatted.imageFormatted }}
+                    </p>
+                  </div>
+                  <div class="text-4xl opacity-30">🖼️</div>
+                </div>
+              </div>
+
+              <!-- Videos Storage -->
+              <div class="bg-slate-800/50 border border-slate-700 rounded-lg p-6">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <p class="text-slate-400 text-sm mb-1">Videos</p>
+                    <p class="text-3xl font-bold text-orange-400">
+                      {{ storageUsage.formatted.videoFormatted }}
+                    </p>
+                  </div>
+                  <div class="text-4xl opacity-30">🎬</div>
+                </div>
+              </div>
+
+              <!-- Average File Size -->
+              <div class="bg-slate-800/50 border border-slate-700 rounded-lg p-6">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <p class="text-slate-400 text-sm mb-1">Avg File Size</p>
+                    <p class="text-3xl font-bold text-indigo-400">
+                      {{ getAverageFileSize() }}
+                    </p>
+                  </div>
+                  <div class="text-4xl opacity-30">📏</div>
+                </div>
+              </div>
+
+              <!-- Storage Efficiency -->
+              <div class="bg-slate-800/50 border border-slate-700 rounded-lg p-6">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <p class="text-slate-400 text-sm mb-1">Billing Model</p>
+                    <p class="text-2xl font-bold text-yellow-400">Pay-as-you-use</p>
+                  </div>
+                  <div class="text-4xl opacity-30">💰</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Message about billing -->
+            <div class="bg-slate-800/50 border border-slate-700 rounded-lg p-6 space-y-3">
+              <h3 class="font-semibold text-lg">How You're Charged</h3>
+              <p class="text-slate-300 text-sm">
+                Every file you upload is tracked in our storage ledger. You pay for the storage based on:
+              </p>
+              <ul class="space-y-2 text-sm text-slate-300 list-disc list-inside">
+                <li>File size in bytes</li>
+                <li>Number of days the file was stored</li>
+                <li>Current storage rate (varies by plan)</li>
+              </ul>
+              <p class="text-xs text-slate-400 pt-2">
+                When you delete a file, you stop being charged for it from that day forward.
+              </p>
+            </div>
+
+            <ng-template #noStats>
+              <div class="text-center py-16 bg-slate-800/20 border border-slate-700/50 rounded-lg">
+                <div class="text-5xl mb-4">📊</div>
+                <p class="text-slate-400">No storage data available yet</p>
+              </div>
+            </ng-template>
+          </div>
+        </div>
+      </div>
+    </app-layout>
+
+    <!-- Media Preview Modal -->
+    <app-media-preview-modal
+      [isOpen]="isPreviewOpen"
+      [media]="selectedMedia"
+      (closeModal)="closePreview()"
+    ></app-media-preview-modal>
