@@ -35,6 +35,6 @@ build/
 logs/
 *.log
 
-# Storage (images, videos, media files)
-storage/
-uploads/
+# # Ignore only root Storage (images, videos, media files)
+/storage/
+/uploads/
