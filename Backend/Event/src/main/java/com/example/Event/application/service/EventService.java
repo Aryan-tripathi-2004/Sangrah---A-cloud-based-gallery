@@ -33,7 +33,7 @@ public class EventService {
      * Create a new event
      */
     public EventDocument createEvent(String ownerUserId, String title, String description,
-                                     String eventDateStr, String visibility, boolean moderationEnabled) {
+                                     String eventDateStr, String visibility,String coverImageId, boolean moderationEnabled) {
         try {
             log.info("?? Creating event: {} by user: {}", title, ownerUserId);
 
@@ -60,6 +60,7 @@ public class EventService {
                     .visibility(visibility != null ? visibility : "PRIVATE")
                     .moderationEnabled(moderationEnabled)
                     .status("ACTIVE")
+                    .coverImageId(coverImageId)
                     .createdAt(Instant.now())
                     .updatedAt(Instant.now())
                     .build();
@@ -128,7 +129,8 @@ public class EventService {
      * Update an event
      */
     public EventDocument updateEvent(String eventId, String title, String description,
-                                     String eventDateStr, String visibility, boolean moderationEnabled) {
+                                     String eventDateStr, String visibility,
+                                     String coverImageId, boolean moderationEnabled) {
         try {
             log.info("?? Updating event: {}", eventId);
 
@@ -152,6 +154,9 @@ public class EventService {
             if (visibility != null && !visibility.isEmpty()) {
                 event.setVisibility(visibility);
             }
+
+            event.setCoverImageId(coverImageId);
+
             event.setModerationEnabled(moderationEnabled);
             event.setUpdatedAt(Instant.now());
 
