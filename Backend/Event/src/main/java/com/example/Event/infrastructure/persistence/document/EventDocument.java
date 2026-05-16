@@ -23,6 +23,7 @@ public class EventDocument {
     private String visibility;
     private boolean moderationEnabled;
     private String status;
+    private String coverImageId; //sparsh - new field for cover image reference
     private Instant createdAt;
     private Instant updatedAt;
 
@@ -49,5 +50,6 @@ public class EventDocument {
         private Boolean canEditEventDetails;        // NEW: Can edit event details
         private Instant addedAt;
         private String addedByUserId;               // Who added this collaborator (owner)
+
     }
 }

@@ -101,7 +101,9 @@ export class EventsListComponent implements OnInit {
       },
     });
   }
-
+getCoverImageUrl(mediaId: string): string {
+  return this.api.getGalleryMediaFile(mediaId);
+}
   viewEventOrRequest(event: Event): void {
     // Check server for access requirements before navigating
     this.api.getEventById(event.id).subscribe({
