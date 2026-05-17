@@ -55,14 +55,18 @@ public class EventAccessService {
     }
 
     /**
-     * List pending access requests for an event (owner only)
+     * List owner-visible access requests for an event.
+     * Includes pending and approved requests so the owner can manage both tabs.
      */
     public List<EventAccessRequestDocument> listPendingRequests(String eventId, String ownerUserId) {
         try {
-            return accessRequestRepository.findByEventIdAndStatusOrderByRequestedAtDesc(eventId, "PENDING");
+            return accessRequestRepository.findByEventIdAndStatusInOrderByRequestedAtDesc(
+                    eventId,
+                    List.of("PENDING", "APPROVED")
+            );
         } catch (Exception e) {
-            log.error("❌ Failed to list pending requests: {}", e.getMessage());
-            throw new RuntimeException("Failed to list pending requests: " + e.getMessage(), e);
+            log.error("❌ Failed to list access requests: {}", e.getMessage());
+            throw new RuntimeException("Failed to list access requests: " + e.getMessage(), e);
         }
     }
 
@@ -87,6 +91,7 @@ public class EventAccessService {
             }
             request.setDecisionAt(Instant.now());
             request.setDecidedByUserId(approverUserId);
+            request.setUpdatedAt(Instant.now());  // Track update time
 
             EventAccessRequestDocument updated = accessRequestRepository.save(request);
             log.info("✅ Access request approved: {}", requestId);
@@ -121,6 +126,7 @@ public class EventAccessService {
             request.setRejectionReason(rejectionReason);
             request.setDecisionAt(Instant.now());
             request.setDecidedByUserId(approverUserId);
+            request.setUpdatedAt(Instant.now());  // Track update time
 
             EventAccessRequestDocument updated = accessRequestRepository.save(request);
             log.info("✅ Access request rejected: {}", requestId);
@@ -140,6 +146,8 @@ public class EventAccessService {
 
     /**
      * Check if user has approved access to an event
+     * Returns false if: REVOKED, REJECTED, PENDING, expired, or not found
+     * Returns true if: APPROVED with valid/no expiration
      */
     public boolean isUserApproved(String eventId, String requesterUserId) {
         try {
@@ -148,12 +156,25 @@ public class EventAccessService {
 
             if (request.isPresent()) {
                 EventAccessRequestDocument doc = request.get();
+
+                // NEW: Check if REVOKED (explicit deny)
+                if ("REVOKED".equals(doc.getStatus())) {
+                    return false;  // ❌ Revoked users denied
+                }
+
                 if ("APPROVED".equals(doc.getStatus())) {
-                    // Check if access is not expired
-                    if (doc.getAccessExpiresAt() != null && Instant.now().isAfter(doc.getAccessExpiresAt())) {
-                        return false; // Access expired
+                    // No expiration date = FOREVER access
+                    if (doc.getAccessExpiresAt() == null) {
+                        return true;  // ✅ Permanent access
                     }
-                    return true;
+
+                    // Has expiration date = check if still valid
+                    if (Instant.now().isBefore(doc.getAccessExpiresAt())) {
+                        return true;  // ✅ Still valid
+                    }
+
+                    // Expired = denied (user can re-request)
+                    return false;  // ❌ Access expired
                 }
             }
             return false;
@@ -165,21 +186,116 @@ public class EventAccessService {
     }
 
     /**
-     * Revoke access for a user
+     * Revoke access for a user (mark as REVOKED, don't delete)
+     * Sets revokedAt = now(), status = REVOKED, and tracks who revoked
      */
-    public void revokeAccess(String eventId, String requesterUserId) {
+    public void revokeAccess(String eventId, String requesterUserId, String revokerUserId) {
         try {
             Optional<EventAccessRequestDocument> request =
                 accessRequestRepository.findByEventIdAndRequesterUserId(eventId, requesterUserId);
 
             if (request.isPresent()) {
-                accessRequestRepository.deleteById(request.get().getId());
-                log.info("✅ Access revoked for user: {} on event: {}", requesterUserId, eventId);
+                EventAccessRequestDocument doc = request.get();
+
+                // ===== MARK AS REVOKED (NOT DELETED) =====
+                doc.setStatus("REVOKED");                     // Mark as revoked
+                doc.setAccessExpiresAt(Instant.now());        // Set to now = immediately expired
+                doc.setRevokedAt(Instant.now());              // When revoked
+                doc.setRevokedByUserId(revokerUserId);        // Who revoked it
+                doc.setUpdatedAt(Instant.now());              // Update timestamp
+
+                accessRequestRepository.save(doc);
+                log.info("✅ Access revoked for user: {} on event: {} by {}", requesterUserId, eventId, revokerUserId);
+
+                // TODO: Send notification that access was revoked
             }
 
         } catch (Exception e) {
             log.error("❌ Failed to revoke access: {}", e.getMessage());
             throw new RuntimeException("Failed to revoke access: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * User re-requests access after expiration or revocation
+     * Updates existing record to PENDING status (back to waiting for owner approval)
+     * CRITICAL: Re-request does NOT auto-approve - owner must manually approve again
+     */
+    public EventAccessRequestDocument createReRequest(String eventId, String requesterUserId, String message) {
+        try {
+            // Find existing record (should always exist at this point)
+            EventAccessRequestDocument request = accessRequestRepository
+                    .findByEventIdAndRequesterUserId(eventId, requesterUserId)
+                    .orElseThrow(() -> new RuntimeException("No prior access request found"));
+
+            // ===== UPDATE THE SAME RECORD - SET BACK TO PENDING =====
+            request.setStatus("PENDING");                     // Back to PENDING (waiting for owner approval)
+            request.setRequestedAt(Instant.now());            // Update request timestamp
+            request.setUpdatedAt(Instant.now());              // Track update
+            request.setMessage(message);                      // New message (if provided)
+            request.setRejectionReason(null);                 // Clear rejection reason
+
+            // Clear any previous decision/revocation data
+            request.setDecisionAt(null);
+            request.setDecidedByUserId(null);
+            request.setRevokedAt(null);
+            request.setRevokedByUserId(null);
+
+            EventAccessRequestDocument saved = accessRequestRepository.save(request);
+            log.info("🔄 [Re-Request] User {} requested access again to event {}", requesterUserId, eventId);
+
+            // TODO: Send notification to owner that there's a re-request to review
+            return saved;
+
+        } catch (Exception e) {
+            log.error("❌ Failed to create re-request: {}", e.getMessage());
+            throw new RuntimeException("Failed to create re-request: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Owner approves a re-request (user's second/third/etc attempt after expiration/revocation)
+     * Updates SAME record with new approval duration and expiration
+     * CRITICAL: This requires owner to manually make the decision AGAIN
+     */
+    public EventAccessRequestDocument approveReRequest(
+            String eventId,
+            String requesterUserId,
+            String approverUserId,
+            String approvalDuration,
+            Instant expiresAt) {
+        try {
+            EventAccessRequestDocument request = accessRequestRepository
+                    .findByEventIdAndRequesterUserId(eventId, requesterUserId)
+                    .orElseThrow(() -> new RuntimeException("No prior access request found"));
+
+            // ===== UPDATE THE SAME RECORD =====
+            request.setStatus("APPROVED");                    // Approve from PENDING/REVOKED
+            request.setDecisionAt(Instant.now());             // When decision was made
+            request.setDecidedByUserId(approverUserId);       // Who made the decision
+            request.setUpdatedAt(Instant.now());              // Track update time
+
+            // Clear revocation tracking (user is being re-approved)
+            request.setRevokedAt(null);
+            request.setRevokedByUserId(null);
+
+            // Set new expiration based on approval duration
+            if ("FOREVER".equals(approvalDuration)) {
+                request.setAccessExpiresAt(null);  // ✅ Remove expiration = permanent access
+                log.info("✅ [Re-Approve] User {} approved for FOREVER access", requesterUserId);
+            } else {
+                request.setAccessExpiresAt(expiresAt);  // ✅ Set new expiration date
+                log.info("✅ [Re-Approve] User {} approved until {}", requesterUserId, expiresAt);
+            }
+
+            request.setApprovalDuration(approvalDuration);
+
+            // Save the SAME record (not creating new one)
+            return accessRequestRepository.save(request);
+
+        } catch (Exception e) {
+            log.error("❌ Failed to approve re-request: {}", e.getMessage());
+            throw new RuntimeException("Failed to approve re-request: " + e.getMessage(), e);
         }
     }
 }

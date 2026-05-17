@@ -148,16 +148,9 @@
           <app-event-access-requests [eventId]="eventId"></app-event-access-requests>
         </div>
 
-        <!-- NEW: Access Request Component for non-owners (PROTECTED events without approval) -->
+        <!-- NEW: Access Request Component for non-owners (PROTECTED events) -->
         <app-event-access-request
-          *ngIf="requiresApproval && event?.visibility === 'PROTECTED' && !isEventOwner"
-          [eventId]="eventId"
-          [event]="event">
-        </app-event-access-request>
-
-        <!-- NEW: Access Request Component for non-owners (PROTECTED events with approval) -->
-        <app-event-access-request
-          *ngIf="!requiresApproval && event?.visibility === 'PROTECTED' && !isEventOwner && !event?.accessStatus"
+          *ngIf="event?.visibility === 'PROTECTED' && !isEventOwner"
           [eventId]="eventId"
           [event]="event">
         </app-event-access-request>

@@ -481,11 +481,6 @@ export class SangrahApiService {
 
   // ===== EVENT ACCESS REQUEST METHODS =====
 
-  requestEventAccess(eventId: string, message?: string): Observable<any> {
-    return this.http.post(`${this.baseUrl}/events/${eventId}/access-requests`,
-      message ? { message } : {});
-  }
-
   /**
    * Get the URL for accessing event media file (image/video).
    * This includes the token as a query parameter for authenticated access.
@@ -516,6 +511,29 @@ export class SangrahApiService {
   rejectAccessRequest(eventId: string, requestId: string, payload?: any): Observable<any> {
     return this.http.patch(`${this.baseUrl}/events/${eventId}/access-requests/${requestId}/reject`,
       payload || {});
+  }
+
+  // Revoke granted access (owner action)
+  revokeAccessRequest(eventId: string, requestId: string, payload?: any): Observable<any> {
+    return this.http.patch(`${this.baseUrl}/events/${eventId}/access-requests/${requestId}/revoke`,
+      payload || {});
+  }
+
+  // NEW: Request access to protected event
+  requestEventAccess(eventId: string, message?: string): Observable<any> {
+    const payload = message ? { message } : {};
+    return this.http.post(`${this.baseUrl}/events/${eventId}/access-requests`, payload);
+  }
+
+  // NEW: Get current user's access status for event
+  getAccessStatus(eventId: string): Observable<any> {
+    return this.http.get(`${this.baseUrl}/events/${eventId}/access-requests/access-status`);
+  }
+
+  // NEW: User re-requests access after expiration or revocation
+  reRequestAccess(eventId: string, message?: string): Observable<any> {
+    const payload = message ? { message } : {};
+    return this.http.patch(`${this.baseUrl}/events/${eventId}/access-requests/re-request`, payload);
   }
 
   // ===== EVENT COLLABORATOR METHODS =====
