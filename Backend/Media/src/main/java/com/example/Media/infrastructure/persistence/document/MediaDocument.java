@@ -22,36 +22,37 @@ public class MediaDocument {
     private String id;
 
     @Indexed
-    private String userId;  // User who owns/uploaded this media
+    private String userId;
 
-    @Indexed
-    private String domain;  // "GALLERY", "EVENTS", "PROFILE_AVATAR", "MESSAGING"
+    private String domain;
 
-    @Indexed
-    private String entityRefId;  // Reference to event ID, profile ID, etc.
+    private String entityRefId;
 
     private String fileName;
+
     private String originalFileName;
+
     private String mimeType;
-    private Long sizeBytes;
-
-    private String storageKey;  // Path/key in storage provider
-    private String storageProvider;  // "LOCAL", "S3", "AZURE", etc.
-
-    @Indexed
-    private String checksumSha256;  // For deduplication
 
     private String contentType;
 
-    private Map<String, Object> metadata;  // width, height, duration, etc.
+    private Long sizeBytes;
+
+    private String storageKey;
+
+    private String storageProvider;
+
+    private String checksumSha256;
+
+    private Map<String, Object> metadata;
 
     private Instant uploadedAt;
 
-    @Indexed
-    private Instant deletedAt;  // null = active, set value = soft deleted
-
     private Instant createdAt;
+
     private Instant updatedAt;
+
+    private Instant deletedAt;
 
     // Helper method to check if media is active (not deleted)
     public boolean isActive() {

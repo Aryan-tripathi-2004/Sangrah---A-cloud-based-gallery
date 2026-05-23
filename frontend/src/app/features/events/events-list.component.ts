@@ -166,7 +166,9 @@ export class EventsListComponent implements OnInit {
       },
     });
   }
-
+getCoverImageUrl(mediaId: string): string {
+  return this.api.getGalleryMediaFile(mediaId);
+}
   viewEventOrRequest(event: Event): void {
     // For protected events without access, show request modal
     if (event.visibility === 'PROTECTED' && ['none', 'expired', 'revoked', 'rejected'].includes((event as any).accessStatus)) {

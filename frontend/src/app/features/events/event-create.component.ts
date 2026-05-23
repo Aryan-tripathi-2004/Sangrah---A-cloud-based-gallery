@@ -4,6 +4,7 @@ import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angula
 import { RouterLink, Router } from '@angular/router';
 import { SangrahApiService } from '../../core/api/sangrah-api.service';
 import { LayoutComponent } from '../../shared/layout/layout.component';
+import { GalleryService } from '../gallery/gallery.service';
 
 @Component({
   selector: 'app-event-create',
@@ -16,10 +17,14 @@ export class EventCreateComponent {
   private api = inject(SangrahApiService);
   private fb = inject(FormBuilder);
   private router = inject(Router);
+  private gallery = inject(GalleryService);
 
   eventForm: FormGroup;
   isSubmitting = false;
   errorMessage = '';
+
+  isUploadingCover = false;
+  coverPreviewUrl: string | null = null;
 
   constructor() {
     this.eventForm = this.fb.group({
@@ -28,6 +33,39 @@ export class EventCreateComponent {
       eventDate: ['', Validators.required],
       visibility: ['PUBLIC', Validators.required],
       moderationEnabled: [true],
+      coverImageId: ['']
+    });
+  }
+
+  onCoverImageSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+
+    if (!input.files || input.files.length === 0) {
+      return;
+    }
+
+    const file = input.files[0];
+
+    // Image preview
+    this.coverPreviewUrl = URL.createObjectURL(file);
+
+    this.isUploadingCover = true;
+
+    this.gallery.uploadFile(file).subscribe({
+      next: (mediaItem) => {
+        this.eventForm.patchValue({
+          coverImageId: mediaItem.id
+        });
+
+        this.isUploadingCover = false;
+
+        console.log('Cover image uploaded:', mediaItem);
+      },
+      error: (error) => {
+        console.error('Cover upload failed:', error);
+        this.errorMessage = 'Failed to upload cover image';
+        this.isUploadingCover = false;
+      }
     });
   }
 
@@ -42,6 +80,7 @@ export class EventCreateComponent {
       description: this.eventForm.value.description,
       eventDate: this.eventForm.value.eventDate,
       visibility: this.eventForm.value.visibility,
+      coverImageId: this.eventForm.value.coverImageId,
       moderationEnabled: this.eventForm.value.moderationEnabled,
     };
 

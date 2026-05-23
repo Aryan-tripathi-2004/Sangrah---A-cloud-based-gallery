@@ -31,6 +31,7 @@ export interface Event {
   visibility: string;
   moderationEnabled: boolean;
   status: string;
+  coverImageId?: string;
   createdAt: string;
   uploadPolicy?: string;
   moderationRequired?: boolean;
