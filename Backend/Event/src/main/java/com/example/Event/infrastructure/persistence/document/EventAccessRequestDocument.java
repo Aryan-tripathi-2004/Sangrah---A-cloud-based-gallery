@@ -35,4 +35,11 @@ public class EventAccessRequestDocument {
     // NEW: Notification tracking
     private Boolean emailNotificationSent;          // Email sent to requester on approval/rejection
     private Boolean inAppNotificationCreated;       // In-app notification created for requester
+
+    // NEW: Revocation tracking (for audit trail + enabling re-requests)
+    private Instant revokedAt;                      // When owner revoked access (null if not revoked)
+    private String revokedByUserId;                 // Who revoked access - owner ID (null if not revoked)
+
+    // NEW: Track when record was last updated (for audit trail)
+    private Instant updatedAt;                      // When record was last updated
 }

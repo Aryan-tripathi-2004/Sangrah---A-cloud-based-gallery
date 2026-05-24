@@ -76,11 +76,37 @@
 
               <!-- Action Button -->
               <div class="mt-4">
-                <button *ngIf="event.visibility === 'PROTECTED' && event.accessStatus === 'PENDING'"
-                        class="block w-full text-center px-4 py-2 bg-yellow-500 cursor-not-allowed rounded-lg font-semibold transition" disabled>
+                <!-- Protected Event - Owner -->
+                <button *ngIf="event.visibility === 'PROTECTED' && event.accessStatus === 'owner'"
+                        (click)="viewEventOrRequest(event)"
+                        class="block w-full text-center px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg font-semibold transition">
+                  View Event
+                </button>
+                <!-- Protected Event - No Access or Loading -->
+                <button *ngIf="event.visibility === 'PROTECTED' && (event.accessStatus === 'none' || event.accessStatus === 'loading')"
+                        (click)="viewEventOrRequest(event)"
+                        class="block w-full text-center px-4 py-2 bg-orange-600 hover:bg-orange-700 rounded-lg font-semibold transition">
+                  {{ event.accessStatus === 'loading' ? '⏳ Loading...' : '🔓 Request Access' }}
+                </button>
+                <!-- Protected Event - Pending -->
+                <button *ngIf="event.visibility === 'PROTECTED' && event.accessStatus === 'pending'"
+                        class="block w-full text-center px-4 py-2 bg-yellow-600 cursor-not-allowed rounded-lg font-semibold transition" disabled>
                   ⏳ Request Pending
                 </button>
-                <button *ngIf="!(event.visibility === 'PROTECTED' && event.accessStatus === 'PENDING')"
+                <!-- Protected Event - Approved -->
+                <button *ngIf="event.visibility === 'PROTECTED' && event.accessStatus === 'approved'"
+                        (click)="viewEventOrRequest(event)"
+                        class="block w-full text-center px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg font-semibold transition">
+                  ✅ View Event
+                </button>
+                <!-- Protected Event - Re-request states -->
+                <button *ngIf="event.visibility === 'PROTECTED' && (event.accessStatus === 'expired' || event.accessStatus === 'revoked' || event.accessStatus === 'rejected')"
+                        (click)="viewEventOrRequest(event)"
+                  class="block w-full text-center px-4 py-2 bg-orange-600 hover:bg-orange-700 rounded-lg font-semibold transition">
+                  🔓 Request Access
+                </button>
+                <!-- Public/Private Events -->
+                <button *ngIf="event.visibility !== 'PROTECTED'"
                         (click)="viewEventOrRequest(event)"
                         class="block w-full text-center px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg font-semibold transition">
                   View Event
@@ -95,6 +121,7 @@
                                   [eventId]="pendingRequestEvent?.id"
                                   [event]="pendingRequestEvent"
                                   [autoOpen]="true"
+                                  [hideButton]="true"
                                   (requestSubmitted)="onRequestSubmitted()"
                                   (requestWithdrawn)="onRequestWithdrawn()">
         </app-event-access-request>

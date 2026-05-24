@@ -292,15 +292,61 @@ public class EventMediaController {
     /**
      * Get event timeline (all approved media in chronological order)
      * GET /api/v1/events/{eventId}/timeline
+     * NEW: Added access control - PRIVATE (owner+collaborators), PROTECTED (owner+collaborators+approved), PUBLIC (anyone)
      */
     @GetMapping("/timeline")
     @Operation(summary = "Get event timeline")
-    public ResponseEntity<?> timeline(@PathVariable String eventId) {
+    public ResponseEntity<?> timeline(
+            @PathVariable String eventId,
+            HttpServletRequest request) {
         try {
-            log.info("📋 [Event Media] Fetching timeline for event: {}", eventId);
+            String userId = request.getHeader("X-User-Id");
+            log.info("📺 [Timeline] User {} requesting timeline for event {}", userId, eventId);
+
+            EventDocument event = eventService.getEventById(eventId);
+
+            // ===== NEW: ADD VISIBILITY/ACCESS CONTROL =====
+
+            if ("PRIVATE".equals(event.getVisibility())) {
+                // Only owner and collaborators can view PRIVATE events
+                if (userId == null || !userId.equals(event.getOwnerUserId())) {
+                    boolean isCollaborator = event.getCollaborators() != null &&
+                            event.getCollaborators().stream()
+                                    .anyMatch(c -> c.getUserId().equals(userId));
+
+                    if (!isCollaborator) {
+                        log.warn("⛔ [Timeline] PRIVATE event access denied for user {}", userId);
+                        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                                .body(Map.of("error", "You don't have permission to view this event"));
+                    }
+                }
+            }
+
+            if ("PROTECTED".equals(event.getVisibility())) {
+                if (userId != null && !userId.equals(event.getOwnerUserId())) {
+                    // Check if user is collaborator (auto-access)
+                    boolean isCollaborator = event.getCollaborators() != null &&
+                            event.getCollaborators().stream()
+                                    .anyMatch(c -> c.getUserId().equals(userId));
+
+                    if (!isCollaborator) {
+                        // Not a collaborator, check if user has approved access
+                        boolean approved = accessService.isUserApproved(eventId, userId);
+                        if (!approved) {
+                            log.warn("⛔ [Timeline] PROTECTED event access denied for user {}", userId);
+                            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                                    .body(Map.of("error", "Access denied - you don't have permission to view this event"));
+                        }
+                    }
+                }
+            }
+
+            // PUBLIC: anyone can view (no check needed)
+
+            log.info("✅ [Timeline] Returning timeline for user {} on event {}", userId, eventId);
 
             List<EventMediaApprovalDocument> approvals = approvalRepository.findByEventIdAndStatusOrderByCreatedAtDesc(eventId, "APPROVED");
-            
+
             List<Map<String, Object>> response = approvals.stream()
                 .map(a -> {
                     Map<String, Object> map = new HashMap<>();
