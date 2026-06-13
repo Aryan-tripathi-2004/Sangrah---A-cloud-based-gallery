@@ -135,6 +135,41 @@ public class EmailSendController {
     }
 
     /**
+     * Generic notification email endpoint (for event notifications)
+     * Called by Event Service for: access approved, rejected, revoked, etc.
+     */
+    @PostMapping("/notify")
+    @Operation(summary = "Send generic notification email", description = "Send event notification emails")
+    public ResponseEntity<EmailSendResponse> sendNotificationEmail(
+            @Valid @RequestBody EmailSendRequest request
+    ) {
+        log.info("📧 Received generic notification email request for: {}", request.getUserEmail());
+        log.info("📧 Type: {}", request.getType());
+
+        try {
+            EmailSendResponse response = emailService.sendNotificationEmail(
+                    request.getUserEmail(),
+                    request.getType(),
+                    request.getSubject() != null ? request.getSubject() : "Notification",
+                    request.getBody() != null ? request.getBody() : ""
+            );
+
+            return ResponseEntity
+                    .status("sent".equals(response.getStatus()) ? HttpStatus.OK : HttpStatus.ACCEPTED)
+                    .body(response);
+
+        } catch (Exception e) {
+            log.error("❌ Error sending notification email: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(EmailSendResponse.builder()
+                            .status("failed")
+                            .message("Failed to send email")
+                            .errorReason(e.getMessage())
+                            .build());
+        }
+    }
+
+    /**
      * Health check endpoint
      */
     @GetMapping("/health")

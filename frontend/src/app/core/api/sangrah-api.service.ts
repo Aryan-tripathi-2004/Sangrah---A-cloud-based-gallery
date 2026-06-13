@@ -1,4 +1,4 @@
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject, Optional } from '@angular/core';
 import { Observable, BehaviorSubject, throwError } from 'rxjs';
 import { map, tap, catchError } from 'rxjs/operators';
@@ -389,15 +389,6 @@ export class SangrahApiService {
     return this.http.delete<any>(`${this.baseUrl}/events/${eventId}/media/${mediaId}`);
   }
 
-  // Notification endpoints
-  getNotifications(): Observable<Notification[]> {
-    return this.http.get<Notification[]>(`${this.baseUrl}/notifications`);
-  }
-
-  markNotificationAsRead(notificationId: string): Observable<void> {
-    return this.http.put<void>(`${this.baseUrl}/notifications/${notificationId}/read`, {});
-  }
-
   // Billing endpoints
   getCostEstimate(): Observable<CostEstimateDTO> {
     return this.http.get<CostEstimateDTO>(`${this.baseUrl}/billing/cost-estimate`);
@@ -552,6 +543,23 @@ export class SangrahApiService {
 
   updateCollaboratorPermissions(eventId: string, userId: string, payload: any): Observable<any> {
     return this.http.patch(`${this.baseUrl}/events/${eventId}/collaborators/${userId}`, payload);
+  }
+
+  // ===== NOTIFICATION METHODS =====
+
+  getNotifications(skip: number = 0, limit: number = 50): Observable<any> {
+    let params = new HttpParams()
+      .set('skip', skip.toString())
+      .set('limit', limit.toString());
+    return this.http.get(`${this.baseUrl}/notifications`, { params });
+  }
+
+  markNotificationRead(notificationId: string): Observable<any> {
+    return this.http.patch(`${this.baseUrl}/notifications/${notificationId}/read`, {});
+  }
+
+  markAllNotificationsRead(): Observable<any> {
+    return this.http.post(`${this.baseUrl}/notifications/mark-all-read`, {});
   }
 
   // ===== EVENT POLICY METHODS =====

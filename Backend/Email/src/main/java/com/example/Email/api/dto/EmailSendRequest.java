@@ -13,10 +13,8 @@ import lombok.NoArgsConstructor;
 @Builder
 public class EmailSendRequest {
 
-    @NotBlank(message = "Invoice ID is required")
     private String invoiceId;
 
-    @NotBlank(message = "User ID is required")
     private String userId;
 
     @Email(message = "Valid email is required")
@@ -27,4 +25,9 @@ public class EmailSendRequest {
     private byte[] pdfContent;  // Optional: PDF attachment as byte array
 
     private String emailType;  // invoice-paid, invoice-created, payment-failed
+
+    // For generic notifications
+    private String type;  // notification type: access-approved, access-rejected, etc.
+    private String subject;  // Email subject
+    private String body;  // Email body/message
 }

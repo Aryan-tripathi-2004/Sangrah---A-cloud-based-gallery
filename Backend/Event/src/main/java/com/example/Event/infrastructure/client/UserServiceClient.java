@@ -112,4 +112,38 @@ public class UserServiceClient {
         log.debug("⚠️ Returning fallback userId: {}", userId);
         return userId;
     }
+
+    /**
+     * Fetch user email by userId
+     */
+    public String getUserEmail(String userId) {
+        if (userId == null || userId.isEmpty()) {
+            throw new IllegalArgumentException("UserId cannot be null or empty");
+        }
+
+        try {
+            String url = authServiceUrl + "/api/v1/users/" + userId;
+            log.debug("📡 Fetching user info from: {}", url);
+
+            Map<String, Object> response = restTemplate.getForObject(url, Map.class);
+            log.debug("📡 Auth service response: {}", response);
+
+            if (response != null && response.containsKey("data")) {
+                Map<String, Object> data = (Map<String, Object>) response.get("data");
+                if (data != null && data.containsKey("email")) {
+                    Object email = data.get("email");
+                    if (email != null && !email.toString().isEmpty()) {
+                        log.debug("✅ Got email: {} for userId: {}", email, userId);
+                        return email.toString();
+                    }
+                }
+            }
+        } catch (RestClientException e) {
+            log.warn("⚠️ Could not fetch user email for {}: {} (Auth service may be unavailable)", userId, e.getMessage());
+        } catch (Exception e) {
+            log.warn("⚠️ Error fetching user email for {}: {}", userId, e.getMessage(), e);
+        }
+
+        throw new RuntimeException("Could not find email for userId: " + userId);
+    }
 }

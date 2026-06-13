@@ -2,6 +2,9 @@ package com.example.Event.application.service;
 
 import com.example.Event.infrastructure.persistence.document.EventAccessRequestDocument;
 import com.example.Event.infrastructure.persistence.repository.EventAccessRequestRepository;
+import com.example.Event.infrastructure.client.NotificationServiceClient;
+import com.example.Event.infrastructure.client.EmailServiceClient;
+import com.example.Event.infrastructure.client.UserServiceClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -16,6 +19,10 @@ import java.util.Optional;
 public class EventAccessService {
 
     private final EventAccessRequestRepository accessRequestRepository;
+    private final NotificationServiceClient notificationServiceClient;
+    private final EmailServiceClient emailServiceClient;
+    private final EventService eventService;
+    private final UserServiceClient userServiceClient;
 
     /**
      * Create an access request for a PROTECTED event
@@ -96,10 +103,28 @@ public class EventAccessService {
             EventAccessRequestDocument updated = accessRequestRepository.save(request);
             log.info("✅ Access request approved: {}", requestId);
 
-            // TODO: Send email notification
-            // TODO: Create in-app notification
-            request.setEmailNotificationSent(true);
-            request.setInAppNotificationCreated(true);
+            // Send notification to requester
+            try {
+                String eventTitle = eventService.getEventById(eventId).getTitle();
+                notificationServiceClient.notifyAccessApproved(
+                        request.getRequesterUserId(),
+                        eventId,
+                        eventTitle
+                );
+                log.info("✅ Notification sent to user: {}", request.getRequesterUserId());
+            } catch (Exception e) {
+                log.warn("⚠️ Failed to send notification: {}", e.getMessage());
+            }
+
+            // Send email to requester
+            try {
+                String eventTitle = eventService.getEventById(eventId).getTitle();
+                String requesterEmail = userServiceClient.getUserEmail(request.getRequesterUserId());
+                emailServiceClient.sendAccessApprovedEmail(requesterEmail, eventTitle);
+                log.info("📧 [EventAccessService] Approval email sent to: {}", requesterEmail);
+            } catch (Exception e) {
+                log.warn("⚠️ [EventAccessService] Failed to send approval email: {}", e.getMessage());
+            }
 
             return updated;
 
@@ -131,10 +156,29 @@ public class EventAccessService {
             EventAccessRequestDocument updated = accessRequestRepository.save(request);
             log.info("✅ Access request rejected: {}", requestId);
 
-            // TODO: Send email notification
-            // TODO: Create in-app notification
-            request.setEmailNotificationSent(true);
-            request.setInAppNotificationCreated(true);
+            // Send notification to requester
+            try {
+                String eventTitle = eventService.getEventById(eventId).getTitle();
+                notificationServiceClient.notifyAccessRejected(
+                        request.getRequesterUserId(),
+                        eventId,
+                        eventTitle,
+                        rejectionReason
+                );
+                log.info("✅ Rejection notification sent to user: {}", request.getRequesterUserId());
+            } catch (Exception e) {
+                log.warn("⚠️ Failed to send rejection notification: {}", e.getMessage());
+            }
+
+            // Send email to requester
+            try {
+                String eventTitle = eventService.getEventById(eventId).getTitle();
+                String requesterEmail = userServiceClient.getUserEmail(request.getRequesterUserId());
+                emailServiceClient.sendAccessRejectedEmail(requesterEmail, eventTitle, rejectionReason);
+                log.info("📧 [EventAccessService] Rejection email sent to: {}", requesterEmail);
+            } catch (Exception e) {
+                log.warn("⚠️ [EventAccessService] Failed to send rejection email: {}", e.getMessage());
+            }
 
             return updated;
 
@@ -207,7 +251,24 @@ public class EventAccessService {
                 accessRequestRepository.save(doc);
                 log.info("✅ Access revoked for user: {} on event: {} by {}", requesterUserId, eventId, revokerUserId);
 
-                // TODO: Send notification that access was revoked
+                // Send notification that access was revoked
+                try {
+                    String eventTitle = eventService.getEventById(eventId).getTitle();
+                    notificationServiceClient.notifyAccessRevoked(requesterUserId, eventId, eventTitle);
+                    log.info("✅ Revocation notification sent to user: {}", requesterUserId);
+                } catch (Exception e) {
+                    log.warn("⚠️ Failed to send revocation notification: {}", e.getMessage());
+                }
+
+                // Send email that access was revoked
+                try {
+                    String eventTitle = eventService.getEventById(eventId).getTitle();
+                    String userEmail = userServiceClient.getUserEmail(requesterUserId);
+                    emailServiceClient.sendAccessRevokedEmail(userEmail, eventTitle);
+                    log.info("📧 [EventAccessService] Revocation email sent to: {}", userEmail);
+                } catch (Exception e) {
+                    log.warn("⚠️ [EventAccessService] Failed to send revocation email: {}", e.getMessage());
+                }
             }
 
         } catch (Exception e) {
