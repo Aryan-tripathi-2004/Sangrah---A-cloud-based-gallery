@@ -282,4 +282,73 @@ public class EmailService {
             // Don't rethrow - logging should not block email operations
         }
     }
+
+    /**
+     * Send generic notification email (for event notifications)
+     */
+    public EmailSendResponse sendNotificationEmail(
+            String userEmail,
+            String notificationType,
+            String subject,
+            String messageBody
+    ) {
+        log.info("📧 Sending notification email to: {}", userEmail);
+        log.info("📧 Type: {}", notificationType);
+
+        try {
+            String emailLogId = UUID.randomUUID().toString();
+            log.info("✅ Email ID: {}", emailLogId);
+
+            MimeMessage mimeMessage = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, true, "UTF-8");
+
+            helper.setFrom(emailFrom, emailFromName);
+            helper.setTo(userEmail);
+            helper.setSubject(subject);
+
+            // Simple HTML body for notification
+            String htmlBody = String.format(
+                    "<html><body style='font-family: Arial, sans-serif; line-height: 1.6; color: #333;'>" +
+                    "<div style='max-width: 600px; margin: 0 auto; padding: 20px;'>" +
+                    "<h2 style='color: #007bff;'>%s</h2>" +
+                    "<p>%s</p>" +
+                    "<p style='margin-top: 30px; font-size: 12px; color: #666;'>" +
+                    "This is an automated notification from Sangrah Cloud Storage. Please do not reply to this email." +
+                    "</p>" +
+                    "</div>" +
+                    "</body></html>",
+                    subject,
+                    messageBody
+            );
+
+            helper.setText(htmlBody, true);
+
+            mailSender.send(mimeMessage);
+            log.info("✅ Notification email sent successfully to: {}", userEmail);
+
+            // Log the email
+            logEmailDelivery(emailLogId, userEmail, notificationType, "sent", null);
+
+            return EmailSendResponse.builder()
+                    .status("sent")
+                    .emailId(emailLogId)
+                    .timestamp(Instant.now())
+                    .message("Notification email sent successfully")
+                    .build();
+
+        } catch (MessagingException | UnsupportedEncodingException e) {
+            log.error("❌ Failed to send notification email: {}", e.getMessage(), e);
+            String emailLogId = UUID.randomUUID().toString();
+            logEmailDelivery(emailLogId, userEmail, notificationType, "failed", null);
+
+            return EmailSendResponse.builder()
+                    .status("failed")
+                    .emailId(emailLogId)
+                    .timestamp(Instant.now())
+                    .message("Failed to send notification email")
+                    .errorReason(e.getMessage())
+                    .build();
+        }
+    }
 }
+
