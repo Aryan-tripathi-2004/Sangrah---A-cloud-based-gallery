@@ -48,6 +48,7 @@ public class EventController {
             String description = (String) payload.get("description");
             String eventDate = (String) payload.get("eventDate");
             String visibility = (String) payload.getOrDefault("visibility", "PRIVATE");
+            String coverImageId = (String) payload.get("coverImageId");
             boolean moderationEnabled = (boolean) payload.getOrDefault("moderationEnabled", false);
 
             // Validate required fields
@@ -57,8 +58,7 @@ public class EventController {
             }
 
             // Create event
-            EventDocument event = eventService.createEvent(userId, title, description, eventDate, visibility, moderationEnabled);
-
+            EventDocument event = eventService.createEvent(userId, title, description, eventDate, visibility, coverImageId, moderationEnabled);
             return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
                     "eventId", event.getId(),
                     "id", event.getId(),
@@ -114,6 +114,7 @@ public class EventController {
                         map.put("ownerUserId", e.getOwnerUserId());
                         map.put("title", e.getTitle());
                         map.put("description", e.getDescription());
+                        map.put("coverImageId", e.getCoverImageId());
                         map.put("eventDate", e.getEventDate().toString());
                         map.put("visibility", e.getVisibility());
                         map.put("createdAt", e.getCreatedAt().toString());
@@ -155,6 +156,7 @@ public class EventController {
                         map.put("ownerUserId", e.getOwnerUserId());
                         map.put("title", e.getTitle());
                         map.put("description", e.getDescription());
+                        map.put("coverImageId", e.getCoverImageId());
                         map.put("eventDate", e.getEventDate().toString());
                         map.put("visibility", e.getVisibility());
                         map.put("moderationEnabled", e.isModerationEnabled());
@@ -192,6 +194,7 @@ public class EventController {
             response.put("ownerUserId", event.getOwnerUserId());
             response.put("title", event.getTitle());
             response.put("description", event.getDescription());
+            response.put("coverImageId", event.getCoverImageId());
             response.put("eventDate", event.getEventDate() != null ? event.getEventDate().toString() : null);
             response.put("visibility", event.getVisibility());
             response.put("moderationEnabled", event.isModerationEnabled());
@@ -295,11 +298,11 @@ public class EventController {
             String description = (String) payload.get("description");
             String eventDate = (String) payload.get("eventDate");
             String visibility = (String) payload.get("visibility");
+            String coverImageId = (String) payload.get("coverImageId");
             Object modObj = payload.get("moderationEnabled");
             boolean moderationEnabled = modObj instanceof Boolean ? (boolean) modObj : false;
 
-            EventDocument updated = eventService.updateEvent(eventId, title, description, eventDate, visibility, moderationEnabled);
-
+            EventDocument updated = eventService.updateEvent(eventId, title, description, eventDate, visibility, coverImageId, moderationEnabled);
             return ResponseEntity.ok(Map.of(
                     "eventId", updated.getId(),
                     "message", "Event updated successfully"
