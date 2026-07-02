@@ -1,5 +1,9 @@
 package com.example.Event.application.service;
 
+import com.example.Event.infrastructure.client.EmailServiceClient;
+import com.example.Event.infrastructure.client.MediaServiceClient;
+import com.example.Event.infrastructure.client.NotificationServiceClient;
+import com.example.Event.infrastructure.client.UserServiceClient;
 import com.example.Event.infrastructure.persistence.document.EventMediaApprovalDocument;
 import com.example.Event.infrastructure.persistence.repository.EventMediaApprovalRepository;
 import lombok.RequiredArgsConstructor;
@@ -7,6 +11,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.Map;
 import java.util.Optional;
 
 @Slf4j
@@ -15,6 +20,11 @@ import java.util.Optional;
 public class EventModerationService {
 
     private final EventMediaApprovalRepository approvalRepository;
+    private final NotificationServiceClient notificationServiceClient;
+    private final EmailServiceClient emailServiceClient;
+    private final UserServiceClient userServiceClient;
+    private final EventService eventService;
+    private final MediaServiceClient mediaServiceClient;
 
     /**
      * Create media approval record (store in MongoDB instead of in-memory)
@@ -69,6 +79,26 @@ public class EventModerationService {
         approvalRepository.save(approval);
         log.info("✅ [Moderation] Media approved successfully");
 
+        String uploaderUserId = approval.getUploaderUserId();
+        try {
+            String eventTitle = eventService.getEventById(eventId).getTitle();
+            String mediaTitle = resolveMediaTitle(mediaId);
+            notificationServiceClient.notifyMediaApproved(uploaderUserId, eventId, eventTitle, mediaTitle);
+            log.info("✅ [Moderation] Media approved notification sent to uploader: {}", uploaderUserId);
+        } catch (Exception e) {
+            log.warn("⚠️ [Moderation] Failed to send media approved notification: {}", e.getMessage());
+        }
+
+        try {
+            String eventTitle = eventService.getEventById(eventId).getTitle();
+            String mediaTitle = resolveMediaTitle(mediaId);
+            String uploaderEmail = userServiceClient.getUserEmail(uploaderUserId);
+            emailServiceClient.sendMediaApprovedEmail(uploaderEmail, eventTitle, mediaTitle);
+            log.info("📧 [Moderation] Media approved email sent to: {}", uploaderEmail);
+        } catch (Exception e) {
+            log.warn("⚠️ [Moderation] Failed to send media approved email: {}", e.getMessage());
+        }
+
         return "APPROVED";
     }
 
@@ -95,7 +125,50 @@ public class EventModerationService {
         approvalRepository.save(approval);
         log.info("✅ [Moderation] Media rejected");
 
+        String uploaderUserId = approval.getUploaderUserId();
+        try {
+            String eventTitle = eventService.getEventById(eventId).getTitle();
+            String mediaTitle = resolveMediaTitle(mediaId);
+            notificationServiceClient.notifyMediaRejected(
+                    uploaderUserId,
+                    eventId,
+                    eventTitle,
+                    mediaTitle,
+                    reason
+            );
+            log.info("✅ [Moderation] Media rejected notification sent to uploader: {}", uploaderUserId);
+        } catch (Exception e) {
+            log.warn("⚠️ [Moderation] Failed to send media rejected notification: {}", e.getMessage());
+        }
+
+        try {
+            String eventTitle = eventService.getEventById(eventId).getTitle();
+            String mediaTitle = resolveMediaTitle(mediaId);
+            String uploaderEmail = userServiceClient.getUserEmail(uploaderUserId);
+            emailServiceClient.sendMediaRejectedEmail(uploaderEmail, eventTitle, mediaTitle, reason);
+            log.info("📧 [Moderation] Media rejected email sent to: {}", uploaderEmail);
+        } catch (Exception e) {
+            log.warn("⚠️ [Moderation] Failed to send media rejected email: {}", e.getMessage());
+        }
+
         return "REJECTED";
+    }
+
+    private String resolveMediaTitle(String mediaId) {
+        try {
+            Map<String, Object> mediaDetails = mediaServiceClient.getMediaDetails(mediaId);
+            if (mediaDetails != null) {
+                if (mediaDetails.containsKey("originalFileName") && mediaDetails.get("originalFileName") != null) {
+                    return mediaDetails.get("originalFileName").toString();
+                }
+                if (mediaDetails.containsKey("title") && mediaDetails.get("title") != null) {
+                    return mediaDetails.get("title").toString();
+                }
+            }
+        } catch (Exception e) {
+            log.warn("⚠️ [Moderation] Could not resolve media title for {}: {}", mediaId, e.getMessage());
+        }
+        return mediaId;
     }
 
     /**

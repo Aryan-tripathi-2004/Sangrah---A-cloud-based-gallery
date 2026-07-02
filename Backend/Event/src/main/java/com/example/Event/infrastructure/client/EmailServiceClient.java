@@ -129,12 +129,16 @@ public class EmailServiceClient {
         try {
             log.info("📧 [Email Client] Sending media rejected email to: {}", uploaderEmail);
 
+            String resolvedReason = (rejectionReason == null || rejectionReason.isBlank())
+                ? "No specific reason was provided by the event owner"
+                : rejectionReason.trim();
+
             Map<String, Object> payload = new HashMap<>();
             payload.put("userEmail", uploaderEmail);
             payload.put("type", "media-rejected");
             payload.put("subject", "Media Rejected: " + mediaTitle);
             payload.put("body", String.format("Your media '%s' for event '%s' was not approved. Reason: %s", 
-                    mediaTitle, eventTitle, rejectionReason != null ? rejectionReason : "Does not meet community guidelines"));
+                mediaTitle, eventTitle, resolvedReason));
 
             restTemplate.postForObject(
                     emailServiceUrl + "/api/v1/email/notify",
@@ -158,7 +162,11 @@ public class EmailServiceClient {
             Map<String, Object> payload = new HashMap<>();
             payload.put("userEmail", collaboratorEmail);
             payload.put("type", "collaborator-removed");
-            payload.put("eventTitle", eventTitle);
+            payload.put("subject", "Removed from Collaborator Access: " + eventTitle);
+            payload.put("body", String.format(
+                "You have been removed as a collaborator from the event '%s'. You will no longer be able to access collaborator-only actions or content for this event. If you believe this was a mistake, please contact the event owner.",
+                eventTitle
+            ));
 
             restTemplate.postForObject(
                     emailServiceUrl + "/api/v1/email/notify",
