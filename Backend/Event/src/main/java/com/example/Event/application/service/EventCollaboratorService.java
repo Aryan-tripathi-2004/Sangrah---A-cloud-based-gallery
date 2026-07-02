@@ -1,19 +1,27 @@
 package com.example.Event.application.service;
 
+import com.example.Event.infrastructure.client.EmailServiceClient;
+import com.example.Event.infrastructure.client.NotificationServiceClient;
+import com.example.Event.infrastructure.client.UserServiceClient;
 import com.example.Event.infrastructure.persistence.document.EventDocument;
 import com.example.Event.infrastructure.persistence.repository.EventRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class EventCollaboratorService {
 
     private final EventRepository eventRepository;
+    private final NotificationServiceClient notificationServiceClient;
+    private final EmailServiceClient emailServiceClient;
+    private final UserServiceClient userServiceClient;
 
     /**
      * Add a collaborator to an event with specific permissions
@@ -66,6 +74,31 @@ public class EventCollaboratorService {
         event.getCollaborators().add(newCollaborator);
 
         eventRepository.save(event);
+
+        try {
+            String eventTitle = event.getTitle();
+            String ownerEmail = userServiceClient.getUserEmail(ownerUserId);
+            notificationServiceClient.notifyCollaboratorAdded(
+                    collaboratorId,
+                    eventId,
+                    eventTitle,
+                    ownerEmail
+            );
+            log.info("✅ Collaborator added notification sent to user: {}", collaboratorId);
+        } catch (Exception e) {
+            log.warn("⚠️ Failed to send collaborator added notification: {}", e.getMessage());
+        }
+
+        try {
+            String eventTitle = event.getTitle();
+            String ownerName = userServiceClient.getUserDisplayName(ownerUserId);
+            String collaboratorEmail = userServiceClient.getUserEmail(collaboratorId);
+            emailServiceClient.sendCollaboratorAddedEmail(collaboratorEmail, eventTitle, ownerName);
+            log.info("📧 [EventCollaboratorService] Collaborator added email sent to: {}", collaboratorEmail);
+        } catch (Exception e) {
+            log.warn("⚠️ [EventCollaboratorService] Failed to send collaborator added email: {}", e.getMessage());
+        }
+
         return newCollaborator;
     }
 
@@ -79,6 +112,23 @@ public class EventCollaboratorService {
         // Verify ownership
         if (!event.getOwnerUserId().equals(ownerUserId)) {
             throw new RuntimeException("Only event owner can manage collaborators");
+        }
+
+        String eventTitle = event.getTitle();
+
+        try {
+            notificationServiceClient.notifyCollaboratorRemoved(collaboratorId, eventId, eventTitle);
+            log.info("✅ Collaborator removed notification sent to user: {}", collaboratorId);
+        } catch (Exception e) {
+            log.warn("⚠️ Failed to send collaborator removed notification: {}", e.getMessage());
+        }
+
+        try {
+            String collaboratorEmail = userServiceClient.getUserEmail(collaboratorId);
+            emailServiceClient.sendCollaboratorRemovedEmail(collaboratorEmail, eventTitle);
+            log.info("📧 [EventCollaboratorService] Collaborator removed email sent to: {}", collaboratorEmail);
+        } catch (Exception e) {
+            log.warn("⚠️ [EventCollaboratorService] Failed to send collaborator removed email: {}", e.getMessage());
         }
 
         // Remove collaborator

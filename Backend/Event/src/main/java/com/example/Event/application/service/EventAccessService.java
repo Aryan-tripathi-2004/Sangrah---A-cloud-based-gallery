@@ -53,6 +53,36 @@ public class EventAccessService {
 
             EventAccessRequestDocument saved = accessRequestRepository.save(request);
             log.info("✅ Access request created: {} for event: {} by user: {}", saved.getId(), eventId, requesterUserId);
+
+            try {
+                var event = eventService.getEventById(eventId);
+                String eventTitle = event.getTitle();
+                String ownerUserId = event.getOwnerUserId();
+                String requesterEmail = userServiceClient.getUserEmail(requesterUserId);
+
+                notificationServiceClient.notifyAccessRequestReceived(
+                        ownerUserId,
+                        eventId,
+                        eventTitle,
+                        requesterEmail
+                );
+                log.info("✅ Access request notification sent to owner: {}", ownerUserId);
+            } catch (Exception e) {
+                log.warn("⚠️ Failed to send access request notification: {}", e.getMessage());
+            }
+
+            try {
+                var event = eventService.getEventById(eventId);
+                String eventTitle = event.getTitle();
+                String ownerEmail = userServiceClient.getUserEmail(event.getOwnerUserId());
+                String requesterEmail = userServiceClient.getUserEmail(requesterUserId);
+
+                emailServiceClient.sendAccessRequestEmail(ownerEmail, eventTitle, requesterEmail);
+                log.info("📧 [EventAccessService] Access request email sent to owner: {}", ownerEmail);
+            } catch (Exception e) {
+                log.warn("⚠️ [EventAccessService] Failed to send access request email: {}", e.getMessage());
+            }
+
             return saved;
 
         } catch (Exception e) {
@@ -305,7 +335,33 @@ public class EventAccessService {
             EventAccessRequestDocument saved = accessRequestRepository.save(request);
             log.info("🔄 [Re-Request] User {} requested access again to event {}", requesterUserId, eventId);
 
-            // TODO: Send notification to owner that there's a re-request to review
+            try {
+                var event = eventService.getEventById(eventId);
+                String eventTitle = event.getTitle();
+                String ownerUserId = event.getOwnerUserId();
+                String requesterEmail = userServiceClient.getUserEmail(requesterUserId);
+
+                notificationServiceClient.notifyAccessRequestReceived(
+                        ownerUserId,
+                        eventId,
+                        eventTitle,
+                        requesterEmail
+                );
+            } catch (Exception e) {
+                log.warn("⚠️ Failed to send re-request notification: {}", e.getMessage());
+            }
+
+            try {
+                var event = eventService.getEventById(eventId);
+                String eventTitle = event.getTitle();
+                String ownerEmail = userServiceClient.getUserEmail(event.getOwnerUserId());
+                String requesterEmail = userServiceClient.getUserEmail(requesterUserId);
+
+                emailServiceClient.sendAccessRequestEmail(ownerEmail, eventTitle, requesterEmail);
+            } catch (Exception e) {
+                log.warn("⚠️ [EventAccessService] Failed to send re-request email: {}", e.getMessage());
+            }
+
             return saved;
 
         } catch (Exception e) {

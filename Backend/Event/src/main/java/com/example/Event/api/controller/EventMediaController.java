@@ -531,10 +531,11 @@ public class EventMediaController {
     public ResponseEntity<?> reject(
             @PathVariable String eventId,
             @PathVariable String mediaId,
-            @RequestParam(value = "reason", defaultValue = "Not specified") String reason,
+            @RequestBody(required = false) Map<String, Object> body,
             HttpServletRequest request) {
         try {
             String userId = request.getHeader("X-User-Id");
+            String reason = resolveRejectionReason(body);
             log.info("❌ [Event Media] Rejecting media {} in event {}, reason: {}, by user: {}",
                 mediaId, eventId, reason, userId);
 
@@ -566,6 +567,29 @@ public class EventMediaController {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(Map.of("error", e.getMessage()));
         }
+    }
+
+    private String resolveRejectionReason(Map<String, Object> body) {
+        if (body == null || body.isEmpty()) {
+            return "Not specified";
+        }
+
+        Object reason = body.get("reason");
+        if (reason != null && !reason.toString().isBlank()) {
+            return reason.toString().trim();
+        }
+
+        Object comment = body.get("comment");
+        if (comment != null && !comment.toString().isBlank()) {
+            return comment.toString().trim();
+        }
+
+        Object message = body.get("message");
+        if (message != null && !message.toString().isBlank()) {
+            return message.toString().trim();
+        }
+
+        return "Not specified";
     }
 
     /**
