@@ -6,10 +6,6 @@ import { LayoutComponent } from '../../shared/layout/layout.component';
 import {Router} from '@angular/router';
 import {FormsModule} from '@angular/forms';
 
-
-
-
-
 @Component({
   selector: 'app-profile',
   standalone: true,
@@ -89,7 +85,7 @@ export class ProfileComponent implements OnInit {
 
   confirmDelete(): void {
     if (!this.user || this.deleteConfirmInput !== this.user.email){
-      this.deleteError = 'Emial does not match';
+      this.deleteError = 'Email does not match';
       return;
     }
     this.isDeleting = true;
