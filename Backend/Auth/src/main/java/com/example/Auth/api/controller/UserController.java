@@ -78,6 +78,36 @@ public class UserController {
         }
     }
 
+
+    /**
+     * Delete curent user's account
+     * API Gateway provides X-User-Id header after JWT validation.  
+    */
+
+   @DeleteMapping("/profile")
+   @Operation(summary = "Delete current user account")
+   @SecurityRequirement(name = "Bearer Authentication") 
+
+   public ResponseEntity<Void> deleteAccount(HttpServletRequest request){
+    try{
+        String userId = request.getHaeder("X-User-Id");
+
+        if (userId == null || userId.isBlank()){
+            log.warn("❌ No X-User-Id header found");
+            return ResponseEntity.status(401).build();
+        }
+
+        log.info("🗑️ Deleting account for user: {}", userId);
+        authService.deleteUser(userId);
+        log.info("✅ Account deleted successfully");
+        
+        return ResponseEntity.noContent().build();
+    } catch (Exception e){
+        log.error("❌ Error deleting account: {}", e.getMessage(), e);
+        return ResponseEntity.status(500).build();
+    }
+   } 
+
     @GetMapping("/me")
     @Operation(summary = "Get current user")
     public ResponseEntity<Map<String, String>> me() {
@@ -140,4 +170,6 @@ public class UserController {
             ));
         }
     }
+
+     
 }

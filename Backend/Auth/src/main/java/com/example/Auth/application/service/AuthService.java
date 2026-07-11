@@ -174,6 +174,22 @@ public class AuthService {
 
         return mapToUserDTO(user);
     }
+    public void deleteUser(String userId) {
+            log.info("🗑️ Deleting user account for userId: {}", userId);
+            UserDocument user = userRepository.findById(userId)
+                    .orElseThrow(() -> {
+                        log.warn("❌ User not found with id: {}", userId);
+                        return new RuntimeException("User not found");
+                    });
+
+            // Remove any refresh tokens tied to this user
+            refreshTokenRepository.deleteByUserId(userId);
+            log.info("🔒 Refresh tokens revoked for userId: {}", userId);
+
+            userRepository.delete(user);
+            log.info("✅ User account deleted: {}", userId);
+    }
+
 
     /**
      * Refresh access token using refresh token

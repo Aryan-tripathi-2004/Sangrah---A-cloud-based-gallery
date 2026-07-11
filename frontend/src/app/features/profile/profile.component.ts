@@ -3,16 +3,20 @@ import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { SangrahApiService, User } from '../../core/api/sangrah-api.service';
 import { LayoutComponent } from '../../shared/layout/layout.component';
+import {Router} from '@angular/router';
+import {FormsModule} from '@angular/forms';
 
 @Component({
   selector: 'app-profile',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, LayoutComponent],
+  imports: [CommonModule, ReactiveFormsModule,FormsModule, LayoutComponent],
   templateUrl: './profile.component.html',
+  
 })
 export class ProfileComponent implements OnInit {
   private api = inject(SangrahApiService);
   private fb = inject(FormBuilder);
+  private router = inject(Router);
 
   user: User | null = null;
   form = this.fb.group({
@@ -23,6 +27,11 @@ export class ProfileComponent implements OnInit {
   isLoading = false;
   errorMessage = '';
   successMessage = '';
+
+  showDeleteConfirm = false;
+  deleteConfirmInput = '';
+  isDeleting = false;
+  deleteError = '';
 
   ngOnInit(): void {
     this.loadProfile();
@@ -61,6 +70,34 @@ export class ProfileComponent implements OnInit {
         this.isLoading = false;
         this.errorMessage = 'Failed to update profile';
       },
+    });
+  }
+
+  openDeleteConfirm(): void {
+    this.showDeleteConfirm = true;
+    this.deleteConfirmInput = '';
+    this.deleteError = '';
+  }
+
+  cancelDelete(): void{
+    this.showDeleteConfirm = false;
+  }
+
+  confirmDelete(): void {
+    if (!this.user || this.deleteConfirmInput !== this.user.email){
+      this.deleteError = 'Email does not match';
+      return;
+    }
+    this.isDeleting = true;
+    this.api.deleteAccount().subscribe({
+      next: () => {
+        this.api.logout();
+        this.router.navigate(['/']);
+      },
+      error: () => {
+        this.isDeleting = false;
+        this.deleteError = 'Failed to delete account. Please try again.';
+      }
     });
   }
 }
