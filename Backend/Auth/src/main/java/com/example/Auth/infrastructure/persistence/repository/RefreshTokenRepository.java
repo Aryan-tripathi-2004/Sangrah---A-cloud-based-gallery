@@ -11,6 +11,6 @@ public interface RefreshTokenRepository extends MongoRepository<RefreshTokenDocu
     Optional<RefreshTokenDocument> findByToken(String token);
 
     void deleteByUserId(String userId);
-
     long countByUserIdAndRevokedAtIsNull(String userId);
+
 }

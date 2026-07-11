@@ -260,6 +260,10 @@ export class SangrahApiService {
     return this.http.put<User>(`${this.baseUrl}/users/profile`, payload);
   }
 
+  deleteAccout(): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/users/profile`);
+  }
+
   // Gallery endpoints
   uploadGalleryMedia(file: File): Observable<MediaItem> {
     const formData = new FormData();
