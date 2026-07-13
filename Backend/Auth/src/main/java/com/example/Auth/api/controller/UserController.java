@@ -90,7 +90,7 @@ public class UserController {
 
    public ResponseEntity<Void> deleteAccount(HttpServletRequest request){
     try{
-        String userId = request.getHaeder("X-User-Id");
+        String userId = request.getHeader("X-User-Id");
 
         if (userId == null || userId.isBlank()){
             log.warn("❌ No X-User-Id header found");

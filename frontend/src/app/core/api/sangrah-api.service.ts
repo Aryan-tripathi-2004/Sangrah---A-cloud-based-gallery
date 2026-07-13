@@ -260,7 +260,7 @@ export class SangrahApiService {
     return this.http.put<User>(`${this.baseUrl}/users/profile`, payload);
   }
 
-  deleteAccout(): Observable<void> {
+  deleteAccount(): Observable<void> {
     return this.http.delete<void>(`${this.baseUrl}/users/profile`);
   }
 
