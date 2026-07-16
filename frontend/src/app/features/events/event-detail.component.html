@@ -57,7 +57,7 @@
 
           <button
             *ngIf="isEventOwner"
-            (click)="deleteEvent()"
+            (click)="openDeleteModal()"
             class="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg font-semibold transition text-sm"
           >
             Delete Event
@@ -210,84 +210,45 @@
           <p class="text-slate-400">Loading event details...</p>
         </div>
 
-        <!-- Edit Event Modal -->
-        <div *ngIf="showEditModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div class="bg-slate-900 border border-slate-700 rounded-lg p-6 w-full max-w-2xl max-h-96 overflow-y-auto">
-            <h2 class="text-2xl font-bold mb-6">Edit Event</h2>
+        <app-edit-event-modal
+          [isOpen]="showEditModal"
+          [form]="editForm"
+          [isSaving]="isSavingEvent"
+          [hasChanges]="hasEditChanges"
+          [currentCoverImageUrl]="getCurrentCoverImageUrl()"
+          [selectedCoverPreviewUrl]="selectedCoverImagePreviewUrl"
+          [selectedCoverFileName]="selectedCoverImageFileName"
+          (closeModal)="closeEditModal()"
+          (saveChanges)="saveEventChanges()"
+          (coverFileSelected)="onCoverFileSelected($event)"
+        ></app-edit-event-modal>
 
-            <div class="space-y-4">
-              <!-- Title -->
-              <div>
-                <label class="block text-sm font-semibold mb-2">Event Title</label>
-                <input
-                  [(ngModel)]="editFormData.title"
-                  type="text"
-                  class="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
-                />
-              </div>
+        <app-delete-event-modal
+          [isOpen]="showDeleteModal"
+          [eventTitle]="event?.title || ''"
+          [mediaCount]="mediaCount"
+          [collaboratorCount]="collaboratorCount"
+          [isDeleting]="isDeletingEvent"
+          (closeModal)="closeDeleteModal()"
+          (confirmDelete)="confirmDeleteEvent()"
+        ></app-delete-event-modal>
 
-              <!-- Description -->
-              <div>
-                <label class="block text-sm font-semibold mb-2">Description</label>
-                <textarea
-                  [(ngModel)]="editFormData.description"
-                  rows="3"
-                  class="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
-                ></textarea>
-              </div>
+        <app-success-modal
+          [isOpen]="showSuccessModal"
+          [title]="successTitle"
+          [message]="successMessage"
+          [countdownSeconds]="successCountdownSeconds"
+          (closeModal)="closeSuccessModal()"
+        ></app-success-modal>
 
-              <!-- Event Date -->
-              <div>
-                <label class="block text-sm font-semibold mb-2">Event Date</label>
-                <input
-                  [(ngModel)]="editFormData.eventDate"
-                  type="date"
-                  class="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
-                />
-              </div>
-
-              <!-- Visibility -->
-              <div>
-                <label class="block text-sm font-semibold mb-2">Visibility</label>
-                <select
-                  [(ngModel)]="editFormData.visibility"
-                  class="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
-                >
-                  <option value="PUBLIC">Public</option>
-                  <option value="PROTECTED">Protected</option>
-                  <option value="PRIVATE">Private</option>
-                </select>
-              </div>
-
-              <!-- Moderation -->
-              <div class="flex items-center gap-3">
-                <input
-                  [(ngModel)]="editFormData.moderationEnabled"
-                  type="checkbox"
-                  id="moderation"
-                  class="w-4 h-4"
-                />
-                <label for="moderation" class="text-sm font-semibold">Require moderation for uploads</label>
-              </div>
-            </div>
-
-            <!-- Buttons -->
-            <div class="flex gap-3 mt-6">
-              <button
-                (click)="saveEventChanges()"
-                [disabled]="isSavingEvent"
-                class="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-600 rounded-lg font-semibold transition"
-              >
-                {{ isSavingEvent ? 'Saving...' : 'Save Changes' }}
-              </button>
-              <button
-                (click)="closeEditModal()"
-                class="flex-1 px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg font-semibold transition"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
+        <app-error-modal
+          [isOpen]="showErrorModal"
+          [title]="errorTitle"
+          [message]="errorMessage"
+          retryLabel="Retry"
+          closeLabel="Close"
+          (retry)="retryLastAction()"
+          (closeModal)="closeErrorModal()"
+        ></app-error-modal>
       </div>
     </app-layout>

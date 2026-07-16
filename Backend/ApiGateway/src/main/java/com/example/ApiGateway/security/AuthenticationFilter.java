@@ -44,6 +44,7 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
     // Role-based access control mapping for protected endpoints
     private final Map<String, List<String>> routeRoleMap = Map.of(
             "/api/v1/gallery", List.of("USER", "ADMIN"),
+            "/api/v1/media", List.of("USER", "ADMIN"),
             "/api/v1/events", List.of("USER", "ADMIN"),
             "/api/v1/billing", List.of("USER", "ADMIN"),
             "/api/v1/notifications", List.of("USER", "ADMIN"),

@@ -41,6 +41,14 @@ export interface Event {
   collaborators?: EventCollaborator[]; // NEW: List of collaborators with permissions
 }
 
+export interface UpdateEventPayload {
+  title: string;
+  description?: string;
+  eventDate: string;
+  visibility: 'PUBLIC' | 'PROTECTED' | 'PRIVATE' | string;
+  moderationEnabled: boolean;
+}
+
 export interface Gallery {
   id: string;
   ownerUserId: string;
@@ -285,6 +293,12 @@ export class SangrahApiService {
     return token ? `${url}?token=${encodeURIComponent(token)}` : url;
   }
 
+  getMediaFileUrl(mediaId: string): string {
+    const token = this.getTokenFromStorage();
+    const url = `${this.baseUrl}/media/${mediaId}/file`;
+    return token ? `${url}?token=${encodeURIComponent(token)}` : url;
+  }
+
   getEventMediaFile(eventId: string, mediaId: string): string {
     const token = this.getTokenFromStorage();
     const url = `${this.baseUrl}/events/${eventId}/media/${mediaId}/file`;
@@ -359,8 +373,18 @@ export class SangrahApiService {
     );
   }
 
-  updateEvent(eventId: string, payload: Partial<Event>): Observable<Event> {
-    return this.http.patch<Event>(`${this.baseUrl}/events/${eventId}`, payload);
+  updateEvent(eventId: string, eventData: UpdateEventPayload, coverMediaFile?: File): Observable<Event> {
+    const formData = new FormData();
+    formData.append(
+      'eventDetails',
+      new Blob([JSON.stringify(eventData)], { type: 'application/json' })
+    );
+
+    if (coverMediaFile) {
+      formData.append('coverMedia', coverMediaFile);
+    }
+
+    return this.http.put<Event>(`${this.baseUrl}/events/${eventId}`, formData);
   }
 
   deleteEvent(eventId: string): Observable<void> {

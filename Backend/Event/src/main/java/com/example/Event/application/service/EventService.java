@@ -1,22 +1,29 @@
 package com.example.Event.application.service;
 
+import com.example.Event.api.dto.request.EventUpdateRequest;
 import com.example.Event.infrastructure.client.MediaServiceClient;
 import com.example.Event.infrastructure.persistence.document.EventDocument;
 import com.example.Event.infrastructure.persistence.document.EventMediaDocument;
 import com.example.Event.infrastructure.persistence.document.EventMediaApprovalDocument;
+import com.example.Event.infrastructure.persistence.document.OrphanedMediaLogDocument;
 import com.example.Event.infrastructure.persistence.repository.EventAccessRequestRepository;
 import com.example.Event.infrastructure.persistence.repository.EventMediaApprovalRepository;
 import com.example.Event.infrastructure.persistence.repository.EventMediaRepository;
 import com.example.Event.infrastructure.persistence.repository.EventRepository;
+import com.example.Event.infrastructure.persistence.repository.OrphanedMediaLogRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.Set;
 import java.util.List;
+import java.util.Map;
 
 @Slf4j
 @Service
@@ -28,6 +35,8 @@ public class EventService {
     private final EventMediaApprovalRepository eventMediaApprovalRepository;
     private final EventAccessRequestRepository eventAccessRequestRepository;
     private final MediaServiceClient mediaServiceClient;
+    private final EventCollaboratorService collaboratorService;
+    private final OrphanedMediaLogRepository orphanedMediaLogRepository;
 
     /**
      * Create a new event
@@ -38,19 +47,7 @@ public class EventService {
             log.info("?? Creating event: {} by user: {}", title, ownerUserId);
 
             // Parse event date from ISO string (ISO 8601 format from frontend)
-            Instant eventDate;
-            if (eventDateStr != null && !eventDateStr.isEmpty()) {
-                try {
-                    // Handle ISO 8601 format: 2026-03-31T18:30
-                    LocalDateTime ldt = LocalDateTime.parse(eventDateStr.replace(" ", "T"));
-                    eventDate = ldt.atZone(ZoneId.systemDefault()).toInstant();
-                } catch (Exception e) {
-                    log.warn("Failed to parse event date: {}, using current time", eventDateStr);
-                    eventDate = Instant.now();
-                }
-            } else {
-                eventDate = Instant.now();
-            }
+            Instant eventDate = parseEventDate(eventDateStr, true);
 
             EventDocument event = EventDocument.builder()
                     .ownerUserId(ownerUserId)
@@ -128,47 +125,152 @@ public class EventService {
     /**
      * Update an event
      */
-    public EventDocument updateEvent(String eventId, String title, String description,
-                                     String eventDateStr, String visibility,
-                                     String coverImageId, boolean moderationEnabled) {
+    public EventDocument updateEvent(String eventId, String userId, EventUpdateRequest eventDetails, MultipartFile coverMedia) {
         try {
             log.info("?? Updating event: {}", eventId);
 
             EventDocument event = getEventById(eventId);
 
-            // Update fields if provided
-            if (title != null && !title.isEmpty()) {
-                event.setTitle(title);
-            }
-            if (description != null && !description.isEmpty()) {
-                event.setDescription(description);
-            }
-            if (eventDateStr != null && !eventDateStr.isEmpty()) {
-                try {
-                    LocalDateTime ldt = LocalDateTime.parse(eventDateStr.replace(" ", "T"));
-                    event.setEventDate(ldt.atZone(ZoneId.systemDefault()).toInstant());
-                } catch (Exception e) {
-                    log.warn("Failed to parse event date: {}", eventDateStr);
-                }
-            }
-            if (visibility != null && !visibility.isEmpty()) {
-                event.setVisibility(visibility);
+            if (userId == null || userId.isBlank()) {
+                throw new SecurityException("User ID not found");
             }
 
-            event.setCoverImageId(coverImageId);
+            boolean canEditDetails = collaboratorService.hasPermission(eventId, userId, "canEditEventDetails");
+            if (!canEditDetails) {
+                throw new SecurityException("You don't have permission to edit this event");
+            }
 
-            event.setModerationEnabled(moderationEnabled);
+            validateUpdatePayload(eventDetails);
+
+            String oldMediaId = event.getCoverImageId();
+            String newMediaId = oldMediaId;
+
+            event.setTitle(eventDetails.getTitle().trim());
+            event.setDescription(eventDetails.getDescription() != null ? eventDetails.getDescription().trim() : "");
+            event.setEventDate(parseEventDate(eventDetails.getEventDate(), false));
+            event.setVisibility(eventDetails.getVisibility().trim().toUpperCase());
+            event.setModerationEnabled(Boolean.TRUE.equals(eventDetails.getModerationEnabled()));
+
+            if (coverMedia != null && !coverMedia.isEmpty()) {
+                Map<String, Object> uploadResponse = mediaServiceClient.uploadMedia(
+                        coverMedia,
+                        "EVENT_COVER",
+                        eventId,
+                        userId
+                );
+                newMediaId = extractMediaId(uploadResponse);
+                event.setCoverImageId(newMediaId);
+            }
+
             event.setUpdatedAt(Instant.now());
 
             EventDocument updatedEvent = eventRepository.save(event);
+
+            if (oldMediaId != null && !oldMediaId.isBlank() && !oldMediaId.equals(newMediaId)) {
+                try {
+                    //throw new RuntimeException("This is a fake error!");
+                    mediaServiceClient.deleteMedia(oldMediaId, userId);
+                } catch (Exception deleteError) {
+                    log.error("SEVERE: Failed to delete old cover media {} for event {}: {}",
+                            oldMediaId,
+                            eventId,
+                            deleteError.getMessage(),
+                            deleteError);
+
+                    try {
+                        orphanedMediaLogRepository.save(OrphanedMediaLogDocument.builder()
+                                .eventId(eventId)
+                                .oldMediaId(oldMediaId)
+                                .errorMessage(deleteError.getMessage())
+                                .createdAt(Instant.now())
+                                .build());
+                    } catch (Exception orphanLogError) {
+                        log.error("Failed to persist orphaned media log for {}: {}", oldMediaId, orphanLogError.getMessage(), orphanLogError);
+                    }
+                }
+            }
+
             log.info("? Event updated successfully: {}", eventId);
 
             return updatedEvent;
 
+        } catch (IllegalArgumentException | SecurityException e) {
+            log.warn("? Failed to update event: {}", e.getMessage(), e);
+            throw e;
         } catch (Exception e) {
             log.error("? Failed to update event: {}", e.getMessage(), e);
             throw new RuntimeException("Failed to update event: " + e.getMessage(), e);
         }
+    }
+
+    private void validateUpdatePayload(EventUpdateRequest eventDetails) {
+        if (eventDetails.getTitle() == null || eventDetails.getTitle().trim().isEmpty()) {
+            throw new IllegalArgumentException("Title is required");
+        }
+
+        if (eventDetails.getDescription() != null && eventDetails.getDescription().length() > 2000) {
+            throw new IllegalArgumentException("Description must not exceed 2000 characters");
+        }
+
+        if (eventDetails.getEventDate() == null || eventDetails.getEventDate().trim().isEmpty()) {
+            throw new IllegalArgumentException("Event date is required");
+        }
+
+        if (eventDetails.getVisibility() == null || eventDetails.getVisibility().trim().isEmpty()) {
+            throw new IllegalArgumentException("Visibility is required");
+        }
+
+        Set<String> allowedVisibility = Set.of("PUBLIC", "PROTECTED", "PRIVATE");
+        if (!allowedVisibility.contains(eventDetails.getVisibility().trim().toUpperCase())) {
+            throw new IllegalArgumentException("Visibility must be PUBLIC, PROTECTED, or PRIVATE");
+        }
+    }
+
+    private String extractMediaId(Map<String, Object> uploadResponse) {
+        if (uploadResponse == null) {
+            throw new IllegalStateException("Media upload response was empty");
+        }
+
+        Object mediaId = uploadResponse.get("mediaId");
+        if (mediaId == null) {
+            mediaId = uploadResponse.get("id");
+        }
+
+        if (mediaId == null || mediaId.toString().isBlank()) {
+            throw new IllegalStateException("Media upload did not return a media ID");
+        }
+
+        return mediaId.toString();
+    }
+
+    private Instant parseEventDate(String eventDateStr, boolean allowFallbackToNow) {
+        if (eventDateStr == null || eventDateStr.trim().isEmpty()) {
+            if (allowFallbackToNow) {
+                return Instant.now();
+            }
+            throw new IllegalArgumentException("Event date is required");
+        }
+
+        String normalized = eventDateStr.trim().replace(" ", "T");
+
+        try {
+            LocalDateTime ldt = LocalDateTime.parse(normalized);
+            return ldt.atZone(ZoneId.systemDefault()).toInstant();
+        } catch (Exception ignored) {
+        }
+
+        try {
+            LocalDate date = LocalDate.parse(normalized);
+            return date.atStartOfDay(ZoneId.systemDefault()).toInstant();
+        } catch (Exception ignored) {
+        }
+
+        if (allowFallbackToNow) {
+            log.warn("Failed to parse event date: {}, using current time", eventDateStr);
+            return Instant.now();
+        }
+
+        throw new IllegalArgumentException("Invalid event date format");
     }
 
     /**

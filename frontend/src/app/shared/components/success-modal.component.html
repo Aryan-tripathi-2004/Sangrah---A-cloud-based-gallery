@@ -1,0 +1,38 @@
+<div *ngIf="isOpen" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+  <div class="w-full max-w-lg rounded-2xl border border-emerald-500/25 bg-slate-950 shadow-2xl shadow-black/50">
+    <div class="flex items-center justify-between border-b border-slate-800 px-6 py-4">
+      <div class="flex items-center gap-3">
+        <div class="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/10 text-2xl">{{ icon }}</div>
+        <div>
+          <p class="text-xs uppercase tracking-[0.3em] text-emerald-300/80">Success</p>
+          <h2 class="mt-1 text-2xl font-bold text-slate-100">{{ title }}</h2>
+        </div>
+      </div>
+      <button
+        type="button"
+        (click)="closeModal.emit()"
+        class="rounded-full px-3 py-2 text-slate-400 transition hover:bg-slate-800 hover:text-slate-100"
+        aria-label="Close success modal"
+      >
+        ✕
+      </button>
+    </div>
+
+    <div class="space-y-4 px-6 py-6 text-slate-200">
+      <p class="leading-7 text-slate-300">{{ message }}</p>
+      <div *ngIf="countdownSeconds !== null" class="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
+        Redirecting in {{ countdownSeconds }} second{{ countdownSeconds === 1 ? '' : 's' }}...
+      </div>
+    </div>
+
+    <div class="border-t border-slate-800 px-6 py-4">
+      <button
+        type="button"
+        (click)="closeModal.emit()"
+        class="w-full rounded-xl bg-emerald-500 px-4 py-3 font-semibold text-slate-950 transition hover:bg-emerald-400"
+      >
+        {{ closeLabel }}
+      </button>
+    </div>
+  </div>
+</div>

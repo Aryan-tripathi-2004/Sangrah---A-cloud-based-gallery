@@ -1,0 +1,44 @@
+<div *ngIf="isOpen" class="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+  <div class="relative z-[10000] w-full max-w-lg rounded-2xl border border-red-500/25 bg-slate-950 shadow-2xl shadow-black/50">
+    <div class="flex items-center justify-between border-b border-slate-800 px-6 py-4">
+      <div class="flex items-center gap-3">
+        <div class="flex h-12 w-12 items-center justify-center rounded-full bg-red-500/10 text-2xl">❌</div>
+        <div>
+          <p class="text-xs uppercase tracking-[0.3em] text-red-300/80">Error</p>
+          <h2 class="mt-1 text-2xl font-bold text-slate-100">{{ title }}</h2>
+        </div>
+      </div>
+      <button
+        type="button"
+        (click)="closeModal.emit()"
+        class="rounded-full px-3 py-2 text-slate-400 transition hover:bg-slate-800 hover:text-slate-100"
+        aria-label="Close error modal"
+      >
+        ✕
+      </button>
+    </div>
+
+    <div class="space-y-4 px-6 py-6 text-slate-200">
+      <div class="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-4 text-red-100">
+        <p class="leading-7">{{ message }}</p>
+      </div>
+    </div>
+
+    <div class="flex flex-col-reverse gap-3 border-t border-slate-800 px-6 py-4 sm:flex-row">
+      <button
+        type="button"
+        (click)="closeModal.emit()"
+        class="flex-1 rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 font-semibold text-slate-200 transition hover:bg-slate-800"
+      >
+        {{ closeLabel }}
+      </button>
+      <button
+        type="button"
+        (click)="retry.emit()"
+        class="flex-1 rounded-xl bg-gradient-to-r from-red-600 to-rose-500 px-4 py-3 font-semibold text-white transition hover:from-red-500 hover:to-rose-400"
+      >
+        {{ retryLabel }}
+      </button>
+    </div>
+  </div>
+</div>

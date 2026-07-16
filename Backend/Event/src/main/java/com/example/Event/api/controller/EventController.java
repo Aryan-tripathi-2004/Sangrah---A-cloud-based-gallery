@@ -1,5 +1,6 @@
 package com.example.Event.api.controller;
 
+import com.example.Event.api.dto.request.EventUpdateRequest;
 import com.example.Event.application.service.EventService;
 import com.example.Event.application.service.EventCollaboratorService;
 import com.example.Event.application.service.EventAccessService;
@@ -7,11 +8,14 @@ import com.example.Event.infrastructure.client.UserServiceClient;
 import com.example.Event.infrastructure.persistence.document.EventDocument;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.MediaType;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.Map;
@@ -275,43 +279,65 @@ public class EventController {
      * Update an event
      * PATCH /api/v1/events/{eventId}
      */
-    @PatchMapping("/{eventId}")
+    @PutMapping(value = "/{eventId}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @Operation(summary = "Update event")
-    public ResponseEntity<?> update(@PathVariable String eventId, @RequestBody Map<String, Object> payload, HttpServletRequest request) {
+    public ResponseEntity<?> update(
+            @PathVariable String eventId,
+            @Valid @RequestPart("eventDetails") EventUpdateRequest eventDetails,
+            @RequestPart(value = "coverMedia", required = false) MultipartFile coverMedia,
+            HttpServletRequest request) {
         try {
             String userId = request.getHeader("X-User-Id");
             log.info("✏️ [Event Update] Updating event: {} by user: {}", eventId, userId);
 
             if (userId == null || userId.isEmpty()) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                        .body(Map.of("error", "User ID not found"));
+                Map<String, Object> errorData = new HashMap<>();
+                errorData.put("status", "error");
+                errorData.put("message", "User ID not found");
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(errorData);
             }
 
-            // Verify ownership
-            EventDocument event = eventService.getEventById(eventId);
-            if (!event.getOwnerUserId().equals(userId)) {
-                return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                        .body(Map.of("error", "You don't have permission to update this event"));
+            boolean canEditDetails = collaboratorService.hasPermission(eventId, userId, "canEditEventDetails");
+            if (!canEditDetails) {
+                Map<String, Object> errorData = new HashMap<>();
+                errorData.put("status", "error");
+                errorData.put("message", "You don't have permission to edit this event");
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(errorData);
             }
 
-            String title = (String) payload.get("title");
-            String description = (String) payload.get("description");
-            String eventDate = (String) payload.get("eventDate");
-            String visibility = (String) payload.get("visibility");
-            String coverImageId = (String) payload.get("coverImageId");
-            Object modObj = payload.get("moderationEnabled");
-            boolean moderationEnabled = modObj instanceof Boolean ? (boolean) modObj : false;
+            EventDocument updated = eventService.updateEvent(eventId, userId, eventDetails, coverMedia);
+            Map<String, Object> responseData = new HashMap<>();
+            responseData.put("status", "success");
+            responseData.put("message", "Event updated successfully");
+            responseData.put("eventId", updated.getId());
+            responseData.put("id", updated.getId());
+            responseData.put("title", updated.getTitle());
+            responseData.put("description", updated.getDescription());
+            responseData.put("eventDate", updated.getEventDate() != null ? updated.getEventDate().toString() : null);
+            responseData.put("visibility", updated.getVisibility());
+            responseData.put("moderationEnabled", updated.isModerationEnabled());
+            responseData.put("coverImageId", updated.getCoverImageId());
+            responseData.put("collaborators", updated.getCollaborators());
+            return ResponseEntity.ok(responseData);
 
-            EventDocument updated = eventService.updateEvent(eventId, title, description, eventDate, visibility, coverImageId, moderationEnabled);
-            return ResponseEntity.ok(Map.of(
-                    "eventId", updated.getId(),
-                    "message", "Event updated successfully"
-            ));
-
+        } catch (SecurityException e) {
+            log.warn("❌ Update event forbidden: {}", e.getMessage());
+            Map<String, Object> errorData = new HashMap<>();
+            errorData.put("status", "error");
+            errorData.put("message", e.getMessage() != null ? e.getMessage() : "An unexpected error occurred");
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(errorData);
+        } catch (IllegalArgumentException e) {
+            log.warn("❌ Update event validation failed: {}", e.getMessage());
+            Map<String, Object> errorData = new HashMap<>();
+            errorData.put("status", "error");
+            errorData.put("message", e.getMessage() != null ? e.getMessage() : "An unexpected error occurred");
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorData);
         } catch (Exception e) {
-            log.error("❌ Update event error: {}", e.getMessage());
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(Map.of("error", e.getMessage()));
+            log.error("❌ Update event error: ", e);
+            Map<String, Object> errorData = new HashMap<>();
+            errorData.put("status", "error");
+            errorData.put("message", e.getMessage() != null ? e.getMessage() : "An unexpected error occurred");
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorData);
         }
     }
 
