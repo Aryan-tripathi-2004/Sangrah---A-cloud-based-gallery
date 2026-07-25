@@ -1,0 +1,133 @@
+<div *ngIf="isOpen" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+  <div class="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl border border-slate-700/60 bg-slate-950 shadow-2xl shadow-black/50">
+    <div class="flex items-center justify-between border-b border-slate-800 px-6 py-4">
+      <div>
+        <p class="text-xs uppercase tracking-[0.3em] text-blue-300/80">Edit event</p>
+        <h2 class="mt-1 text-2xl font-bold text-slate-100">Update event details</h2>
+      </div>
+      <button
+        type="button"
+        (click)="closeModal.emit()"
+        class="rounded-full px-3 py-2 text-slate-400 transition hover:bg-slate-800 hover:text-slate-100"
+        aria-label="Close edit modal"
+      >
+        ✕
+      </button>
+    </div>
+
+    <form [formGroup]="form" class="space-y-5 px-6 py-6">
+      <div>
+        <label class="mb-2 block text-sm font-semibold text-slate-200">Title *</label>
+        <input
+          formControlName="title"
+          type="text"
+          maxlength="200"
+          class="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-slate-100 outline-none transition focus:border-blue-500"
+          placeholder="Event title"
+        />
+        <p *ngIf="isInvalid('title', 'required')" class="mt-2 text-sm text-red-400">Title is required.</p>
+        <p *ngIf="isInvalid('title', 'minlength')" class="mt-2 text-sm text-red-400">Title must be at least 3 characters.</p>
+        <p *ngIf="isInvalid('title', 'maxlength')" class="mt-2 text-sm text-red-400">Title cannot exceed 200 characters.</p>
+      </div>
+
+      <div>
+        <label class="mb-2 block text-sm font-semibold text-slate-200">Description</label>
+        <textarea
+          formControlName="description"
+          rows="5"
+          maxlength="2000"
+          class="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-slate-100 outline-none transition focus:border-blue-500"
+          placeholder="Add a short description or leave blank"
+        ></textarea>
+        <p *ngIf="isInvalid('description', 'maxlength')" class="mt-2 text-sm text-red-400">Description cannot exceed 2000 characters.</p>
+      </div>
+
+      <div class="grid gap-5 md:grid-cols-2">
+        <div>
+          <label class="mb-2 block text-sm font-semibold text-slate-200">Event Date *</label>
+          <input
+            formControlName="eventDate"
+            type="date"
+            class="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-slate-100 outline-none transition focus:border-blue-500"
+          />
+          <p *ngIf="isInvalid('eventDate', 'required')" class="mt-2 text-sm text-red-400">Event date is required.</p>
+        </div>
+
+        <div>
+          <label class="mb-2 block text-sm font-semibold text-slate-200">Visibility *</label>
+          <select
+            formControlName="visibility"
+            class="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-slate-100 outline-none transition focus:border-blue-500"
+          >
+            <option value="PUBLIC">Public</option>
+            <option value="PROTECTED">Protected</option>
+            <option value="PRIVATE">Private</option>
+          </select>
+          <p *ngIf="isInvalid('visibility', 'required')" class="mt-2 text-sm text-red-400">Visibility is required.</p>
+        </div>
+      </div>
+
+      <div class="rounded-xl border border-slate-700 bg-slate-900/80 p-4">
+        <label class="flex items-start gap-3 text-slate-100">
+          <input formControlName="moderationEnabled" type="checkbox" class="mt-1 h-4 w-4 rounded border-slate-600 bg-slate-800 text-blue-500 focus:ring-blue-500" />
+          <span>
+            <span class="block font-semibold">Require moderation for uploads</span>
+            <span class="block text-sm text-slate-400">When enabled, uploads must be approved before they appear in the event.</span>
+          </span>
+        </label>
+      </div>
+
+      <div>
+        <label class="mb-2 block text-sm font-semibold text-slate-200">Cover Image</label>
+        <input
+          type="file"
+          accept="image/*"
+          (change)="onCoverFileChange($event)"
+          class="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-slate-300 file:mr-4 file:rounded-lg file:border-0 file:bg-blue-600 file:px-4 file:py-2 file:text-white hover:file:bg-blue-500"
+        />
+        <p class="mt-2 text-sm text-slate-400">Upload a new cover image to replace the current one.</p>
+
+        <div class="mt-4 grid gap-4 md:grid-cols-[220px,1fr]">
+          <div class="overflow-hidden rounded-xl border border-slate-700 bg-slate-900/80">
+            <img
+              *ngIf="selectedCoverPreviewUrl || currentCoverImageUrl"
+              [src]="selectedCoverPreviewUrl || currentCoverImageUrl || ''"
+              alt="Cover image preview"
+              class="h-44 w-full object-cover"
+            />
+            <div *ngIf="!selectedCoverPreviewUrl && !currentCoverImageUrl" class="flex h-44 items-center justify-center text-sm text-slate-500">
+              No cover image
+            </div>
+          </div>
+
+          <div class="rounded-xl border border-slate-700 bg-slate-900/80 p-4 text-sm text-slate-300">
+            <p class="font-semibold text-slate-100">Preview</p>
+            <p class="mt-2 text-slate-400">
+              {{ selectedCoverFileName ? 'Selected file: ' + selectedCoverFileName : 'This is the current cover image.' }}
+            </p>
+            <p class="mt-3 text-slate-500">If you select a new image, it will be uploaded through the Event service and the old media will be cleaned up server-side.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex flex-col-reverse gap-3 border-t border-slate-800 pt-5 sm:flex-row">
+        <button
+          type="button"
+          (click)="closeModal.emit()"
+          class="flex-1 rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 font-semibold text-slate-200 transition hover:bg-slate-800"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          (click)="saveChanges.emit()"
+          [disabled]="!canSave()"
+          class="flex-1 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-500 px-4 py-3 font-semibold text-white transition hover:from-blue-500 hover:to-cyan-400 disabled:cursor-not-allowed disabled:from-slate-700 disabled:to-slate-700"
+        >
+          <span *ngIf="!isSaving">Save changes</span>
+          <span *ngIf="isSaving">Saving...</span>
+        </button>
+      </div>
+    </form>
+  </div>
+</div>

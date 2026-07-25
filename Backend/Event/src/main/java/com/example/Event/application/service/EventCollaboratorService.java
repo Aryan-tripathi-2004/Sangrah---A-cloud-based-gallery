@@ -229,6 +229,8 @@ public class EventCollaboratorService {
                             return c.getCanReviewMedia() != null && c.getCanReviewMedia();
                         case "canReviewAccessRequests":
                             return c.getCanReviewAccessRequests() != null && c.getCanReviewAccessRequests();
+                        case "canEditEventDetails":
+                            return c.getCanEditEventDetails() != null && c.getCanEditEventDetails();
                         default:
                             return false;
                     }
