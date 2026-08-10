@@ -12,18 +12,27 @@ import com.example.Event.infrastructure.persistence.document.EventAccessRequestD
 import com.example.Event.shared.enums.AccessStatus;
 import com.example.Event.shared.enums.ApprovalDuration;
 import com.example.Event.shared.enums.ApprovalStatus;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.mapstruct.InjectionStrategy;
 import org.mapstruct.Mapper;
 import org.mapstruct.MappingConstants;
-import org.springframework.beans.factory.annotation.Autowired;
 
 import java.time.Instant;
 import java.util.List;
 
-@Mapper(componentModel = MappingConstants.ComponentModel.SPRING)
+@Mapper(componentModel = MappingConstants.ComponentModel.SPRING,
+        injectionStrategy = InjectionStrategy.CONSTRUCTOR)
 public abstract class EventAccessMapper {
 
+    protected UserServiceClient userServiceClient;
+
+    protected EventAccessMapper() {
+    }
+
     @Autowired
-    private UserServiceClient userServiceClient;
+    public EventAccessMapper(UserServiceClient userServiceClient) {
+        this.userServiceClient = userServiceClient;
+    }
 
     public AccessRequestMutationResponse toMutationResponse(EventAccessRequestDocument document, String message) {
         if (document == null) {

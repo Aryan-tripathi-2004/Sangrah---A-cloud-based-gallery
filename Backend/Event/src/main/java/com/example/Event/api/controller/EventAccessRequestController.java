@@ -1,5 +1,6 @@
 package com.example.Event.api.controller;
 
+import com.example.Event.api.annotation.CurrentUserId;
 import com.example.Event.api.dto.request.AccessApprovalRequest;
 import com.example.Event.api.dto.request.AccessMessageRequest;
 import com.example.Event.api.dto.request.AccessRejectionRequest;
@@ -12,7 +13,6 @@ import com.example.Event.api.dto.response.AccessStatusResponse;
 import com.example.Event.application.service.interfaces.IEventAccessService;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -23,7 +23,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
 @Validated
@@ -38,7 +37,7 @@ public class EventAccessRequestController {
     public ResponseEntity<AccessRequestMutationResponse> request(
             @PathVariable String eventId,
             @Valid @RequestBody(required = false) AccessMessageRequest request,
-            @NotBlank @RequestHeader(value = "X-User-Id", required = true) String userId) {
+            @CurrentUserId String userId) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(accessService.requestAccess(eventId, request, userId));
     }
@@ -47,7 +46,7 @@ public class EventAccessRequestController {
     @Operation(summary = "List event access requests (owner only)")
     public ResponseEntity<AccessRequestsResponse> list(
             @PathVariable String eventId,
-            @NotBlank @RequestHeader(value = "X-User-Id", required = true) String userId) {
+            @CurrentUserId String userId) {
         return ResponseEntity.ok(accessService.listAccessRequests(eventId, userId));
     }
 
@@ -57,7 +56,7 @@ public class EventAccessRequestController {
             @PathVariable String eventId,
             @PathVariable String requestId,
             @Valid @RequestBody(required = false) AccessApprovalRequest request,
-            @NotBlank @RequestHeader(value = "X-User-Id", required = true) String userId) {
+            @CurrentUserId String userId) {
         return ResponseEntity.ok(accessService.approveRequest(eventId, requestId, request, userId));
     }
 
@@ -67,7 +66,7 @@ public class EventAccessRequestController {
             @PathVariable String eventId,
             @PathVariable String requestId,
             @Valid @RequestBody(required = false) AccessRejectionRequest request,
-            @NotBlank @RequestHeader(value = "X-User-Id", required = true) String userId) {
+            @CurrentUserId String userId) {
         return ResponseEntity.ok(accessService.rejectRequest(eventId, requestId, request, userId));
     }
 
@@ -76,7 +75,7 @@ public class EventAccessRequestController {
     public ResponseEntity<AccessRevocationResponse> revoke(
             @PathVariable String eventId,
             @PathVariable String requestId,
-            @NotBlank @RequestHeader(value = "X-User-Id", required = true) String userId) {
+            @CurrentUserId String userId) {
         return ResponseEntity.ok(accessService.revokeRequest(eventId, requestId, userId));
     }
 
@@ -85,7 +84,7 @@ public class EventAccessRequestController {
     public ResponseEntity<AccessRequestMutationResponse> reRequest(
             @PathVariable String eventId,
             @Valid @RequestBody(required = false) AccessMessageRequest request,
-            @NotBlank @RequestHeader(value = "X-User-Id", required = true) String userId) {
+            @CurrentUserId String userId) {
         return ResponseEntity.ok(accessService.reRequestAccess(eventId, request, userId));
     }
 
@@ -93,7 +92,7 @@ public class EventAccessRequestController {
     @Operation(summary = "Get current user's access status for event")
     public ResponseEntity<AccessStatusResponse> getAccessStatus(
             @PathVariable String eventId,
-            @NotBlank @RequestHeader(value = "X-User-Id", required = true) String userId) {
+            @CurrentUserId String userId) {
         return ResponseEntity.ok(accessService.getAccessStatus(eventId, userId));
     }
 }

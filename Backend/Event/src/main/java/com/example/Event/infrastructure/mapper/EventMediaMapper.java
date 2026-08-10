@@ -16,9 +16,10 @@ import com.example.Event.infrastructure.persistence.document.EventMediaApprovalD
 import com.example.Event.infrastructure.persistence.document.EventMediaDocument;
 import com.example.Event.shared.enums.ApprovalStatus;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.mapstruct.InjectionStrategy;
 import org.mapstruct.Mapper;
 import org.mapstruct.MappingConstants;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.MediaType;
 
@@ -26,14 +27,21 @@ import java.time.Instant;
 import java.util.List;
 
 @Slf4j
-@Mapper(componentModel = MappingConstants.ComponentModel.SPRING)
+@Mapper(componentModel = MappingConstants.ComponentModel.SPRING,
+        injectionStrategy = InjectionStrategy.CONSTRUCTOR)
 public abstract class EventMediaMapper {
 
-    @Autowired
-    private UserServiceClient userServiceClient;
+    protected UserServiceClient userServiceClient;
+    protected MediaServiceClient mediaServiceClient;
+
+    protected EventMediaMapper() {
+    }
 
     @Autowired
-    private MediaServiceClient mediaServiceClient;
+    public EventMediaMapper(UserServiceClient userServiceClient, MediaServiceClient mediaServiceClient) {
+        this.userServiceClient = userServiceClient;
+        this.mediaServiceClient = mediaServiceClient;
+    }
 
     public EventMediaResponse toResponse(EventMediaDocument document) {
         if (document == null) {
@@ -85,6 +93,10 @@ public abstract class EventMediaMapper {
         return new EventMediaDetailResponse(mediaId, eventId, details, moderationStatus);
     }
 
+    public EventMediaDetailResponse toDetailResponse(String mediaId, String eventId, MediaServiceResponse details, ApprovalStatus moderationStatus) {
+        return new EventMediaDetailResponse(mediaId, eventId, details, moderationStatus);
+    }
+
     public EventMediaModerationResponse toModerationResponse(
             ApprovalStatus status,
             String reason,
@@ -121,6 +133,13 @@ public abstract class EventMediaMapper {
             mediaDetails = mediaServiceClient.getMediaDetails(approval.getMediaId());
         } catch (Exception e) {
             log.warn("Could not fetch media details for {}: {}", approval.getMediaId(), e.getMessage());
+        }
+        return toDetailedItem(approval, uploaderName, mediaDetails);
+    }
+
+    public EventMediaItemResponse toDetailedItem(EventMediaApprovalDocument approval, String uploaderName, MediaServiceResponse mediaDetails) {
+        if (approval == null) {
+            return null;
         }
         return new EventMediaItemResponse(
                 approval.getMediaId(),

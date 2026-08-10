@@ -7,18 +7,27 @@ import com.example.Event.api.dto.response.MessageResponse;
 import com.example.Event.infrastructure.client.UserServiceClient;
 import com.example.Event.infrastructure.persistence.document.EventDocument;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.mapstruct.InjectionStrategy;
 import org.mapstruct.Mapper;
 import org.mapstruct.MappingConstants;
-import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.List;
 
 @Slf4j
-@Mapper(componentModel = MappingConstants.ComponentModel.SPRING)
+@Mapper(componentModel = MappingConstants.ComponentModel.SPRING,
+        injectionStrategy = InjectionStrategy.CONSTRUCTOR)
 public abstract class EventCollaboratorMapper {
 
+    protected UserServiceClient userServiceClient;
+
+    protected EventCollaboratorMapper() {
+    }
+
     @Autowired
-    private UserServiceClient userServiceClient;
+    public EventCollaboratorMapper(UserServiceClient userServiceClient) {
+        this.userServiceClient = userServiceClient;
+    }
 
     public CollaboratorMutationResponse toMutationResponse(CollaboratorResponse collaborator, String message) {
         return new CollaboratorMutationResponse(collaborator, message);

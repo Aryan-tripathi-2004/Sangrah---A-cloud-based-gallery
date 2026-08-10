@@ -1,5 +1,6 @@
 package com.example.Event.api.controller;
 
+import com.example.Event.api.annotation.CurrentUserId;
 import com.example.Event.api.dto.request.AddCollaboratorRequest;
 import com.example.Event.api.dto.request.EventRequest;
 import com.example.Event.api.dto.request.EventUpdateRequest;
@@ -16,7 +17,6 @@ import com.example.Event.application.service.interfaces.IEventCollaboratorServic
 import com.example.Event.application.service.interfaces.IEventService;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -30,7 +30,6 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
@@ -49,21 +48,21 @@ public class EventController {
     @Operation(summary = "Create event")
     public ResponseEntity<EventCreateResponse> create(
             @Valid @RequestBody EventRequest request,
-            @NotBlank @RequestHeader(value = "X-User-Id", required = true) String userId) {
+            @CurrentUserId String userId) {
         return ResponseEntity.status(HttpStatus.CREATED).body(eventService.createEvent(request, userId));
     }
 
     @GetMapping("/global")
     @Operation(summary = "Get global events")
     public ResponseEntity<List<EventSummaryResponse>> global(
-            @RequestHeader(value = "X-User-Id", required = false) String userId) {
+            @CurrentUserId(required = false) String userId) {
         return ResponseEntity.ok(eventService.getGlobalEvents(userId));
     }
 
     @GetMapping("/my-events")
     @Operation(summary = "Get user's events")
     public ResponseEntity<List<EventSummaryResponse>> myEvents(
-            @NotBlank @RequestHeader(value = "X-User-Id", required = true) String userId) {
+            @CurrentUserId String userId) {
         return ResponseEntity.ok(eventService.getMyEvents(userId));
     }
 
@@ -71,7 +70,7 @@ public class EventController {
     @Operation(summary = "Get event")
     public ResponseEntity<EventResponse> byId(
             @PathVariable String eventId,
-            @RequestHeader(value = "X-User-Id", required = false) String userId) {
+            @CurrentUserId(required = false) String userId) {
         return ResponseEntity.ok(eventService.getEvent(eventId, userId));
     }
 
@@ -81,7 +80,7 @@ public class EventController {
             @PathVariable String eventId,
             @Valid @RequestPart("eventDetails") EventUpdateRequest eventDetails,
             @RequestPart(value = "coverMedia", required = false) MultipartFile coverMedia,
-            @NotBlank @RequestHeader(value = "X-User-Id", required = true) String userId) {
+            @CurrentUserId String userId) {
         return ResponseEntity.ok(eventService.updateEvent(eventId, eventDetails, coverMedia, userId));
     }
 
@@ -89,7 +88,7 @@ public class EventController {
     @Operation(summary = "Delete event")
     public ResponseEntity<EventDeleteResponse> deleteEvent(
             @PathVariable String eventId,
-            @NotBlank @RequestHeader(value = "X-User-Id", required = true) String userId) {
+            @CurrentUserId String userId) {
         return ResponseEntity.ok(eventService.deleteEvent(eventId, userId));
     }
 
@@ -98,7 +97,7 @@ public class EventController {
     public ResponseEntity<CollaboratorMutationResponse> addCollaborator(
             @PathVariable String eventId,
             @Valid @RequestBody AddCollaboratorRequest request,
-            @NotBlank @RequestHeader(value = "X-User-Id", required = true) String userId) {
+            @CurrentUserId String userId) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(collaboratorService.addCollaborator(eventId, request, userId));
     }
@@ -114,7 +113,7 @@ public class EventController {
     public ResponseEntity<MessageResponse> removeCollaborator(
             @PathVariable String eventId,
             @PathVariable String userId,
-            @NotBlank @RequestHeader(value = "X-User-Id", required = true) String requesterUserId) {
+            @CurrentUserId String requesterUserId) {
         return ResponseEntity.ok(collaboratorService.removeCollaborator(eventId, userId, requesterUserId));
     }
 
@@ -124,7 +123,7 @@ public class EventController {
             @PathVariable String eventId,
             @PathVariable String userId,
             @Valid @RequestBody UpdateCollaboratorPermissionsRequest request,
-            @NotBlank @RequestHeader(value = "X-User-Id", required = true) String requesterUserId) {
+            @CurrentUserId String requesterUserId) {
         return ResponseEntity.ok(collaboratorService.updateCollaboratorPermissions(eventId, userId, request, requesterUserId));
     }
 }

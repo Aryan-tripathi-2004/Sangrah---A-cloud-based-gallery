@@ -1,5 +1,6 @@
 package com.example.Event.api.controller;
 
+import com.example.Event.api.annotation.CurrentUserId;
 import com.example.Event.api.dto.request.MediaRejectionRequest;
 import com.example.Event.api.dto.response.EventMediaCollectionResponse;
 import com.example.Event.api.dto.response.EventMediaDetailResponse;
@@ -10,7 +11,6 @@ import com.example.Event.api.dto.response.MessageResponse;
 import com.example.Event.application.service.interfaces.IEventModerationService;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpStatus;
@@ -40,7 +40,7 @@ public class EventMediaController {
     public ResponseEntity<ByteArrayResource> getMediaFile(
             @PathVariable String eventId,
             @PathVariable String mediaId,
-            @RequestHeader(value = "X-User-Id", required = false) String userId) {
+            @CurrentUserId(required = false) String userId) {
         EventMediaFileResponse response = moderationService.getMediaFile(eventId, mediaId, userId);
         return ResponseEntity.ok()
                 .contentType(response.contentType())
@@ -52,7 +52,7 @@ public class EventMediaController {
     public ResponseEntity<EventMediaUploadResponse> upload(
             @PathVariable String eventId,
             @RequestParam("file") MultipartFile file,
-            @NotBlank @RequestHeader(value = "X-User-Id", required = true) String userId,
+            @CurrentUserId String userId,
             @RequestHeader(value = "X-User-Email", required = false) String userEmail) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(moderationService.uploadMedia(eventId, file, userId, userEmail));
@@ -62,7 +62,7 @@ public class EventMediaController {
     @Operation(summary = "Get event timeline")
     public ResponseEntity<EventMediaCollectionResponse> timeline(
             @PathVariable String eventId,
-            @RequestHeader(value = "X-User-Id", required = false) String userId) {
+            @CurrentUserId(required = false) String userId) {
         return ResponseEntity.ok(moderationService.getTimeline(eventId, userId));
     }
 
@@ -70,7 +70,7 @@ public class EventMediaController {
     @Operation(summary = "Get all event media")
     public ResponseEntity<EventMediaCollectionResponse> listEventMedia(
             @PathVariable String eventId,
-            @RequestHeader(value = "X-User-Id", required = false) String userId) {
+            @CurrentUserId(required = false) String userId) {
         return ResponseEntity.ok(moderationService.listEventMedia(eventId, userId));
     }
 
@@ -87,7 +87,7 @@ public class EventMediaController {
     public ResponseEntity<EventMediaModerationResponse> approve(
             @PathVariable String eventId,
             @PathVariable String mediaId,
-            @NotBlank @RequestHeader(value = "X-User-Id", required = true) String userId) {
+            @CurrentUserId String userId) {
         return ResponseEntity.ok(moderationService.approveMedia(eventId, mediaId, userId));
     }
 
@@ -97,7 +97,7 @@ public class EventMediaController {
             @PathVariable String eventId,
             @PathVariable String mediaId,
             @Valid @RequestBody(required = false) MediaRejectionRequest request,
-            @NotBlank @RequestHeader(value = "X-User-Id", required = true) String userId) {
+            @CurrentUserId String userId) {
         return ResponseEntity.ok(moderationService.rejectMedia(eventId, mediaId, request, userId));
     }
 
@@ -106,7 +106,7 @@ public class EventMediaController {
     public ResponseEntity<MessageResponse> delete(
             @PathVariable String eventId,
             @PathVariable String mediaId,
-            @NotBlank @RequestHeader(value = "X-User-Id", required = true) String userId) {
+            @CurrentUserId String userId) {
         return ResponseEntity.ok(moderationService.deleteMedia(eventId, mediaId, userId));
     }
 }
