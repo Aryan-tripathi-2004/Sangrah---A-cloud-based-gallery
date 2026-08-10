@@ -1,17 +1,41 @@
 package com.example.Event.infrastructure.mapper;
 
 import com.example.Event.api.dto.request.EventMediaRequest;
+import com.example.Event.api.dto.response.EventMediaCollectionResponse;
+import com.example.Event.api.dto.response.EventMediaDetailResponse;
+import com.example.Event.api.dto.response.EventMediaFileResponse;
+import com.example.Event.api.dto.response.EventMediaItemResponse;
+import com.example.Event.api.dto.response.EventMediaModerationResponse;
 import com.example.Event.api.dto.response.EventMediaResponse;
+import com.example.Event.api.dto.response.EventMediaUploadResponse;
+import com.example.Event.api.dto.response.MessageResponse;
+import com.example.Event.infrastructure.client.MediaServiceClient;
+import com.example.Event.infrastructure.client.UserServiceClient;
+import com.example.Event.infrastructure.client.dto.MediaServiceResponse;
+import com.example.Event.infrastructure.persistence.document.EventMediaApprovalDocument;
 import com.example.Event.infrastructure.persistence.document.EventMediaDocument;
+import com.example.Event.shared.enums.ApprovalStatus;
+import lombok.extern.slf4j.Slf4j;
 import org.mapstruct.Mapper;
 import org.mapstruct.MappingConstants;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.http.MediaType;
 
 import java.time.Instant;
+import java.util.List;
 
+@Slf4j
 @Mapper(componentModel = MappingConstants.ComponentModel.SPRING)
-public interface EventMediaMapper {
+public abstract class EventMediaMapper {
 
-    default EventMediaResponse toResponse(EventMediaDocument document) {
+    @Autowired
+    private UserServiceClient userServiceClient;
+
+    @Autowired
+    private MediaServiceClient mediaServiceClient;
+
+    public EventMediaResponse toResponse(EventMediaDocument document) {
         if (document == null) {
             return null;
         }
@@ -28,7 +52,7 @@ public interface EventMediaMapper {
                 document.getStatus());
     }
 
-    default EventMediaDocument toDocument(EventMediaRequest request) {
+    public EventMediaDocument toDocument(EventMediaRequest request) {
         if (request == null) {
             return null;
         }
@@ -41,7 +65,75 @@ public interface EventMediaMapper {
                 .build();
     }
 
-    default String toIso(Instant instant) {
+    public EventMediaFileResponse toFileResponse(byte[] fileBytes, MediaType contentType) {
+        return new EventMediaFileResponse(new ByteArrayResource(fileBytes), contentType);
+    }
+
+    public EventMediaUploadResponse toUploadResponse(String mediaId, ApprovalStatus moderationStatus, String message) {
+        return new EventMediaUploadResponse(mediaId, moderationStatus, message);
+    }
+
+    public EventMediaCollectionResponse toCollectionResponse(
+            String eventId,
+            List<EventMediaItemResponse> media,
+            String message) {
+        return new EventMediaCollectionResponse(eventId, media, message);
+    }
+
+    public EventMediaDetailResponse toDetailResponse(String eventId, String mediaId, ApprovalStatus moderationStatus) {
+        MediaServiceResponse details = mediaServiceClient.getMediaDetails(mediaId);
+        return new EventMediaDetailResponse(mediaId, eventId, details, moderationStatus);
+    }
+
+    public EventMediaModerationResponse toModerationResponse(
+            ApprovalStatus status,
+            String reason,
+            String message) {
+        return new EventMediaModerationResponse(status, reason, message);
+    }
+
+    public MessageResponse toMessageResponse(String message) {
+        return new MessageResponse(message);
+    }
+
+    public EventMediaItemResponse toTimelineItem(EventMediaApprovalDocument approval) {
+        if (approval == null) {
+            return null;
+        }
+        return new EventMediaItemResponse(
+                approval.getMediaId(),
+                approval.getMediaId(),
+                approval.getStatus(),
+                approval.getUploaderUserId(),
+                null,
+                toIso(approval.getCreatedAt()),
+                null,
+                null);
+    }
+
+    public EventMediaItemResponse toDetailedItem(EventMediaApprovalDocument approval) {
+        if (approval == null) {
+            return null;
+        }
+        String uploaderName = userServiceClient.getUserDisplayName(approval.getUploaderUserId());
+        MediaServiceResponse mediaDetails = null;
+        try {
+            mediaDetails = mediaServiceClient.getMediaDetails(approval.getMediaId());
+        } catch (Exception e) {
+            log.warn("Could not fetch media details for {}: {}", approval.getMediaId(), e.getMessage());
+        }
+        return new EventMediaItemResponse(
+                approval.getMediaId(),
+                approval.getMediaId(),
+                approval.getStatus(),
+                approval.getUploaderUserId(),
+                uploaderName,
+                toIso(approval.getCreatedAt()),
+                mediaDetails != null ? mediaDetails.originalFileName() : null,
+                mediaDetails != null ? mediaDetails.mimeType() : null);
+    }
+
+    public String toIso(Instant instant) {
         return instant == null ? null : instant.toString();
     }
 }

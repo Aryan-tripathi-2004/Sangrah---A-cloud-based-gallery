@@ -10,31 +10,30 @@ import com.example.Event.api.dto.response.EventSettingsResponse;
 import com.example.Event.api.dto.response.EventSummaryResponse;
 import com.example.Event.api.dto.response.EventUpdateResponse;
 import com.example.Event.infrastructure.persistence.document.EventDocument;
-import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
 public interface IEventService {
-    EventCreateResponse createEvent(EventRequest request, HttpServletRequest httpRequest);
+    EventCreateResponse createEvent(EventRequest request, String userId);
 
-    List<EventSummaryResponse> getGlobalEvents(HttpServletRequest httpRequest);
+    List<EventSummaryResponse> getGlobalEvents(String userId);
 
-    List<EventSummaryResponse> getMyEvents(HttpServletRequest httpRequest);
+    List<EventSummaryResponse> getMyEvents(String userId);
 
-    EventResponse getEvent(String eventId, HttpServletRequest httpRequest);
+    EventResponse getEvent(String eventId, String userId);
 
     EventUpdateResponse updateEvent(
             String eventId,
             EventUpdateRequest eventDetails,
             MultipartFile coverMedia,
-            HttpServletRequest httpRequest);
+            String userId);
 
-    EventDeleteResponse deleteEvent(String eventId, HttpServletRequest httpRequest);
+    EventDeleteResponse deleteEvent(String eventId, String userId);
 
     EventSettingsResponse getSettings(String eventId);
 
-    EventSettingsResponse updateSettings(String eventId, EventSettingsRequest request, HttpServletRequest httpRequest);
+    EventSettingsResponse updateSettings(String eventId, EventSettingsRequest request, String userId);
 
     EventDocument getEventById(String eventId);
 

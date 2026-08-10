@@ -11,13 +11,12 @@ import com.example.Event.application.service.interfaces.IEventCollaboratorServic
 import com.example.Event.infrastructure.client.EmailServiceClient;
 import com.example.Event.infrastructure.client.NotificationServiceClient;
 import com.example.Event.infrastructure.client.UserServiceClient;
+import com.example.Event.infrastructure.mapper.EventCollaboratorMapper;
 import com.example.Event.infrastructure.persistence.document.EventDocument;
 import com.example.Event.infrastructure.persistence.repository.EventRepository;
-import com.example.Event.shared.exception.AuthenticationRequiredException;
 import com.example.Event.shared.exception.DomainValidationException;
 import com.example.Event.shared.exception.ForbiddenOperationException;
 import com.example.Event.shared.exception.ResourceNotFoundException;
-import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -37,13 +36,13 @@ public class EventCollaboratorServiceImpl implements IEventCollaboratorService {
     private final NotificationServiceClient notificationServiceClient;
     private final EmailServiceClient emailServiceClient;
     private final UserServiceClient userServiceClient;
+    private final EventCollaboratorMapper collaboratorMapper;
 
     @Override
     public CollaboratorMutationResponse addCollaborator(
             String eventId,
             AddCollaboratorRequest request,
-            HttpServletRequest httpRequest) {
-        String ownerUserId = requireUserId(httpRequest, "User ID not found");
+            String userId) {
         String collaboratorId = resolveCollaboratorUserId(request.userEmail());
         CollaboratorPermissionsRequest permissions = request.resolvedPermissions();
 
@@ -56,9 +55,9 @@ public class EventCollaboratorServiceImpl implements IEventCollaboratorService {
                 permissions.directUploadOrFalse(),
                 permissions.deleteMediaOrFalse(),
                 permissions.editEventDetailsOrFalse(),
-                ownerUserId);
+                userId);
 
-        return new CollaboratorMutationResponse(
+        return collaboratorMapper.toMutationResponse(
                 enrichCollaborator(collaborator, request.userEmail()),
                 "Collaborator added successfully");
     }
@@ -73,21 +72,20 @@ public class EventCollaboratorServiceImpl implements IEventCollaboratorService {
             }
             collaborators.add(enrichCollaborator(collaborator, null));
         }
-        return new CollaboratorsResponse(eventId, collaborators);
+        return collaboratorMapper.toCollaboratorsResponse(eventId, collaborators);
     }
 
     @Override
     public MessageResponse removeCollaborator(
             String eventId,
             String collaboratorUserId,
-            HttpServletRequest httpRequest) {
-        String ownerUserId = requireUserId(httpRequest, "User ID not found");
+            String userId) {
         if (collaboratorUserId == null || collaboratorUserId.isBlank() || "null".equals(collaboratorUserId)) {
             throw new DomainValidationException("Invalid collaborator ID. Cannot remove corrupted entries.");
         }
 
-        removeCollaboratorDocument(eventId, collaboratorUserId, ownerUserId);
-        return new MessageResponse("Collaborator removed successfully");
+        removeCollaboratorDocument(eventId, collaboratorUserId, userId);
+        return collaboratorMapper.toMessageResponse("Collaborator removed successfully");
     }
 
     @Override
@@ -95,8 +93,7 @@ public class EventCollaboratorServiceImpl implements IEventCollaboratorService {
             String eventId,
             String collaboratorUserId,
             UpdateCollaboratorPermissionsRequest request,
-            HttpServletRequest httpRequest) {
-        String ownerUserId = requireUserId(httpRequest, "User ID not found");
+            String userId) {
         CollaboratorPermissionsRequest permissions = request.permissions();
 
         EventDocument.EventCollaborator updated = updateCollaboratorDocument(
@@ -108,10 +105,10 @@ public class EventCollaboratorServiceImpl implements IEventCollaboratorService {
                 permissions.canDirectUpload(),
                 permissions.canDeleteMedia(),
                 permissions.canEditEventDetails(),
-                ownerUserId);
+                userId);
 
-        return new CollaboratorMutationResponse(
-                toResponse(updated, null, null),
+        return collaboratorMapper.toMutationResponse(
+                collaboratorMapper.toResponse(updated, null, null),
                 "Collaborator permissions updated successfully");
     }
 
@@ -282,22 +279,7 @@ public class EventCollaboratorServiceImpl implements IEventCollaboratorService {
             log.warn("Could not fetch displayName for {}: {}", collaborator.getUserId(), e.getMessage());
             displayName = collaborator.getUserId();
         }
-        return toResponse(collaborator, knownEmail, displayName);
-    }
-
-    private CollaboratorResponse toResponse(EventDocument.EventCollaborator collaborator, String email, String displayName) {
-        return new CollaboratorResponse(
-                collaborator.getUserId(),
-                collaborator.getCanUploadMedia(),
-                collaborator.getCanReviewMedia(),
-                collaborator.getCanReviewAccessRequests(),
-                collaborator.getCanDirectUpload(),
-                collaborator.getCanDeleteMedia(),
-                collaborator.getCanEditEventDetails(),
-                collaborator.getAddedAt(),
-                collaborator.getAddedByUserId(),
-                email,
-                displayName);
+        return collaboratorMapper.toResponse(collaborator, knownEmail, displayName);
     }
 
     private void notifyCollaboratorAdded(
@@ -362,11 +344,4 @@ public class EventCollaboratorServiceImpl implements IEventCollaboratorService {
                 .orElseThrow(() -> new ResourceNotFoundException("Event not found: " + eventId));
     }
 
-    private String requireUserId(HttpServletRequest request, String message) {
-        String userId = request == null ? null : request.getHeader("X-User-Id");
-        if (userId == null || userId.isBlank()) {
-            throw new AuthenticationRequiredException(message);
-        }
-        return userId;
-    }
 }

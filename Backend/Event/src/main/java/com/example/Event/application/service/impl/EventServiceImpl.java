@@ -3,7 +3,6 @@ package com.example.Event.application.service.impl;
 import com.example.Event.api.dto.request.EventRequest;
 import com.example.Event.api.dto.request.EventSettingsRequest;
 import com.example.Event.api.dto.request.EventUpdateRequest;
-import com.example.Event.api.dto.response.CollaboratorResponse;
 import com.example.Event.api.dto.response.EventCreateResponse;
 import com.example.Event.api.dto.response.EventDeleteResponse;
 import com.example.Event.api.dto.response.EventResponse;
@@ -25,11 +24,13 @@ import com.example.Event.infrastructure.persistence.repository.EventMediaApprova
 import com.example.Event.infrastructure.persistence.repository.EventMediaRepository;
 import com.example.Event.infrastructure.persistence.repository.EventRepository;
 import com.example.Event.infrastructure.persistence.repository.OrphanedMediaLogRepository;
-import com.example.Event.shared.exception.AuthenticationRequiredException;
+import com.example.Event.shared.enums.AccessStatus;
+import com.example.Event.shared.enums.ApprovalStatus;
+import com.example.Event.shared.enums.EventStatus;
+import com.example.Event.shared.enums.EventVisibility;
 import com.example.Event.shared.exception.DomainValidationException;
 import com.example.Event.shared.exception.ForbiddenOperationException;
 import com.example.Event.shared.exception.ResourceNotFoundException;
-import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -50,8 +51,6 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class EventServiceImpl implements IEventService {
 
-    private static final Set<String> ALLOWED_VISIBILITY = Set.of("PUBLIC", "PROTECTED", "PRIVATE");
-
     private final EventRepository eventRepository;
     private final EventMediaRepository eventMediaRepository;
     private final EventMediaApprovalRepository eventMediaApprovalRepository;
@@ -62,20 +61,19 @@ public class EventServiceImpl implements IEventService {
     private final EventMapper eventMapper;
 
     @Override
-    public EventCreateResponse createEvent(EventRequest request, HttpServletRequest httpRequest) {
-        String ownerUserId = requireUserId(httpRequest, "User ID not found");
+    public EventCreateResponse createEvent(EventRequest request, String userId) {
         validateCreatePayload(request);
 
         String title = request.title().trim();
         Instant now = Instant.now();
         EventDocument event = EventDocument.builder()
-                .ownerUserId(ownerUserId)
+                .ownerUserId(userId)
                 .title(title)
                 .description(request.description().trim())
                 .eventDate(parseEventDate(request.eventDate(), true))
                 .visibility(request.resolvedVisibility())
                 .moderationEnabled(request.moderationEnabledOrDefault())
-                .status("ACTIVE")
+                .status(EventStatus.ACTIVE)
                 .coverImageId(normalizeBlankToNull(request.coverImageId()))
                 .createdAt(now)
                 .updatedAt(now)
@@ -84,21 +82,15 @@ public class EventServiceImpl implements IEventService {
         EventDocument savedEvent = eventRepository.save(event);
         log.info("Event created successfully: {} with ID: {}", title, savedEvent.getId());
 
-        return new EventCreateResponse(
-                savedEvent.getId(),
-                savedEvent.getId(),
-                savedEvent.getTitle(),
-                "Event created successfully");
+        return eventMapper.toCreateResponse(savedEvent, "Event created successfully");
     }
 
     @Override
-    public List<EventSummaryResponse> getGlobalEvents(HttpServletRequest httpRequest) {
-        String userId = optionalUserId(httpRequest);
-
+    public List<EventSummaryResponse> getGlobalEvents(String userId) {
         List<EventDocument> allEvents = new ArrayList<>(getPublicEvents());
         allEvents.addAll(getProtectedEvents());
 
-        if (userId != null) {
+        if (hasText(userId)) {
             List<EventDocument> userEvents = getEventsByOwner(userId);
             Set<String> visibleEventIds = allEvents.stream()
                     .map(EventDocument::getId)
@@ -112,61 +104,37 @@ public class EventServiceImpl implements IEventService {
         }
 
         return allEvents.stream()
-                .map(this::toGlobalSummary)
+                .map(eventMapper::toPublicSummary)
                 .toList();
     }
 
     @Override
-    public List<EventSummaryResponse> getMyEvents(HttpServletRequest httpRequest) {
-        String userId = requireUserId(httpRequest, "User ID not found");
+    public List<EventSummaryResponse> getMyEvents(String userId) {
         return getEventsByOwner(userId).stream()
-                .map(this::toOwnerSummary)
+                .map(eventMapper::toOwnerSummary)
                 .toList();
     }
 
     @Override
-    public EventResponse getEvent(String eventId, HttpServletRequest httpRequest) {
-        String userId = optionalUserId(httpRequest);
+    public EventResponse getEvent(String eventId, String userId) {
         EventDocument event = getEventById(eventId);
 
-        if ("PRIVATE".equals(event.getVisibility()) && !isOwner(event, userId) && !isDocumentCollaborator(event, userId)) {
+        if (EventVisibility.PRIVATE == event.getVisibility() && !isOwner(event, userId) && !isDocumentCollaborator(event, userId)) {
             throw new ForbiddenOperationException("You don't have permission to view this event");
         }
 
-        if ("PROTECTED".equals(event.getVisibility()) && userId != null && !isOwner(event, userId)
+        if (EventVisibility.PROTECTED == event.getVisibility() && userId != null && !isOwner(event, userId)
                 && !isDocumentCollaborator(event, userId) && !isUserApproved(eventId, userId)) {
-            return new EventResponse(
-                    event.getId(),
-                    event.getId(),
-                    event.getOwnerUserId(),
-                    event.getTitle(),
-                    event.getDescription(),
-                    event.getCoverImageId(),
-                    toIso(event.getEventDate()),
-                    event.getVisibility(),
-                    event.isModerationEnabled(),
-                    eventMapper.toCollaboratorResponses(event.getCollaborators()),
-                    event.getStatus(),
-                    toIso(event.getCreatedAt()),
-                    "NO_ACCESS",
+            return eventMapper.toResponse(
+                    event,
+                    AccessStatus.NO_ACCESS,
                     true,
                     "This event is protected. You need to request access to view media.");
         }
 
-        return new EventResponse(
-                event.getId(),
-                event.getId(),
-                event.getOwnerUserId(),
-                event.getTitle(),
-                event.getDescription(),
-                event.getCoverImageId(),
-                toIso(event.getEventDate()),
-                event.getVisibility(),
-                event.isModerationEnabled(),
-                eventMapper.toCollaboratorResponses(event.getCollaborators()),
-                event.getStatus(),
-                toIso(event.getCreatedAt()),
-                "APPROVED",
+        return eventMapper.toResponse(
+                event,
+                AccessStatus.APPROVED,
                 null,
                 null);
     }
@@ -176,49 +144,35 @@ public class EventServiceImpl implements IEventService {
             String eventId,
             EventUpdateRequest eventDetails,
             MultipartFile coverMedia,
-            HttpServletRequest httpRequest) {
-        String userId = requireUserId(httpRequest, "User ID not found");
+            String userId) {
         EventDocument updated = updateEventDocument(eventId, userId, eventDetails, coverMedia);
 
-        return new EventUpdateResponse(
-                "success",
-                "Event updated successfully",
-                updated.getId(),
-                updated.getId(),
-                updated.getTitle(),
-                updated.getDescription(),
-                toIso(updated.getEventDate()),
-                updated.getVisibility(),
-                updated.isModerationEnabled(),
-                updated.getCoverImageId(),
-                eventMapper.toCollaboratorResponses(updated.getCollaborators()));
+        return eventMapper.toUpdateResponse(updated, "success", "Event updated successfully");
     }
 
     @Override
     @Transactional
-    public EventDeleteResponse deleteEvent(String eventId, HttpServletRequest httpRequest) {
-        String userId = requireUserId(httpRequest, "User ID not found");
+    public EventDeleteResponse deleteEvent(String eventId, String userId) {
         EventDocument event = getEventById(eventId);
         if (!event.getOwnerUserId().equals(userId)) {
             throw new ForbiddenOperationException("Only the event owner can delete this event");
         }
 
         deleteEventCascade(event);
-        return new EventDeleteResponse(eventId, "Event deleted successfully");
+        return eventMapper.toDeleteResponse(eventId, "Event deleted successfully");
     }
 
     @Override
     public EventSettingsResponse getSettings(String eventId) {
         EventDocument event = getEventById(eventId);
-        return new EventSettingsResponse(event.isModerationEnabled());
+        return eventMapper.toSettingsResponse(event);
     }
 
     @Override
     public EventSettingsResponse updateSettings(
             String eventId,
             EventSettingsRequest request,
-            HttpServletRequest httpRequest) {
-        String userId = requireUserId(httpRequest, "User ID not found");
+            String userId) {
         if (!collaboratorService.hasPermission(eventId, userId, "canEditEventDetails")) {
             throw new ForbiddenOperationException("You don't have permission to edit this event");
         }
@@ -226,7 +180,7 @@ public class EventServiceImpl implements IEventService {
         EventDocument event = getEventById(eventId);
         event.setModerationEnabled(Boolean.TRUE.equals(request.moderationEnabled()));
         updateEventDirectly(event);
-        return new EventSettingsResponse(event.isModerationEnabled());
+        return eventMapper.toSettingsResponse(event);
     }
 
     @Override
@@ -242,12 +196,12 @@ public class EventServiceImpl implements IEventService {
 
     @Override
     public List<EventDocument> getPublicEvents() {
-        return eventRepository.findByVisibility("PUBLIC");
+        return eventRepository.findByVisibility(EventVisibility.PUBLIC);
     }
 
     @Override
     public List<EventDocument> getProtectedEvents() {
-        return eventRepository.findByVisibility("PROTECTED");
+        return eventRepository.findByVisibility(EventVisibility.PROTECTED);
     }
 
     @Override
@@ -277,7 +231,7 @@ public class EventServiceImpl implements IEventService {
         event.setTitle(eventDetails.title().trim());
         event.setDescription(eventDetails.description() != null ? eventDetails.description().trim() : "");
         event.setEventDate(parseEventDate(eventDetails.eventDate(), false));
-        event.setVisibility(eventDetails.visibility().trim().toUpperCase());
+        event.setVisibility(eventDetails.visibility());
         event.setModerationEnabled(Boolean.TRUE.equals(eventDetails.moderationEnabled()));
 
         if (coverMedia != null && !coverMedia.isEmpty()) {
@@ -351,10 +305,7 @@ public class EventServiceImpl implements IEventService {
             throw new DomainValidationException("Title and description are required");
         }
 
-        String visibility = request.resolvedVisibility();
-        if (!ALLOWED_VISIBILITY.contains(visibility)) {
-            throw new DomainValidationException("Visibility must be PUBLIC, PROTECTED, or PRIVATE");
-        }
+        request.resolvedVisibility();
     }
 
     private void validateUpdatePayload(EventUpdateRequest eventDetails) {
@@ -367,11 +318,8 @@ public class EventServiceImpl implements IEventService {
         if (eventDetails.eventDate() == null || eventDetails.eventDate().trim().isEmpty()) {
             throw new DomainValidationException("Event date is required");
         }
-        if (eventDetails.visibility() == null || eventDetails.visibility().trim().isEmpty()) {
+        if (eventDetails.visibility() == null) {
             throw new DomainValidationException("Visibility is required");
-        }
-        if (!ALLOWED_VISIBILITY.contains(eventDetails.visibility().trim().toUpperCase())) {
-            throw new DomainValidationException("Visibility must be PUBLIC, PROTECTED, or PRIVATE");
         }
     }
 
@@ -410,36 +358,6 @@ public class EventServiceImpl implements IEventService {
         throw new DomainValidationException("Invalid event date format");
     }
 
-    private EventSummaryResponse toGlobalSummary(EventDocument event) {
-        return new EventSummaryResponse(
-                event.getId(),
-                event.getId(),
-                event.getOwnerUserId(),
-                event.getTitle(),
-                event.getDescription(),
-                event.getCoverImageId(),
-                toIso(event.getEventDate()),
-                event.getVisibility(),
-                null,
-                null,
-                toIso(event.getCreatedAt()));
-    }
-
-    private EventSummaryResponse toOwnerSummary(EventDocument event) {
-        return new EventSummaryResponse(
-                event.getId(),
-                event.getId(),
-                event.getOwnerUserId(),
-                event.getTitle(),
-                event.getDescription(),
-                event.getCoverImageId(),
-                toIso(event.getEventDate()),
-                event.getVisibility(),
-                event.isModerationEnabled(),
-                eventMapper.toCollaboratorResponses(event.getCollaborators()),
-                toIso(event.getCreatedAt()));
-    }
-
     private boolean isUserApproved(String eventId, String requesterUserId) {
         return eventAccessRequestRepository.findByEventIdAndRequesterUserId(eventId, requesterUserId)
                 .filter(this::isApprovedAndActive)
@@ -447,7 +365,7 @@ public class EventServiceImpl implements IEventService {
     }
 
     private boolean isApprovedAndActive(EventAccessRequestDocument request) {
-        if (!"APPROVED".equals(request.getStatus())) {
+        if (ApprovalStatus.APPROVED != request.getStatus()) {
             return false;
         }
         return request.getAccessExpiresAt() == null || Instant.now().isBefore(request.getAccessExpiresAt());
@@ -465,27 +383,11 @@ public class EventServiceImpl implements IEventService {
                 .anyMatch(collaborator -> userId.equals(collaborator.getUserId()));
     }
 
-    private String requireUserId(HttpServletRequest request, String message) {
-        String userId = optionalUserId(request);
-        if (userId == null) {
-            throw new AuthenticationRequiredException(message);
-        }
-        return userId;
-    }
-
-    private String optionalUserId(HttpServletRequest request) {
-        if (request == null) {
-            return null;
-        }
-        String userId = request.getHeader("X-User-Id");
-        return userId == null || userId.isBlank() ? null : userId;
-    }
-
     private String normalizeBlankToNull(String value) {
         return value == null || value.isBlank() ? null : value.trim();
     }
 
-    private String toIso(Instant instant) {
-        return instant == null ? null : instant.toString();
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 }

@@ -2,9 +2,14 @@ package com.example.Event.infrastructure.mapper;
 
 import com.example.Event.api.dto.request.EventRequest;
 import com.example.Event.api.dto.response.CollaboratorResponse;
+import com.example.Event.api.dto.response.EventCreateResponse;
+import com.example.Event.api.dto.response.EventDeleteResponse;
 import com.example.Event.api.dto.response.EventResponse;
+import com.example.Event.api.dto.response.EventSettingsResponse;
 import com.example.Event.api.dto.response.EventSummaryResponse;
+import com.example.Event.api.dto.response.EventUpdateResponse;
 import com.example.Event.infrastructure.persistence.document.EventDocument;
+import com.example.Event.shared.enums.AccessStatus;
 import org.mapstruct.Mapper;
 import org.mapstruct.MappingConstants;
 
@@ -15,6 +20,14 @@ import java.util.List;
 public interface EventMapper {
 
     default EventResponse toResponse(EventDocument document) {
+        return toResponse(document, null, null, null);
+    }
+
+    default EventResponse toResponse(
+            EventDocument document,
+            AccessStatus accessStatus,
+            Boolean requiresApproval,
+            String message) {
         if (document == null) {
             return null;
         }
@@ -31,9 +44,20 @@ public interface EventMapper {
                 toCollaboratorResponses(document.getCollaborators()),
                 document.getStatus(),
                 toIso(document.getCreatedAt()),
-                null,
-                null,
-                null);
+                accessStatus,
+                requiresApproval,
+                message);
+    }
+
+    default EventCreateResponse toCreateResponse(EventDocument document, String message) {
+        if (document == null) {
+            return null;
+        }
+        return new EventCreateResponse(
+                document.getId(),
+                document.getId(),
+                document.getTitle(),
+                message);
     }
 
     default EventSummaryResponse toPublicSummary(EventDocument document) {
@@ -52,6 +76,53 @@ public interface EventMapper {
                 null,
                 null,
                 toIso(document.getCreatedAt()));
+    }
+
+    default EventSummaryResponse toOwnerSummary(EventDocument document) {
+        if (document == null) {
+            return null;
+        }
+        return new EventSummaryResponse(
+                document.getId(),
+                document.getId(),
+                document.getOwnerUserId(),
+                document.getTitle(),
+                document.getDescription(),
+                document.getCoverImageId(),
+                toIso(document.getEventDate()),
+                document.getVisibility(),
+                document.isModerationEnabled(),
+                toCollaboratorResponses(document.getCollaborators()),
+                toIso(document.getCreatedAt()));
+    }
+
+    default EventUpdateResponse toUpdateResponse(EventDocument document, String status, String message) {
+        if (document == null) {
+            return null;
+        }
+        return new EventUpdateResponse(
+                status,
+                message,
+                document.getId(),
+                document.getId(),
+                document.getTitle(),
+                document.getDescription(),
+                toIso(document.getEventDate()),
+                document.getVisibility(),
+                document.isModerationEnabled(),
+                document.getCoverImageId(),
+                toCollaboratorResponses(document.getCollaborators()));
+    }
+
+    default EventDeleteResponse toDeleteResponse(String eventId, String message) {
+        return new EventDeleteResponse(eventId, message);
+    }
+
+    default EventSettingsResponse toSettingsResponse(EventDocument document) {
+        if (document == null) {
+            return null;
+        }
+        return new EventSettingsResponse(document.isModerationEnabled());
     }
 
     default EventDocument toDocument(EventRequest request) {

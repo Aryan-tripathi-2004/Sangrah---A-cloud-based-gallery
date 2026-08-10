@@ -1,7 +1,10 @@
 package com.example.Event.infrastructure.persistence.document;
 
+import com.example.Event.shared.enums.EventStatus;
+import com.example.Event.shared.enums.EventVisibility;
 import lombok.*;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Version;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
@@ -16,13 +19,15 @@ import java.util.List;
 public class EventDocument {
     @Id
     private String id;
+    @Version
+    private Long version;
     private String ownerUserId;
     private String title;
     private String description;
     private Instant eventDate;
-    private String visibility;
+    private EventVisibility visibility;
     private boolean moderationEnabled;
-    private String status;
+    private EventStatus status;
     private String coverImageId; //sparsh - new field for cover image reference
     private Instant createdAt;
     private Instant updatedAt;

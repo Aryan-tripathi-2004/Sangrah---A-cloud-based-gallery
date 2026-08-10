@@ -1,8 +1,9 @@
 package com.example.Event.api.dto.request;
 
+import com.example.Event.shared.enums.EventVisibility;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 @Schema(description = "Multipart event update request")
@@ -17,9 +18,8 @@ public record EventUpdateRequest(
         @NotBlank(message = "Event date is required")
         String eventDate,
 
-        @NotBlank(message = "Visibility is required")
-        @Pattern(regexp = "PUBLIC|PROTECTED|PRIVATE", message = "Visibility must be PUBLIC, PROTECTED, or PRIVATE")
-        String visibility,
+        @NotNull(message = "Visibility is required")
+        EventVisibility visibility,
 
         Boolean moderationEnabled
 ) {

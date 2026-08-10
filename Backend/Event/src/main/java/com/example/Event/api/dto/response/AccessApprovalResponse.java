@@ -1,12 +1,14 @@
 package com.example.Event.api.dto.response;
 
+import com.example.Event.shared.enums.ApprovalDuration;
+import com.example.Event.shared.enums.ApprovalStatus;
 import com.fasterxml.jackson.annotation.JsonInclude;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record AccessApprovalResponse(
-        String status,
+        ApprovalStatus status,
         String message,
-        String approvalDuration,
+        ApprovalDuration approvalDuration,
         String accessExpiresAt
 ) {
 }

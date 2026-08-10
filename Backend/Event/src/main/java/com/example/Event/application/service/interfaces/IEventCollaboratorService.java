@@ -6,22 +6,21 @@ import com.example.Event.api.dto.response.CollaboratorMutationResponse;
 import com.example.Event.api.dto.response.CollaboratorsResponse;
 import com.example.Event.api.dto.response.MessageResponse;
 import com.example.Event.infrastructure.persistence.document.EventDocument;
-import jakarta.servlet.http.HttpServletRequest;
 
 import java.util.List;
 
 public interface IEventCollaboratorService {
-    CollaboratorMutationResponse addCollaborator(String eventId, AddCollaboratorRequest request, HttpServletRequest httpRequest);
+    CollaboratorMutationResponse addCollaborator(String eventId, AddCollaboratorRequest request, String userId);
 
     CollaboratorsResponse getCollaborators(String eventId);
 
-    MessageResponse removeCollaborator(String eventId, String collaboratorUserId, HttpServletRequest httpRequest);
+    MessageResponse removeCollaborator(String eventId, String collaboratorUserId, String userId);
 
     CollaboratorMutationResponse updateCollaboratorPermissions(
             String eventId,
             String collaboratorUserId,
             UpdateCollaboratorPermissionsRequest request,
-            HttpServletRequest httpRequest);
+            String userId);
 
     boolean hasPermission(String eventId, String userId, String permission);
 

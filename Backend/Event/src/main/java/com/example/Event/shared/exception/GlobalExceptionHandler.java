@@ -2,13 +2,16 @@ package com.example.Event.shared.exception;
 
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.context.request.WebRequest;
 
 import java.net.URI;
@@ -60,6 +63,33 @@ public class GlobalExceptionHandler {
         return ResponseEntity.badRequest().body(problem);
     }
 
+    @ExceptionHandler(MissingRequestHeaderException.class)
+    public ResponseEntity<ProblemDetail> handleMissingRequestHeader(
+            MissingRequestHeaderException ex,
+            WebRequest request) {
+        log.warn("Missing request header: {}", ex.getHeaderName());
+        HttpStatus status = "X-User-Id".equalsIgnoreCase(ex.getHeaderName())
+                ? HttpStatus.UNAUTHORIZED
+                : HttpStatus.BAD_REQUEST;
+        String title = status == HttpStatus.UNAUTHORIZED ? "Authentication required" : "Missing request header";
+        String detail = status == HttpStatus.UNAUTHORIZED
+                ? "Required authentication header is missing."
+                : "Required request header is missing: " + ex.getHeaderName();
+        return problemResponse(status, title, detail, request);
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ProblemDetail> handleUnreadableMessage(
+            HttpMessageNotReadableException ex,
+            WebRequest request) {
+        log.warn("Unreadable request body: {}", ex.getMessage());
+        return problemResponse(
+                HttpStatus.BAD_REQUEST,
+                "Malformed request",
+                "Request body contains an invalid or unsupported value.",
+                request);
+    }
+
     @ExceptionHandler(DomainValidationException.class)
     public ResponseEntity<ProblemDetail> handleDomainValidation(
             DomainValidationException ex,
@@ -106,6 +136,18 @@ public class GlobalExceptionHandler {
             WebRequest request) {
         log.warn("Illegal argument: {}", ex.getMessage());
         return problemResponse(HttpStatus.BAD_REQUEST, "Invalid request", ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    public ResponseEntity<ProblemDetail> handleOptimisticLockingFailure(
+            OptimisticLockingFailureException ex,
+            WebRequest request) {
+        log.warn("Optimistic locking conflict: {}", ex.getMessage());
+        return problemResponse(
+                HttpStatus.CONFLICT,
+                "Concurrent modification conflict",
+                "The resource was modified by another request. Please reload and try again.",
+                request);
     }
 
     @ExceptionHandler(Exception.class)

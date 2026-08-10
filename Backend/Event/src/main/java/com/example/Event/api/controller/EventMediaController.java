@@ -9,8 +9,8 @@ import com.example.Event.api.dto.response.EventMediaUploadResponse;
 import com.example.Event.api.dto.response.MessageResponse;
 import com.example.Event.application.service.interfaces.IEventModerationService;
 import io.swagger.v3.oas.annotations.Operation;
-import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpStatus;
@@ -23,6 +23,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
@@ -39,8 +40,8 @@ public class EventMediaController {
     public ResponseEntity<ByteArrayResource> getMediaFile(
             @PathVariable String eventId,
             @PathVariable String mediaId,
-            HttpServletRequest httpRequest) {
-        EventMediaFileResponse response = moderationService.getMediaFile(eventId, mediaId, httpRequest);
+            @RequestHeader(value = "X-User-Id", required = false) String userId) {
+        EventMediaFileResponse response = moderationService.getMediaFile(eventId, mediaId, userId);
         return ResponseEntity.ok()
                 .contentType(response.contentType())
                 .body(response.content());
@@ -51,25 +52,26 @@ public class EventMediaController {
     public ResponseEntity<EventMediaUploadResponse> upload(
             @PathVariable String eventId,
             @RequestParam("file") MultipartFile file,
-            HttpServletRequest httpRequest) {
+            @NotBlank @RequestHeader(value = "X-User-Id", required = true) String userId,
+            @RequestHeader(value = "X-User-Email", required = false) String userEmail) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(moderationService.uploadMedia(eventId, file, httpRequest));
+                .body(moderationService.uploadMedia(eventId, file, userId, userEmail));
     }
 
     @GetMapping("/timeline")
     @Operation(summary = "Get event timeline")
     public ResponseEntity<EventMediaCollectionResponse> timeline(
             @PathVariable String eventId,
-            HttpServletRequest httpRequest) {
-        return ResponseEntity.ok(moderationService.getTimeline(eventId, httpRequest));
+            @RequestHeader(value = "X-User-Id", required = false) String userId) {
+        return ResponseEntity.ok(moderationService.getTimeline(eventId, userId));
     }
 
     @GetMapping("/media")
     @Operation(summary = "Get all event media")
     public ResponseEntity<EventMediaCollectionResponse> listEventMedia(
             @PathVariable String eventId,
-            HttpServletRequest httpRequest) {
-        return ResponseEntity.ok(moderationService.listEventMedia(eventId, httpRequest));
+            @RequestHeader(value = "X-User-Id", required = false) String userId) {
+        return ResponseEntity.ok(moderationService.listEventMedia(eventId, userId));
     }
 
     @GetMapping("/media/{mediaId}")
@@ -85,8 +87,8 @@ public class EventMediaController {
     public ResponseEntity<EventMediaModerationResponse> approve(
             @PathVariable String eventId,
             @PathVariable String mediaId,
-            HttpServletRequest httpRequest) {
-        return ResponseEntity.ok(moderationService.approveMedia(eventId, mediaId, httpRequest));
+            @NotBlank @RequestHeader(value = "X-User-Id", required = true) String userId) {
+        return ResponseEntity.ok(moderationService.approveMedia(eventId, mediaId, userId));
     }
 
     @PatchMapping("/media/{mediaId}/reject")
@@ -95,8 +97,8 @@ public class EventMediaController {
             @PathVariable String eventId,
             @PathVariable String mediaId,
             @Valid @RequestBody(required = false) MediaRejectionRequest request,
-            HttpServletRequest httpRequest) {
-        return ResponseEntity.ok(moderationService.rejectMedia(eventId, mediaId, request, httpRequest));
+            @NotBlank @RequestHeader(value = "X-User-Id", required = true) String userId) {
+        return ResponseEntity.ok(moderationService.rejectMedia(eventId, mediaId, request, userId));
     }
 
     @DeleteMapping("/media/{mediaId}")
@@ -104,7 +106,7 @@ public class EventMediaController {
     public ResponseEntity<MessageResponse> delete(
             @PathVariable String eventId,
             @PathVariable String mediaId,
-            HttpServletRequest httpRequest) {
-        return ResponseEntity.ok(moderationService.deleteMedia(eventId, mediaId, httpRequest));
+            @NotBlank @RequestHeader(value = "X-User-Id", required = true) String userId) {
+        return ResponseEntity.ok(moderationService.deleteMedia(eventId, mediaId, userId));
     }
 }

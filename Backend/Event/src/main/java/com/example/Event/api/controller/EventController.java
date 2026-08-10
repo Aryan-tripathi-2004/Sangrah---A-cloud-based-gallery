@@ -15,8 +15,8 @@ import com.example.Event.api.dto.response.MessageResponse;
 import com.example.Event.application.service.interfaces.IEventCollaboratorService;
 import com.example.Event.application.service.interfaces.IEventService;
 import io.swagger.v3.oas.annotations.Operation;
-import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -30,6 +30,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
@@ -48,28 +49,30 @@ public class EventController {
     @Operation(summary = "Create event")
     public ResponseEntity<EventCreateResponse> create(
             @Valid @RequestBody EventRequest request,
-            HttpServletRequest httpRequest) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(eventService.createEvent(request, httpRequest));
+            @NotBlank @RequestHeader(value = "X-User-Id", required = true) String userId) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(eventService.createEvent(request, userId));
     }
 
     @GetMapping("/global")
     @Operation(summary = "Get global events")
-    public ResponseEntity<List<EventSummaryResponse>> global(HttpServletRequest httpRequest) {
-        return ResponseEntity.ok(eventService.getGlobalEvents(httpRequest));
+    public ResponseEntity<List<EventSummaryResponse>> global(
+            @RequestHeader(value = "X-User-Id", required = false) String userId) {
+        return ResponseEntity.ok(eventService.getGlobalEvents(userId));
     }
 
     @GetMapping("/my-events")
     @Operation(summary = "Get user's events")
-    public ResponseEntity<List<EventSummaryResponse>> myEvents(HttpServletRequest httpRequest) {
-        return ResponseEntity.ok(eventService.getMyEvents(httpRequest));
+    public ResponseEntity<List<EventSummaryResponse>> myEvents(
+            @NotBlank @RequestHeader(value = "X-User-Id", required = true) String userId) {
+        return ResponseEntity.ok(eventService.getMyEvents(userId));
     }
 
     @GetMapping("/{eventId}")
     @Operation(summary = "Get event")
     public ResponseEntity<EventResponse> byId(
             @PathVariable String eventId,
-            HttpServletRequest httpRequest) {
-        return ResponseEntity.ok(eventService.getEvent(eventId, httpRequest));
+            @RequestHeader(value = "X-User-Id", required = false) String userId) {
+        return ResponseEntity.ok(eventService.getEvent(eventId, userId));
     }
 
     @PutMapping(value = "/{eventId}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -78,16 +81,16 @@ public class EventController {
             @PathVariable String eventId,
             @Valid @RequestPart("eventDetails") EventUpdateRequest eventDetails,
             @RequestPart(value = "coverMedia", required = false) MultipartFile coverMedia,
-            HttpServletRequest httpRequest) {
-        return ResponseEntity.ok(eventService.updateEvent(eventId, eventDetails, coverMedia, httpRequest));
+            @NotBlank @RequestHeader(value = "X-User-Id", required = true) String userId) {
+        return ResponseEntity.ok(eventService.updateEvent(eventId, eventDetails, coverMedia, userId));
     }
 
     @DeleteMapping("/{eventId}")
     @Operation(summary = "Delete event")
     public ResponseEntity<EventDeleteResponse> deleteEvent(
             @PathVariable String eventId,
-            HttpServletRequest httpRequest) {
-        return ResponseEntity.ok(eventService.deleteEvent(eventId, httpRequest));
+            @NotBlank @RequestHeader(value = "X-User-Id", required = true) String userId) {
+        return ResponseEntity.ok(eventService.deleteEvent(eventId, userId));
     }
 
     @PostMapping("/{eventId}/collaborators")
@@ -95,9 +98,9 @@ public class EventController {
     public ResponseEntity<CollaboratorMutationResponse> addCollaborator(
             @PathVariable String eventId,
             @Valid @RequestBody AddCollaboratorRequest request,
-            HttpServletRequest httpRequest) {
+            @NotBlank @RequestHeader(value = "X-User-Id", required = true) String userId) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(collaboratorService.addCollaborator(eventId, request, httpRequest));
+                .body(collaboratorService.addCollaborator(eventId, request, userId));
     }
 
     @GetMapping("/{eventId}/collaborators")
@@ -111,8 +114,8 @@ public class EventController {
     public ResponseEntity<MessageResponse> removeCollaborator(
             @PathVariable String eventId,
             @PathVariable String userId,
-            HttpServletRequest httpRequest) {
-        return ResponseEntity.ok(collaboratorService.removeCollaborator(eventId, userId, httpRequest));
+            @NotBlank @RequestHeader(value = "X-User-Id", required = true) String requesterUserId) {
+        return ResponseEntity.ok(collaboratorService.removeCollaborator(eventId, userId, requesterUserId));
     }
 
     @PatchMapping("/{eventId}/collaborators/{userId}")
@@ -121,7 +124,7 @@ public class EventController {
             @PathVariable String eventId,
             @PathVariable String userId,
             @Valid @RequestBody UpdateCollaboratorPermissionsRequest request,
-            HttpServletRequest httpRequest) {
-        return ResponseEntity.ok(collaboratorService.updateCollaboratorPermissions(eventId, userId, request, httpRequest));
+            @NotBlank @RequestHeader(value = "X-User-Id", required = true) String requesterUserId) {
+        return ResponseEntity.ok(collaboratorService.updateCollaboratorPermissions(eventId, userId, request, requesterUserId));
     }
 }

@@ -7,29 +7,29 @@ import com.example.Event.api.dto.response.EventMediaFileResponse;
 import com.example.Event.api.dto.response.EventMediaModerationResponse;
 import com.example.Event.api.dto.response.EventMediaUploadResponse;
 import com.example.Event.api.dto.response.MessageResponse;
-import jakarta.servlet.http.HttpServletRequest;
+import com.example.Event.shared.enums.ApprovalStatus;
 import org.springframework.web.multipart.MultipartFile;
 
 public interface IEventModerationService {
-    EventMediaFileResponse getMediaFile(String eventId, String mediaId, HttpServletRequest httpRequest);
+    EventMediaFileResponse getMediaFile(String eventId, String mediaId, String userId);
 
-    EventMediaUploadResponse uploadMedia(String eventId, MultipartFile file, HttpServletRequest httpRequest);
+    EventMediaUploadResponse uploadMedia(String eventId, MultipartFile file, String userId, String userEmail);
 
-    EventMediaCollectionResponse getTimeline(String eventId, HttpServletRequest httpRequest);
+    EventMediaCollectionResponse getTimeline(String eventId, String userId);
 
-    EventMediaCollectionResponse listEventMedia(String eventId, HttpServletRequest httpRequest);
+    EventMediaCollectionResponse listEventMedia(String eventId, String userId);
 
     EventMediaDetailResponse getMedia(String eventId, String mediaId);
 
-    EventMediaModerationResponse approveMedia(String eventId, String mediaId, HttpServletRequest httpRequest);
+    EventMediaModerationResponse approveMedia(String eventId, String mediaId, String userId);
 
-    EventMediaModerationResponse rejectMedia(String eventId, String mediaId, MediaRejectionRequest request, HttpServletRequest httpRequest);
+    EventMediaModerationResponse rejectMedia(String eventId, String mediaId, MediaRejectionRequest request, String userId);
 
-    MessageResponse deleteMedia(String eventId, String mediaId, HttpServletRequest httpRequest);
+    MessageResponse deleteMedia(String eventId, String mediaId, String userId);
 
-    String createMedia(String eventId, String mediaId, String uploaderUserId, boolean moderationEnabled);
+    ApprovalStatus createMedia(String eventId, String mediaId, String uploaderUserId, boolean moderationEnabled);
 
-    String getMediaStatus(String eventId, String mediaId);
+    ApprovalStatus getMediaStatus(String eventId, String mediaId);
 
     boolean isMediaApproved(String eventId, String mediaId);
 }

@@ -1,5 +1,8 @@
 package com.example.Event.api.dto.response;
 
+import com.example.Event.shared.enums.AccessStatus;
+import com.example.Event.shared.enums.EventStatus;
+import com.example.Event.shared.enums.EventVisibility;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
 
@@ -19,12 +22,12 @@ public record EventResponse(
         String description,
         String coverImageId,
         String eventDate,
-        String visibility,
+        EventVisibility visibility,
         Boolean moderationEnabled,
         List<CollaboratorResponse> collaborators,
-        String status,
+        EventStatus status,
         String createdAt,
-        String accessStatus,
+        AccessStatus accessStatus,
         Boolean requiresApproval,
         String message
 ) {

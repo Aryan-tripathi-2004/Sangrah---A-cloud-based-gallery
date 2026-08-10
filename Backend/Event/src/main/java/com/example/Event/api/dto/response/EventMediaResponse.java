@@ -1,5 +1,6 @@
 package com.example.Event.api.dto.response;
 
+import com.example.Event.shared.enums.ApprovalStatus;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
 
@@ -26,6 +27,6 @@ public record EventMediaResponse(
         String storagePath,
         @Schema(description = "Media upload timestamp")
         String createdAt,
-        String status
+        ApprovalStatus status
 ) {
 }

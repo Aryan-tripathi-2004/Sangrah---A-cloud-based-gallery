@@ -4,8 +4,8 @@ import com.example.Event.api.dto.request.EventSettingsRequest;
 import com.example.Event.api.dto.response.EventSettingsResponse;
 import com.example.Event.application.service.interfaces.IEventService;
 import io.swagger.v3.oas.annotations.Operation;
-import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
 @Validated
@@ -34,7 +35,7 @@ public class EventSettingsController {
     public ResponseEntity<EventSettingsResponse> update(
             @PathVariable String eventId,
             @Valid @RequestBody EventSettingsRequest request,
-            HttpServletRequest httpRequest) {
-        return ResponseEntity.ok(eventService.updateSettings(eventId, request, httpRequest));
+            @NotBlank @RequestHeader(value = "X-User-Id", required = true) String userId) {
+        return ResponseEntity.ok(eventService.updateSettings(eventId, request, userId));
     }
 }

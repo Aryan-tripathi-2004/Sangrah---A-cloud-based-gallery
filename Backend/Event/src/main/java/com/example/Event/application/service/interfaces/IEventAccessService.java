@@ -9,22 +9,21 @@ import com.example.Event.api.dto.response.AccessRequestMutationResponse;
 import com.example.Event.api.dto.response.AccessRequestsResponse;
 import com.example.Event.api.dto.response.AccessRevocationResponse;
 import com.example.Event.api.dto.response.AccessStatusResponse;
-import jakarta.servlet.http.HttpServletRequest;
 
 public interface IEventAccessService {
-    AccessRequestMutationResponse requestAccess(String eventId, AccessMessageRequest request, HttpServletRequest httpRequest);
+    AccessRequestMutationResponse requestAccess(String eventId, AccessMessageRequest request, String userId);
 
-    AccessRequestsResponse listAccessRequests(String eventId, HttpServletRequest httpRequest);
+    AccessRequestsResponse listAccessRequests(String eventId, String userId);
 
-    AccessApprovalResponse approveRequest(String eventId, String requestId, AccessApprovalRequest request, HttpServletRequest httpRequest);
+    AccessApprovalResponse approveRequest(String eventId, String requestId, AccessApprovalRequest request, String userId);
 
-    AccessRejectionResponse rejectRequest(String eventId, String requestId, AccessRejectionRequest request, HttpServletRequest httpRequest);
+    AccessRejectionResponse rejectRequest(String eventId, String requestId, AccessRejectionRequest request, String userId);
 
-    AccessRevocationResponse revokeRequest(String eventId, String requestId, HttpServletRequest httpRequest);
+    AccessRevocationResponse revokeRequest(String eventId, String requestId, String userId);
 
-    AccessRequestMutationResponse reRequestAccess(String eventId, AccessMessageRequest request, HttpServletRequest httpRequest);
+    AccessRequestMutationResponse reRequestAccess(String eventId, AccessMessageRequest request, String userId);
 
-    AccessStatusResponse getAccessStatus(String eventId, HttpServletRequest httpRequest);
+    AccessStatusResponse getAccessStatus(String eventId, String userId);
 
     boolean isUserApproved(String eventId, String requesterUserId);
 }

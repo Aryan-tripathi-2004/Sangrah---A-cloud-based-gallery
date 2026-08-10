@@ -1,5 +1,7 @@
 package com.example.Event.api.dto.response;
 
+import com.example.Event.shared.enums.EventVisibility;
+
 import java.util.List;
 
 public record EventUpdateResponse(
@@ -10,7 +12,7 @@ public record EventUpdateResponse(
         String title,
         String description,
         String eventDate,
-        String visibility,
+        EventVisibility visibility,
         boolean moderationEnabled,
         String coverImageId,
         List<CollaboratorResponse> collaborators

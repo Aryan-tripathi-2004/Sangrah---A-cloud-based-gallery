@@ -1,5 +1,6 @@
 package com.example.Event.api.dto.response;
 
+import com.example.Event.shared.enums.EventVisibility;
 import com.fasterxml.jackson.annotation.JsonInclude;
 
 import java.util.List;
@@ -13,7 +14,7 @@ public record EventSummaryResponse(
         String description,
         String coverImageId,
         String eventDate,
-        String visibility,
+        EventVisibility visibility,
         Boolean moderationEnabled,
         List<CollaboratorResponse> collaborators,
         String createdAt

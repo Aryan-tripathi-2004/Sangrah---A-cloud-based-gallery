@@ -1,7 +1,10 @@
 package com.example.Event.infrastructure.persistence.document;
 
+import com.example.Event.shared.enums.ApprovalDuration;
+import com.example.Event.shared.enums.ApprovalStatus;
 import lombok.*;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Version;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
@@ -15,9 +18,11 @@ import java.time.Instant;
 public class EventAccessRequestDocument {
     @Id
     private String id;
+    @Version
+    private Long version;
     private String eventId;
     private String requesterUserId;
-    private String status;                          // PENDING | APPROVED | REJECTED
+    private ApprovalStatus status;
     private Instant requestedAt;
     private Instant decisionAt;
     private String decidedByUserId;
@@ -29,7 +34,7 @@ public class EventAccessRequestDocument {
     private String rejectionReason;                 // If REJECTED, why
 
     // NEW: Access duration settings
-    private String approvalDuration;                // "FOREVER" | "UNTIL_DATE"
+    private ApprovalDuration approvalDuration;
     private Instant accessExpiresAt;                // When access expires (if UNTIL_DATE); null if FOREVER
 
     // NEW: Notification tracking

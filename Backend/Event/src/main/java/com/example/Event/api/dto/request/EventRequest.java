@@ -1,8 +1,8 @@
 package com.example.Event.api.dto.request;
 
+import com.example.Event.shared.enums.EventVisibility;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 /**
@@ -23,9 +23,8 @@ public record EventRequest(
         @Schema(description = "Event date in ISO-8601 format", example = "2026-08-15T18:00:00")
         String eventDate,
 
-        @Pattern(regexp = "PUBLIC|PROTECTED|PRIVATE", message = "Visibility must be PUBLIC, PROTECTED, or PRIVATE")
         @Schema(description = "Event visibility", example = "PRIVATE")
-        String visibility,
+        EventVisibility visibility,
 
         @Schema(description = "Cover image media ID")
         String coverImageId,
@@ -33,8 +32,8 @@ public record EventRequest(
         @Schema(description = "Whether uploads require moderation", example = "false")
         Boolean moderationEnabled
 ) {
-    public String resolvedVisibility() {
-        return visibility == null || visibility.isBlank() ? "PRIVATE" : visibility.trim().toUpperCase();
+    public EventVisibility resolvedVisibility() {
+        return visibility == null ? EventVisibility.PRIVATE : visibility;
     }
 
     public boolean moderationEnabledOrDefault() {

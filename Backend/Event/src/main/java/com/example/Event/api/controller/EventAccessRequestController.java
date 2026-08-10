@@ -11,8 +11,8 @@ import com.example.Event.api.dto.response.AccessRevocationResponse;
 import com.example.Event.api.dto.response.AccessStatusResponse;
 import com.example.Event.application.service.interfaces.IEventAccessService;
 import io.swagger.v3.oas.annotations.Operation;
-import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -23,6 +23,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
 @Validated
@@ -37,17 +38,17 @@ public class EventAccessRequestController {
     public ResponseEntity<AccessRequestMutationResponse> request(
             @PathVariable String eventId,
             @Valid @RequestBody(required = false) AccessMessageRequest request,
-            HttpServletRequest httpRequest) {
+            @NotBlank @RequestHeader(value = "X-User-Id", required = true) String userId) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(accessService.requestAccess(eventId, request, httpRequest));
+                .body(accessService.requestAccess(eventId, request, userId));
     }
 
     @GetMapping
     @Operation(summary = "List event access requests (owner only)")
     public ResponseEntity<AccessRequestsResponse> list(
             @PathVariable String eventId,
-            HttpServletRequest httpRequest) {
-        return ResponseEntity.ok(accessService.listAccessRequests(eventId, httpRequest));
+            @NotBlank @RequestHeader(value = "X-User-Id", required = true) String userId) {
+        return ResponseEntity.ok(accessService.listAccessRequests(eventId, userId));
     }
 
     @PatchMapping("/{requestId}/approve")
@@ -56,8 +57,8 @@ public class EventAccessRequestController {
             @PathVariable String eventId,
             @PathVariable String requestId,
             @Valid @RequestBody(required = false) AccessApprovalRequest request,
-            HttpServletRequest httpRequest) {
-        return ResponseEntity.ok(accessService.approveRequest(eventId, requestId, request, httpRequest));
+            @NotBlank @RequestHeader(value = "X-User-Id", required = true) String userId) {
+        return ResponseEntity.ok(accessService.approveRequest(eventId, requestId, request, userId));
     }
 
     @PatchMapping("/{requestId}/reject")
@@ -66,8 +67,8 @@ public class EventAccessRequestController {
             @PathVariable String eventId,
             @PathVariable String requestId,
             @Valid @RequestBody(required = false) AccessRejectionRequest request,
-            HttpServletRequest httpRequest) {
-        return ResponseEntity.ok(accessService.rejectRequest(eventId, requestId, request, httpRequest));
+            @NotBlank @RequestHeader(value = "X-User-Id", required = true) String userId) {
+        return ResponseEntity.ok(accessService.rejectRequest(eventId, requestId, request, userId));
     }
 
     @PatchMapping("/{requestId}/revoke")
@@ -75,8 +76,8 @@ public class EventAccessRequestController {
     public ResponseEntity<AccessRevocationResponse> revoke(
             @PathVariable String eventId,
             @PathVariable String requestId,
-            HttpServletRequest httpRequest) {
-        return ResponseEntity.ok(accessService.revokeRequest(eventId, requestId, httpRequest));
+            @NotBlank @RequestHeader(value = "X-User-Id", required = true) String userId) {
+        return ResponseEntity.ok(accessService.revokeRequest(eventId, requestId, userId));
     }
 
     @PatchMapping("/re-request")
@@ -84,15 +85,15 @@ public class EventAccessRequestController {
     public ResponseEntity<AccessRequestMutationResponse> reRequest(
             @PathVariable String eventId,
             @Valid @RequestBody(required = false) AccessMessageRequest request,
-            HttpServletRequest httpRequest) {
-        return ResponseEntity.ok(accessService.reRequestAccess(eventId, request, httpRequest));
+            @NotBlank @RequestHeader(value = "X-User-Id", required = true) String userId) {
+        return ResponseEntity.ok(accessService.reRequestAccess(eventId, request, userId));
     }
 
     @GetMapping("/access-status")
     @Operation(summary = "Get current user's access status for event")
     public ResponseEntity<AccessStatusResponse> getAccessStatus(
             @PathVariable String eventId,
-            HttpServletRequest httpRequest) {
-        return ResponseEntity.ok(accessService.getAccessStatus(eventId, httpRequest));
+            @NotBlank @RequestHeader(value = "X-User-Id", required = true) String userId) {
+        return ResponseEntity.ok(accessService.getAccessStatus(eventId, userId));
     }
 }
