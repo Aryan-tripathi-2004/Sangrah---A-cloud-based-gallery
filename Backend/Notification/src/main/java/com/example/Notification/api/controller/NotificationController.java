@@ -1,9 +1,10 @@
 package com.example.Notification.api.controller;
 
-import com.example.Notification.application.service.NotificationService;
+import com.example.Notification.api.annotation.CurrentUserId;
+import com.example.Notification.application.service.interfaces.INotificationService;
 import com.example.Notification.infrastructure.persistence.document.NotificationDocument;
+import com.example.Notification.shared.enums.NotificationType;
 import io.swagger.v3.oas.annotations.Operation;
-import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -21,7 +22,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class NotificationController {
 
-    private final NotificationService notificationService;
+    private final INotificationService notificationService;
 
     /**
      * Get user's notifications (paginated, most recent first)
@@ -29,57 +30,42 @@ public class NotificationController {
      */
     @GetMapping
     @Operation(summary = "Get user's notifications")
-    public ResponseEntity<?> list(
+    public ResponseEntity<Map<String, Object>> list(
+            @CurrentUserId String userId,
             @RequestParam(defaultValue = "0") int skip,
-            @RequestParam(defaultValue = "50") int limit,
-            HttpServletRequest request) {
-        try {
-            String userId = request.getHeader("X-User-Id");
-            log.info("📋 [Notification Controller] Fetching notifications for user: {}, Skip: {}, Limit: {}", userId, skip, limit);
+            @RequestParam(defaultValue = "50") int limit) {
 
-            if (userId == null || userId.isEmpty()) {
-                log.warn("⚠️ [Notification Controller] Missing X-User-Id header");
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                        .body(Map.of("error", "User ID not found in headers"));
-            }
+        log.info("📋 [Notification Controller] Fetching notifications for user: {}, Skip: {}, Limit: {}", userId, skip, limit);
 
-            // Validate pagination parameters
-            if (skip < 0 || limit < 1 || limit > 100) {
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                        .body(Map.of("error", "Invalid pagination parameters. Limit must be 1-100"));
-            }
-
-            // Fetch notifications
-            List<NotificationDocument> notifications = notificationService.getUserNotifications(userId, skip, limit);
-            long unreadCount = notificationService.getUnreadCount(userId);
-            long totalCount = notificationService.getTotalCount(userId);
-
-            // Build response
-            List<Map<String, Object>> notificationDtos = notifications.stream()
-                    .map(n -> new HashMap<String, Object>() {{
-                        put("id", n.getId());
-                        put("type", n.getType());
-                        put("payload", n.getPayload());
-                        put("read", n.isRead());
-                        put("createdAt", n.getCreatedAt());
-                    }})
-                    .collect(Collectors.toList());
-
-            log.info("✅ [Notification Controller] Returning {} notifications for user: {}", notificationDtos.size(), userId);
-
-            return ResponseEntity.ok(Map.of(
-                    "notifications", notificationDtos,
-                    "unreadCount", unreadCount,
-                    "totalCount", totalCount,
-                    "skip", skip,
-                    "limit", limit
-            ));
-
-        } catch (Exception e) {
-            log.error("❌ [Notification Controller] Error fetching notifications: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of("error", "Failed to fetch notifications: " + e.getMessage()));
+        if (skip < 0 || limit < 1 || limit > 100) {
+            throw new IllegalArgumentException("Invalid pagination parameters. Limit must be 1-100");
         }
+
+        List<NotificationDocument> notifications = notificationService.getUserNotifications(userId, skip, limit);
+        long unreadCount = notificationService.getUnreadCount(userId);
+        long totalCount = notificationService.getTotalCount(userId);
+
+        List<Map<String, Object>> notificationDtos = notifications.stream()
+                .map(n -> {
+                    Map<String, Object> map = new HashMap<>();
+                    map.put("id", n.getId());
+                    map.put("type", n.getType());
+                    map.put("payload", n.getPayload());
+                    map.put("read", n.isRead());
+                    map.put("createdAt", n.getCreatedAt());
+                    return map;
+                })
+                .collect(Collectors.toList());
+
+        log.info("✅ [Notification Controller] Returning {} notifications for user: {}", notificationDtos.size(), userId);
+
+        return ResponseEntity.ok(Map.of(
+                "notifications", notificationDtos,
+                "unreadCount", unreadCount,
+                "totalCount", totalCount,
+                "skip", skip,
+                "limit", limit
+        ));
     }
 
     /**
@@ -88,45 +74,27 @@ public class NotificationController {
      */
     @PatchMapping("/{notificationId}/read")
     @Operation(summary = "Mark notification as read")
-    public ResponseEntity<?> markRead(
-            @PathVariable String notificationId,
-            HttpServletRequest request) {
-        try {
-            String userId = request.getHeader("X-User-Id");
-            log.info("✏️ [Notification Controller] Marking notification as read - ID: {}, User: {}", notificationId, userId);
+    public ResponseEntity<Map<String, Object>> markRead(
+            @CurrentUserId String userId,
+            @PathVariable String notificationId) {
 
-            if (userId == null || userId.isEmpty()) {
-                log.warn("⚠️ [Notification Controller] Missing X-User-Id header");
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                        .body(Map.of("error", "User ID not found in headers"));
-            }
+        log.info("✏️ [Notification Controller] Marking notification as read - ID: {}, User: {}", notificationId, userId);
 
-            NotificationDocument updated = notificationService.markAsRead(notificationId);
+        NotificationDocument updated = notificationService.markAsRead(notificationId);
 
-            // Verify ownership (notification belongs to this user)
-            if (!updated.getRecipientUserId().equals(userId)) {
-                log.warn("⚠️ [Notification Controller] User {} tried to read notification of user {}", userId, updated.getRecipientUserId());
-                return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                        .body(Map.of("error", "You don't have permission to read this notification"));
-            }
-
-            log.info("✅ [Notification Controller] Notification marked as read - ID: {}", notificationId);
-
-            return ResponseEntity.ok(Map.of(
-                    "notificationId", updated.getId(),
-                    "read", updated.isRead(),
-                    "message", "Notification marked as read"
-            ));
-
-        } catch (RuntimeException e) {
-            log.warn("⚠️ [Notification Controller] Notification not found: {}", notificationId);
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(Map.of("error", "Notification not found"));
-        } catch (Exception e) {
-            log.error("❌ [Notification Controller] Error marking notification as read: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of("error", "Failed to mark notification as read: " + e.getMessage()));
+        // Verify ownership (notification belongs to this user)
+        if (!updated.getRecipientUserId().equals(userId)) {
+            log.warn("⚠️ [Notification Controller] User {} tried to read notification of user {}", userId, updated.getRecipientUserId());
+            throw new IllegalArgumentException("You don't have permission to read this notification");
         }
+
+        log.info("✅ [Notification Controller] Notification marked as read - ID: {}", notificationId);
+
+        return ResponseEntity.ok(Map.of(
+                "notificationId", updated.getId(),
+                "read", updated.isRead(),
+                "message", "Notification marked as read"
+        ));
     }
 
     /**
@@ -135,30 +103,16 @@ public class NotificationController {
      */
     @PostMapping("/mark-all-read")
     @Operation(summary = "Mark all notifications as read")
-    public ResponseEntity<?> markAllRead(HttpServletRequest request) {
-        try {
-            String userId = request.getHeader("X-User-Id");
-            log.info("✏️ [Notification Controller] Marking all notifications as read for user: {}", userId);
+    public ResponseEntity<Map<String, Object>> markAllRead(@CurrentUserId String userId) {
+        log.info("✏️ [Notification Controller] Marking all notifications as read for user: {}", userId);
 
-            if (userId == null || userId.isEmpty()) {
-                log.warn("⚠️ [Notification Controller] Missing X-User-Id header");
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                        .body(Map.of("error", "User ID not found in headers"));
-            }
+        long markedCount = notificationService.markAllAsRead(userId);
+        log.info("✅ [Notification Controller] Marked {} notifications as read for user: {}", markedCount, userId);
 
-            long markedCount = notificationService.markAllAsRead(userId);
-            log.info("✅ [Notification Controller] Marked {} notifications as read for user: {}", markedCount, userId);
-
-            return ResponseEntity.ok(Map.of(
-                    "markedCount", markedCount,
-                    "message", "All notifications marked as read"
-            ));
-
-        } catch (Exception e) {
-            log.error("❌ [Notification Controller] Error marking all as read: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of("error", "Failed to mark all notifications as read: " + e.getMessage()));
-        }
+        return ResponseEntity.ok(Map.of(
+                "markedCount", markedCount,
+                "message", "All notifications marked as read"
+        ));
     }
 
     /**
@@ -168,47 +122,43 @@ public class NotificationController {
      */
     @PostMapping("/internal/notifications")
     @Operation(summary = "Internal: Create notification from service")
-    public ResponseEntity<?> createNotificationInternal(@RequestBody Map<String, Object> payload) {
-        try {
-            log.info("🔔 [Notification Controller Internal] Creating notification from service");
+    public ResponseEntity<Map<String, Object>> createNotificationInternal(@RequestBody Map<String, Object> payload) {
+        log.info("🔔 [Notification Controller Internal] Creating notification from service");
 
-            String recipientUserId = (String) payload.get("recipientUserId");
-            String type = (String) payload.get("type");
-            @SuppressWarnings("unchecked")
-            Map<String, Object> notificationPayload = (Map<String, Object>) payload.get("payload");
+        String recipientUserId = (String) payload.get("recipientUserId");
+        String typeStr = (String) payload.get("type");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> notificationPayload = (Map<String, Object>) payload.get("payload");
 
-            if (recipientUserId == null || recipientUserId.isEmpty()) {
-                log.warn("⚠️ [Notification Controller Internal] Missing recipientUserId");
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                        .body(Map.of("error", "recipientUserId is required"));
-            }
-
-            if (type == null || type.isEmpty()) {
-                log.warn("⚠️ [Notification Controller Internal] Missing notification type");
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                        .body(Map.of("error", "type is required"));
-            }
-
-            if (notificationPayload == null) {
-                notificationPayload = new HashMap<>();
-            }
-
-            NotificationDocument created = notificationService.createNotification(recipientUserId, type, notificationPayload);
-            log.info("✅ [Notification Controller Internal] Notification created - ID: {}, Type: {}, Recipient: {}",
-                    created.getId(), type, recipientUserId);
-
-            return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
-                    "notificationId", created.getId(),
-                    "type", created.getType(),
-                    "recipientUserId", created.getRecipientUserId(),
-                    "message", "Notification created successfully"
-            ));
-
-        } catch (Exception e) {
-            log.error("❌ [Notification Controller Internal] Error creating notification: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of("error", "Failed to create notification: " + e.getMessage()));
+        if (recipientUserId == null || recipientUserId.trim().isEmpty()) {
+            throw new IllegalArgumentException("recipientUserId is required");
         }
+
+        if (typeStr == null || typeStr.trim().isEmpty()) {
+            throw new IllegalArgumentException("type is required");
+        }
+
+        NotificationType type;
+        try {
+            type = NotificationType.valueOf(typeStr);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Invalid notification type: " + typeStr);
+        }
+
+        if (notificationPayload == null) {
+            notificationPayload = new HashMap<>();
+        }
+
+        NotificationDocument created = notificationService.createNotification(recipientUserId, type, notificationPayload);
+        log.info("✅ [Notification Controller Internal] Notification created - ID: {}, Type: {}, Recipient: {}",
+                created.getId(), type, recipientUserId);
+
+        return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
+                "notificationId", created.getId(),
+                "type", created.getType(),
+                "recipientUserId", created.getRecipientUserId(),
+                "message", "Notification created successfully"
+        ));
     }
 
     /**
@@ -217,7 +167,7 @@ public class NotificationController {
      */
     @GetMapping("/health")
     @Operation(summary = "Health check")
-    public ResponseEntity<?> health() {
+    public ResponseEntity<Map<String, Object>> health() {
         log.info("✅ [Notification Controller] Health check");
         return ResponseEntity.ok(Map.of(
                 "status", "UP",
