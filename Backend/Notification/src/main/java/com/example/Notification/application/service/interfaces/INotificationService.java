@@ -1,26 +1,32 @@
 package com.example.Notification.application.service.interfaces;
 
+import com.example.Notification.api.dto.request.InternalNotificationRequest;
+import com.example.Notification.api.dto.response.BulkActionResponse;
+import com.example.Notification.api.dto.response.HealthResponse;
+import com.example.Notification.api.dto.response.NotificationActionResponse;
+import com.example.Notification.api.dto.response.NotificationListResponse;
 import com.example.Notification.api.dto.response.NotificationResponse;
-import com.example.Notification.shared.enums.NotificationType;
 
 import java.util.List;
-import java.util.Map;
 
 public interface INotificationService {
 
-    NotificationResponse createNotification(String recipientUserId, NotificationType type, Map<String, Object> payload);
+    NotificationActionResponse createNotification(InternalNotificationRequest request);
 
-    List<NotificationResponse> getUserNotifications(String userId, int skip, int limit);
+    NotificationListResponse getUserNotifications(String userId, int skip, int limit);
 
     List<NotificationResponse> getUnreadNotifications(String userId);
 
-    NotificationResponse markAsRead(String userId, String notificationId);
+    NotificationActionResponse markAsRead(String userId, String notificationId);
 
-    long markAllAsRead(String userId);
+    BulkActionResponse markAllAsRead(String userId);
 
     void deleteNotification(String notificationId);
 
     long getTotalCount(String userId);
 
     long getUnreadCount(String userId);
+
+    HealthResponse getHealth();
+
 }
