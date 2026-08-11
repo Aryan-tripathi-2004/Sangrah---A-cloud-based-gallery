@@ -2,9 +2,13 @@ package com.example.Email.api.controller;
 
 import com.example.Email.api.dto.EmailSendRequest;
 import com.example.Email.api.dto.EmailSendResponse;
-import com.example.Email.application.service.EmailService;
+import com.example.Email.api.dto.response.EmailServiceInfoResponse;
+import com.example.Email.application.service.interfaces.IEmailService;
+import com.example.Email.shared.enums.EmailStatus;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.mail.MessagingException;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -12,8 +16,20 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
-import jakarta.validation.Valid;
-
+/**
+ * Lightweight HTTP router for the Email microservice.
+ *
+ * <p>This controller owns zero business logic. Its sole responsibilities are:
+ * <ol>
+ *   <li>Accept and validate the incoming HTTP request.</li>
+ *   <li>Delegate execution to {@link IEmailService}.</li>
+ *   <li>Map the service response to an appropriate HTTP status code.</li>
+ * </ol>
+ *
+ * <p>All exception handling is centralised in
+ * {@link com.example.Email.shared.exception.GlobalExceptionHandler}.
+ * No try-catch blocks appear in this class.
+ */
 @Slf4j
 @RestController
 @RequestMapping("/api/v1/email")
@@ -22,179 +38,157 @@ import jakarta.validation.Valid;
 @Tag(name = "Email", description = "Email Notification Management")
 public class EmailSendController {
 
-    private final EmailService emailService;
+    /** Dependency declared against the interface, not the concrete implementation (DIP). */
+    private final IEmailService emailService;
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Billing endpoints
+    // ─────────────────────────────────────────────────────────────────────────
 
     /**
-     * Send Invoice Paid Email (called by Billing service)
+     * Send a payment-confirmation email with an optional PDF invoice attachment.
+     * Called by the Billing microservice after a successful payment.
      */
     @PostMapping("/invoices/paid")
-    @Operation(summary = "Send invoice paid email", description = "Send payment confirmation email with PDF")
+    @Operation(
+            summary     = "Send invoice paid email",
+            description = "Send payment confirmation email with optional PDF attachment"
+    )
     public ResponseEntity<EmailSendResponse> sendInvoicePaidEmail(
             @Valid @RequestBody EmailSendRequest request
-    ) {
+    ) throws MessagingException {
+
         log.info("📧 ═══════════════════════════════════════════════════════════════");
-        log.info("📧 [EMAIL CONTROLLER] Received invoice paid email request");
-        log.info("📧 [EMAIL CONTROLLER] To: {}", request.getUserEmail());
-        log.info("📧 [EMAIL CONTROLLER] Invoice: {}", request.getInvoiceId());
-        log.info("📧 [EMAIL CONTROLLER] Amount: ${}", request.getAmount());
-        log.info("📧 [EMAIL CONTROLLER] PDF Size: {} bytes", request.getPdfContent() != null ? request.getPdfContent().length : 0);
+        log.info("📧 [CONTROLLER] Invoice-paid request | to={} invoice={} amount=${}",
+                request.userEmail(), request.invoiceId(), request.amount());
         log.info("📧 ═══════════════════════════════════════════════════════════════");
 
-        try {
-            log.info("📧 [EMAIL CONTROLLER] Calling EmailService.sendInvoicePaidEmail()...");
-            EmailSendResponse response = emailService.sendInvoicePaidEmail(
-                    request.getInvoiceId(),
-                    request.getUserId(),
-                    request.getUserEmail(),
-                    request.getAmount(),
-                    request.getPdfContent()
-            );
-            log.info("✅ [EMAIL CONTROLLER] Email service returned: {}", response.getStatus());
-            log.info("✅ [EMAIL CONTROLLER] Response message: {}", response.getMessage());
+        EmailSendResponse response = emailService.sendInvoicePaidEmail(
+                request.invoiceId(),
+                request.userId(),
+                request.userEmail(),
+                request.amount(),
+                request.pdfContent()
+        );
 
-            return ResponseEntity
-                    .status("sent".equals(response.getStatus()) ? HttpStatus.OK : HttpStatus.ACCEPTED)
-                    .body(response);
-
-        } catch (Exception e) {
-            log.error("❌ [EMAIL CONTROLLER] Error sending invoice paid email to {}: {}", request.getUserEmail(), e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(EmailSendResponse.builder()
-                            .status("failed")
-                            .message("Failed to send email: " + e.getMessage())
-                            .errorReason(e.getMessage())
-                            .build());
-        }
+        log.info("✅ [CONTROLLER] Invoice-paid email dispatched | emailId={}", response.emailId());
+        return ResponseEntity
+                .status(EmailStatus.SENT.equals(response.status()) ? HttpStatus.OK : HttpStatus.ACCEPTED)
+                .body(response);
     }
 
     /**
-     * Send Invoice Created Email
+     * Send a new-invoice notification with a payment link.
      */
     @PostMapping("/invoices/created")
-    @Operation(summary = "Send invoice created email", description = "Send invoice notification with payment link")
+    @Operation(
+            summary     = "Send invoice created email",
+            description = "Send invoice notification with payment link"
+    )
     public ResponseEntity<EmailSendResponse> sendInvoiceCreatedEmail(
             @Valid @RequestBody EmailSendRequest request
-    ) {
-        log.info("📧 Received invoice created email request for: {}", request.getUserEmail());
+    ) throws MessagingException {
 
-        try {
-            EmailSendResponse response = emailService.sendInvoiceCreatedEmail(
-                    request.getInvoiceId(),
-                    request.getUserId(),
-                    request.getUserEmail(),
-                    request.getAmount(),
-                    "Invoice Due"  // TODO: Accept dueDate in request
-            );
+        log.info("📧 [CONTROLLER] Invoice-created request | to={} invoice={}",
+                request.userEmail(), request.invoiceId());
 
-            return ResponseEntity
-                    .status("sent".equals(response.getStatus()) ? HttpStatus.OK : HttpStatus.ACCEPTED)
-                    .body(response);
+        EmailSendResponse response = emailService.sendInvoiceCreatedEmail(
+                request.invoiceId(),
+                request.userId(),
+                request.userEmail(),
+                request.amount(),
+                "Invoice Due"   // TODO: promote dueDate into EmailSendRequest when required
+        );
 
-        } catch (Exception e) {
-            log.error("❌ Error sending invoice created email: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(EmailSendResponse.builder()
-                            .status("failed")
-                            .message("Failed to send email")
-                            .errorReason(e.getMessage())
-                            .build());
-        }
+        log.info("✅ [CONTROLLER] Invoice-created email dispatched | emailId={}", response.emailId());
+        return ResponseEntity
+                .status(EmailStatus.SENT.equals(response.status()) ? HttpStatus.OK : HttpStatus.ACCEPTED)
+                .body(response);
     }
 
     /**
-     * Send Payment Failed Email
+     * Send a payment-failure alert with a retry link.
      */
     @PostMapping("/payments/failed")
-    @Operation(summary = "Send payment failed email", description = "Send payment failure notification")
+    @Operation(
+            summary     = "Send payment failed email",
+            description = "Send payment failure notification"
+    )
     public ResponseEntity<EmailSendResponse> sendPaymentFailedEmail(
             @Valid @RequestBody EmailSendRequest request
-    ) {
-        log.info("📧 Received payment failed email request for: {}", request.getUserEmail());
+    ) throws MessagingException {
 
-        try {
-            EmailSendResponse response = emailService.sendPaymentFailedEmail(
-                    request.getInvoiceId(),
-                    request.getUserId(),
-                    request.getUserEmail(),
-                    "Payment processing failed"  // TODO: Accept failureReason in request
-            );
+        log.info("📧 [CONTROLLER] Payment-failed request | to={} invoice={}",
+                request.userEmail(), request.invoiceId());
 
-            return ResponseEntity
-                    .status("sent".equals(response.getStatus()) ? HttpStatus.OK : HttpStatus.ACCEPTED)
-                    .body(response);
+        EmailSendResponse response = emailService.sendPaymentFailedEmail(
+                request.invoiceId(),
+                request.userId(),
+                request.userEmail(),
+                "Payment processing failed"  // TODO: promote failureReason into EmailSendRequest when required
+        );
 
-        } catch (Exception e) {
-            log.error("❌ Error sending payment failed email: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(EmailSendResponse.builder()
-                            .status("failed")
-                            .message("Failed to send email")
-                            .errorReason(e.getMessage())
-                            .build());
-        }
+        log.info("✅ [CONTROLLER] Payment-failed email dispatched | emailId={}", response.emailId());
+        return ResponseEntity
+                .status(EmailStatus.SENT.equals(response.status()) ? HttpStatus.OK : HttpStatus.ACCEPTED)
+                .body(response);
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // Generic notification endpoint (Event Service)
+    // ─────────────────────────────────────────────────────────────────────────
+
     /**
-     * Generic notification email endpoint (for event notifications)
-     * Called by Event Service for: access approved, rejected, revoked, etc.
+     * Send a generic event-driven notification email.
+     * Called by the Event Service for: access-approved, access-rejected, media-approved, etc.
      */
     @PostMapping("/notify")
-    @Operation(summary = "Send generic notification email", description = "Send event notification emails")
+    @Operation(
+            summary     = "Send generic notification email",
+            description = "Send event notification emails"
+    )
     public ResponseEntity<EmailSendResponse> sendNotificationEmail(
             @Valid @RequestBody EmailSendRequest request
-    ) {
-        log.info("📧 Received generic notification email request for: {}", request.getUserEmail());
-        log.info("📧 Type: {}", request.getType());
+    ) throws MessagingException {
 
-        try {
-            EmailSendResponse response = emailService.sendNotificationEmail(
-                    request.getUserEmail(),
-                    request.getType(),
-                    request.getSubject() != null ? request.getSubject() : "Notification",
-                    request.getBody() != null ? request.getBody() : ""
-            );
+        log.info("📧 [CONTROLLER] Notification request | to={} type={}",
+                request.userEmail(), request.emailType());
 
-            return ResponseEntity
-                    .status("sent".equals(response.getStatus()) ? HttpStatus.OK : HttpStatus.ACCEPTED)
-                    .body(response);
+        EmailSendResponse response = emailService.sendNotificationEmail(
+                request.userEmail(),
+                request.emailType() != null ? request.emailType().name() : null,
+                request.subject()  != null ? request.subject()  : "Notification",
+                request.body()     != null ? request.body()     : ""
+        );
 
-        } catch (Exception e) {
-            log.error("❌ Error sending notification email: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(EmailSendResponse.builder()
-                            .status("failed")
-                            .message("Failed to send email")
-                            .errorReason(e.getMessage())
-                            .build());
-        }
+        log.info("✅ [CONTROLLER] Notification email dispatched | emailId={}", response.emailId());
+        return ResponseEntity
+                .status(EmailStatus.SENT.equals(response.status()) ? HttpStatus.OK : HttpStatus.ACCEPTED)
+                .body(response);
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // Operational endpoints
+    // ─────────────────────────────────────────────────────────────────────────
+
     /**
-     * Health check endpoint
+     * Liveness probe – confirms the service JVM is responsive.
      */
     @GetMapping("/health")
     @Operation(summary = "Health check", description = "Check if Email service is running")
     public ResponseEntity<String> health() {
-        log.info("✅ Email service health check");
+        log.info("✅ [CONTROLLER] Email service health check");
         return ResponseEntity.ok("Email service is running");
     }
 
     /**
-     * Get email service info
+     * Service capabilities descriptor – returns supported email types derived
+     * from the canonical {@link com.example.Email.shared.enums.EmailType} enum.
      */
     @GetMapping("/info")
     @Operation(summary = "Service info", description = "Get email service information")
-    public ResponseEntity<?> info() {
-        log.info("ℹ️ Email service info requested");
-        return ResponseEntity.ok(new EmailServiceInfo());
-    }
-
-    // Helper class for service info
-    @lombok.Data
-    public static class EmailServiceInfo {
-        private String serviceName = "Email Notification Service";
-        private String version = "1.0.0";
-        private String status = "active";
-        private String[] supportedEmailTypes = {"invoice-paid", "invoice-created", "payment-failed", "otp"};
+    public ResponseEntity<EmailServiceInfoResponse> info() {
+        log.info("ℹ️ [CONTROLLER] Email service info requested");
+        return ResponseEntity.ok(EmailServiceInfoResponse.defaults());
     }
 }

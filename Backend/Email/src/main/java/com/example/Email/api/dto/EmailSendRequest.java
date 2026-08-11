@@ -1,33 +1,49 @@
 package com.example.Email.api.dto;
 
+import com.example.Email.shared.enums.EmailType;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import jakarta.validation.constraints.NotNull;
 
-@Data
-@NoArgsConstructor
-@AllArgsConstructor
-@Builder
-public class EmailSendRequest {
+/**
+ * Immutable request record carrying the payload for all email dispatch endpoints.
+ *
+ * <p>Java records are inherently immutable (all components are {@code final});
+ * they replace the previous mutable Lombok {@code @Data} class, eliminating
+ * accidental mutation between the controller and the service layer.
+ *
+ * <p>Jakarta validation constraints are declared directly on the record components
+ * so that {@code @Valid} in the controller triggers proper constraint checking.
+ *
+ * <ul>
+ *   <li>{@code invoiceId}   – billing reference; optional for notification emails.</li>
+ *   <li>{@code userId}      – platform user identifier.</li>
+ *   <li>{@code userEmail}   – validated RFC-5321 address of the recipient.</li>
+ *   <li>{@code amount}      – invoice amount; optional for non-billing emails.</li>
+ *   <li>{@code pdfContent}  – optional PDF attachment as a raw byte array.</li>
+ *   <li>{@code emailType}   – strongly-typed {@link EmailType} enum (cures String obsession).</li>
+ *   <li>{@code subject}     – email subject for generic notification emails.</li>
+ *   <li>{@code body}        – email body / message for generic notification emails.</li>
+ * </ul>
+ */
+public record EmailSendRequest(
 
-    private String invoiceId;
+        String invoiceId,
 
-    private String userId;
+        String userId,
 
-    @Email(message = "Valid email is required")
-    private String userEmail;
+        @NotBlank(message = "Recipient email must not be blank")
+        @Email(message = "A valid recipient email address is required")
+        String userEmail,
 
-    private Double amount;
+        Double amount,
 
-    private byte[] pdfContent;  // Optional: PDF attachment as byte array
+        byte[] pdfContent,
 
-    private String emailType;  // invoice-paid, invoice-created, payment-failed
+        @NotNull(message = "Email type must not be null")
+        EmailType emailType,
 
-    // For generic notifications
-    private String type;  // notification type: access-approved, access-rejected, etc.
-    private String subject;  // Email subject
-    private String body;  // Email body/message
-}
+        String subject,
+
+        String body
+) {}
