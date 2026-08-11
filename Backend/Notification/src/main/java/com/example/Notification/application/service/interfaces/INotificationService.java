@@ -1,6 +1,6 @@
 package com.example.Notification.application.service.interfaces;
 
-import com.example.Notification.infrastructure.persistence.document.NotificationDocument;
+import com.example.Notification.api.dto.response.NotificationResponse;
 import com.example.Notification.shared.enums.NotificationType;
 
 import java.util.List;
@@ -8,13 +8,13 @@ import java.util.Map;
 
 public interface INotificationService {
 
-    NotificationDocument createNotification(String recipientUserId, NotificationType type, Map<String, Object> payload);
+    NotificationResponse createNotification(String recipientUserId, NotificationType type, Map<String, Object> payload);
 
-    List<NotificationDocument> getUserNotifications(String userId, int skip, int limit);
+    List<NotificationResponse> getUserNotifications(String userId, int skip, int limit);
 
-    List<NotificationDocument> getUnreadNotifications(String userId);
+    List<NotificationResponse> getUnreadNotifications(String userId);
 
-    NotificationDocument markAsRead(String notificationId);
+    NotificationResponse markAsRead(String userId, String notificationId);
 
     long markAllAsRead(String userId);
 

@@ -1,20 +1,20 @@
 package com.example.Notification.application.service.impl;
 
+import com.example.Notification.api.dto.response.NotificationResponse;
 import com.example.Notification.application.service.interfaces.INotificationService;
+import com.example.Notification.infrastructure.mapper.NotificationMapper;
 import com.example.Notification.infrastructure.persistence.document.NotificationDocument;
 import com.example.Notification.infrastructure.persistence.repository.NotificationRepository;
 import com.example.Notification.shared.enums.NotificationType;
 import com.example.Notification.shared.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -22,9 +22,10 @@ import java.util.Map;
 public class NotificationServiceImpl implements INotificationService {
 
     private final NotificationRepository notificationRepository;
+    private final NotificationMapper notificationMapper;
 
     @Override
-    public NotificationDocument createNotification(
+    public NotificationResponse createNotification(
             String recipientUserId,
             NotificationType type,
             Map<String, Object> payload) {
@@ -41,14 +42,13 @@ public class NotificationServiceImpl implements INotificationService {
 
         NotificationDocument saved = notificationRepository.save(notification);
         log.info("✅ [Notification Service] Notification created successfully - ID: {}, Type: {}", saved.getId(), type);
-        return saved;
+        return notificationMapper.toResponse(saved);
     }
 
     @Override
-    public List<NotificationDocument> getUserNotifications(String userId, int skip, int limit) {
+    public List<NotificationResponse> getUserNotifications(String userId, int skip, int limit) {
         log.info("📋 [Notification Service] Fetching notifications for user: {} - Skip: {}, Limit: {}", userId, skip, limit);
 
-        // Fetching all for simplicity since original code did manual pagination
         List<NotificationDocument> notifications = notificationRepository.findByRecipientUserIdOrderByCreatedAtDesc(userId);
 
         int start = Math.min(skip, notifications.size());
@@ -56,19 +56,23 @@ public class NotificationServiceImpl implements INotificationService {
         List<NotificationDocument> paginated = notifications.subList(start, end);
 
         log.info("✅ [Notification Service] Retrieved {} notifications for user: {}", paginated.size(), userId);
-        return paginated;
+        return paginated.stream()
+                .map(notificationMapper::toResponse)
+                .collect(Collectors.toList());
     }
 
     @Override
-    public List<NotificationDocument> getUnreadNotifications(String userId) {
+    public List<NotificationResponse> getUnreadNotifications(String userId) {
         log.info("📬 [Notification Service] Fetching unread notifications for user: {}", userId);
         List<NotificationDocument> unread = notificationRepository.findByRecipientUserIdAndReadFalse(userId);
         log.info("✅ [Notification Service] Found {} unread notifications for user: {}", unread.size(), userId);
-        return unread;
+        return unread.stream()
+                .map(notificationMapper::toResponse)
+                .collect(Collectors.toList());
     }
 
     @Override
-    public NotificationDocument markAsRead(String notificationId) {
+    public NotificationResponse markAsRead(String userId, String notificationId) {
         log.info("✏️ [Notification Service] Marking notification as read - ID: {}", notificationId);
 
         NotificationDocument notification = notificationRepository.findById(notificationId)
@@ -77,17 +81,22 @@ public class NotificationServiceImpl implements INotificationService {
                     return new ResourceNotFoundException("Notification not found with ID: " + notificationId);
                 });
 
+        if (!notification.getRecipientUserId().equals(userId)) {
+            log.warn("⚠️ [Notification Service] User {} tried to read notification of user {}", userId, notification.getRecipientUserId());
+            throw new IllegalArgumentException("Permission denied");
+        }
+
         notification.setRead(true);
         NotificationDocument updated = notificationRepository.save(notification);
         log.info("✅ [Notification Service] Notification marked as read - ID: {}", notificationId);
-        return updated;
+        return notificationMapper.toResponse(updated);
     }
 
     @Override
     public long markAllAsRead(String userId) {
         log.info("✏️ [Notification Service] Marking all notifications as read for user: {}", userId);
 
-        List<NotificationDocument> unread = getUnreadNotifications(userId);
+        List<NotificationDocument> unread = notificationRepository.findByRecipientUserIdAndReadFalse(userId);
         long count = unread.size();
 
         if (count > 0) {
@@ -120,7 +129,7 @@ public class NotificationServiceImpl implements INotificationService {
     @Override
     public long getUnreadCount(String userId) {
         log.info("🔔 [Notification Service] Getting unread notification count for user: {}", userId);
-        List<NotificationDocument> unread = getUnreadNotifications(userId);
+        List<NotificationDocument> unread = notificationRepository.findByRecipientUserIdAndReadFalse(userId);
         long count = unread.size();
         log.info("✅ [Notification Service] Unread notification count for user {}: {}", userId, count);
         return count;
