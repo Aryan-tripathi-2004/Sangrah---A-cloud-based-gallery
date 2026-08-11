@@ -1,17 +1,37 @@
 package com.example.Media.infrastructure.persistence.document;
 
+import com.example.Media.shared.enums.MediaDomain;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
-import lombok.Data;
+import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.Setter;
 import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.mapping.Document;
+import org.springframework.data.annotation.Version;
 import org.springframework.data.mongodb.core.index.Indexed;
+import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 
-@Data
+/**
+ * MongoDB document that acts as an immutable-by-convention audit ledger for
+ * tracking per-user, per-domain storage consumption over time.
+ *
+ * <p>Design notes:
+ * <ul>
+ *   <li>{@code @Data} is intentionally replaced by granular Lombok annotations for the
+ *       same reasons as {@code MediaDocument}: entity identity is defined by {@code @Id},
+ *       not by field equality.</li>
+ *   <li>{@code @Version} enables optimistic locking to prevent double-close race conditions
+ *       on the {@code endAt} field when concurrent delete requests arrive simultaneously.</li>
+ *   <li>{@code domain} is typed as {@link MediaDomain}. MongoDB stores the enum name string,
+ *       so existing ledger documents remain fully backward-compatible.</li>
+ * </ul>
+ * </p>
+ */
+@Getter
+@Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
@@ -24,22 +44,33 @@ public class StorageUsageLedgerDocument {
     @Indexed
     private String userId;
 
+    /** Business domain that owns the associated media asset. */
     @Indexed
-    private String domain;  // "GALLERY", "EVENTS", "PROFILE_AVATAR", "MESSAGING"
+    private MediaDomain domain;
 
+    /** Reference to the {@link MediaDocument#getId()} this ledger entry tracks. */
     @Indexed
-    private String domainRefId;  // Reference to media ID
+    private String domainRefId;
 
     private Long sizeBytes;
 
+    /** Timestamp when the file was uploaded (inclusive billing start). */
     @Indexed
-    private Instant startAt;  // When file uploaded
+    private Instant startAt;
 
-    private Instant endAt;  // null = active, set = when deleted (for billing)
+    /** {@code null} while the file is active; set to deletion timestamp when soft-deleted. */
+    private Instant endAt;
 
-    private String sourceService;  // "MediaService"
+    private String sourceService;
 
     private Instant createdAt;
+
+    /**
+     * Optimistic locking version field managed by Spring Data MongoDB.
+     * Guards against concurrent race conditions when closing a ledger entry.
+     */
+    @Version
+    private Long version;
 
     // Helper method to calculate days active for billing
     public long getDaysActive() {
