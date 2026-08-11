@@ -7,6 +7,9 @@ import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
 
+import com.example.Gallery.shared.enums.MediaDomain;
+import org.springframework.data.annotation.Version;
+
 /**
  * CRITICAL FOR PHASE 4 BILLING:
  *
@@ -28,10 +31,13 @@ public class StorageUsageLedgerDocument {
     @Id
     private String id;
 
+    @Version
+    private Long version;
+
     @Indexed
     private String userId;  // indexed for billing queries
 
-    private String domain;  // e.g., "GALLERY", "EVENTS"
+    private MediaDomain domain;  // e.g., "GALLERY", "EVENTS"
     private String domainRefId;  // reference to media/event ID
     private long sizeBytes;  // file size in bytes
 

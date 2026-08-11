@@ -8,6 +8,10 @@ import org.springframework.data.mongodb.core.mapping.Document;
 import java.time.Instant;
 import java.util.Map;
 
+import com.example.Gallery.shared.enums.MediaType;
+import com.example.Gallery.shared.enums.Visibility;
+import org.springframework.data.annotation.Version;
+
 @Getter
 @Setter
 @Builder
@@ -17,6 +21,9 @@ import java.util.Map;
 public class GalleryMediaDocument {
     @Id
     private String id;
+
+    @Version
+    private Long version;
 
     @Indexed
     private String userId;
@@ -31,8 +38,8 @@ public class GalleryMediaDocument {
     @Indexed
     private String checksumSha256;
 
-    private String type;  // IMAGE or VIDEO
-    private String visibility;
+    private MediaType type;
+    private Visibility visibility;
 
     // Metadata
     private Map<String, Object> metadata;  // Stores width, height, duration, EXIF, etc.
