@@ -2,8 +2,9 @@ package com.example.Billing.api.controller;
 
 import com.example.Billing.api.dto.response.CostEstimateDTO;
 import com.example.Billing.api.dto.response.InvoiceDTO;
-import com.example.Billing.application.service.BillingService;
-import com.example.Billing.application.service.CostEstimationService;
+import com.example.Billing.api.resolver.CurrentUserId;
+import com.example.Billing.application.service.interfaces.IBillingService;
+import com.example.Billing.application.service.interfaces.ICostEstimationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.AllArgsConstructor;
@@ -21,7 +22,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 
-import jakarta.servlet.http.HttpServletRequest;
+
 
 @Slf4j
 @RestController
@@ -30,8 +31,8 @@ import jakarta.servlet.http.HttpServletRequest;
 @Tag(name = "Billing", description = "Billing and Invoice Management")
 public class BillingController {
 
-    private final BillingService billingService;
-    private final CostEstimationService costEstimationService;
+    private final IBillingService billingService;
+    private final ICostEstimationService costEstimationService;
 
     @Value("${stripe.publishable.key:}")
     private String stripePublishableKey;
@@ -42,10 +43,9 @@ public class BillingController {
     @GetMapping("/invoices")
     @Operation(summary = "List invoices", description = "Get all invoices for the current user")
     public ResponseEntity<Page<InvoiceDTO>> getInvoices(
-        HttpServletRequest request,
+        @CurrentUserId String userId,
         Pageable pageable
     ) {
-        String userId = request.getHeader("X-User-Id");
         log.info("📋 Getting invoices for user: {}", userId);
 
         return ResponseEntity.ok(billingService.getInvoiceHistory(userId, pageable));
@@ -58,9 +58,8 @@ public class BillingController {
     @Operation(summary = "Get invoice details", description = "Get details of a specific invoice")
     public ResponseEntity<InvoiceDTO> getInvoice(
         @PathVariable String invoiceId,
-        HttpServletRequest request
+        @CurrentUserId String userId
     ) {
-        String userId = request.getHeader("X-User-Id");
         log.info("📄 Getting invoice {} for user: {}", invoiceId, userId);
 
         return ResponseEntity.ok(billingService.getInvoice(userId, invoiceId));
@@ -73,9 +72,8 @@ public class BillingController {
     @Operation(summary = "Download invoice PDF", description = "Download PDF for a specific invoice")
     public ResponseEntity<byte[]> downloadInvoicePDF(
             @PathVariable String invoiceId,
-            HttpServletRequest request
+            @CurrentUserId String userId
     ) {
-        String userId = request.getHeader("X-User-Id");
         log.info("📥 Downloading PDF for invoice {} for user: {}", invoiceId, userId);
 
         try {
@@ -113,8 +111,7 @@ public class BillingController {
      */
     @GetMapping("/cost-estimate")
     @Operation(summary = "Get cost estimate", description = "Get estimated cost for current month")
-    public ResponseEntity<CostEstimateDTO> getCostEstimate(HttpServletRequest request) {
-        String userId = request.getHeader("X-User-Id");
+    public ResponseEntity<CostEstimateDTO> getCostEstimate(@CurrentUserId String userId) {
         log.info("💰 Getting cost estimate for user: {}", userId);
 
         return ResponseEntity.ok(costEstimationService.estimateCurrentMonthCost(userId));
@@ -125,8 +122,7 @@ public class BillingController {
      */
     @GetMapping("/dashboard")
     @Operation(summary = "Get dashboard metrics", description = "Get all dashboard metrics for billing")
-    public ResponseEntity<?> getDashboard(HttpServletRequest request) {
-        String userId = request.getHeader("X-User-Id");
+    public ResponseEntity<?> getDashboard(@CurrentUserId String userId) {
         log.info("📊 Getting dashboard for user: {}", userId);
 
         // Return cost estimate as dashboard data for now
@@ -143,9 +139,8 @@ public class BillingController {
     @Operation(summary = "Pay invoice", description = "Initiate payment for an invoice via Stripe")
     public ResponseEntity<?> payInvoice(
         @PathVariable String invoiceId,
-        HttpServletRequest request
+        @CurrentUserId String userId
     ) {
-        String userId = request.getHeader("X-User-Id");
         log.info("💳 Initiating payment for invoice {} for user: {}", invoiceId, userId);
 
         // Get invoice to verify ownership
@@ -188,11 +183,10 @@ public class BillingController {
     @GetMapping("/payments")
     @Operation(summary = "Get payment history", description = "Get all payments for the current user")
     public ResponseEntity<?> getPaymentHistory(
-        HttpServletRequest request,
+        @CurrentUserId String userId,
         @RequestParam(defaultValue = "0") int page,
         @RequestParam(defaultValue = "10") int size
     ) {
-        String userId = request.getHeader("X-User-Id");
         log.info("💳 Getting payment history for user: {}", userId);
 
         try {
@@ -206,26 +200,15 @@ public class BillingController {
     }
 
     // Helper classes
-    @lombok.Data
-    @lombok.AllArgsConstructor
-    static class ErrorResponse {
-        private String error;
-    }
+    record ErrorResponse(String error) {}
 
-    @lombok.Data
-    @lombok.AllArgsConstructor
-    static class HealthResponse {
-        private String status;
-    }
+    record HealthResponse(String status) {}
 
-    @Data
-    @NoArgsConstructor
-    @AllArgsConstructor
     @Builder
-    static class StripeConfigResponse {
-        private String stripePublishableKey;
-        private Boolean stripeConfigured;
-        private String message;
-    }
+    record StripeConfigResponse(
+        String stripePublishableKey,
+        Boolean stripeConfigured,
+        String message
+    ) {}
 }
 

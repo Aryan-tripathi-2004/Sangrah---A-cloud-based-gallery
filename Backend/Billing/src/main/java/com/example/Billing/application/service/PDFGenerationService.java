@@ -189,9 +189,9 @@ public class PDFGenerationService {
         doc.add(new Paragraph(""));
 
         // Payment status
-        String status = "PAID".equals(invoice.getStatus()) ?
+        String status = "PAID".equals(invoice.getStatus().name()) ?
                 "✓ PAID on " + invoice.getPaidDate().atZone(java.time.ZoneId.systemDefault()).toLocalDate().format(DATE_FORMATTER) :
-                invoice.getStatus();
+                invoice.getStatus().name();
 
         Paragraph footerStatus = new Paragraph("Status: " + status)
                 .setFont(font)

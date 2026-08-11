@@ -1,16 +1,20 @@
 package com.example.Billing.infrastructure.persistence.document;
 
+import com.example.Billing.shared.enums.InvoiceStatus;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
-import lombok.Data;
+import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.Setter;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Version;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.index.Indexed;
 
 import java.time.Instant;
 
-@Data
+@Getter
+@Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
@@ -19,6 +23,9 @@ public class InvoiceDocument {
 
     @Id
     private String id;
+
+    @Version
+    private Long version;
 
     @Indexed(unique = true)
     private String invoiceId;  // e.g., "INV-2026-01-00123"
@@ -33,7 +40,7 @@ public class InvoiceDocument {
     private Charges charges;
 
     @Indexed
-    private String status;  // PENDING, PAID, OVERDUE
+    private InvoiceStatus status;  // PENDING, PAID, OVERDUE
 
     private Instant issuedDate;
     private Instant dueDate;
@@ -48,7 +55,8 @@ public class InvoiceDocument {
     private Instant createdAt;
     private Instant updatedAt;
 
-    @Data
+    @Getter
+    @Setter
     @NoArgsConstructor
     @AllArgsConstructor
     @Builder
@@ -57,7 +65,8 @@ public class InvoiceDocument {
         private Instant endDate;
     }
 
-    @Data
+    @Getter
+    @Setter
     @NoArgsConstructor
     @AllArgsConstructor
     @Builder
@@ -69,7 +78,8 @@ public class InvoiceDocument {
         private Double totalGBDays;
     }
 
-    @Data
+    @Getter
+    @Setter
     @NoArgsConstructor
     @AllArgsConstructor
     @Builder

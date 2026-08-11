@@ -6,7 +6,7 @@ import com.stripe.model.EventDataObjectDeserializer;
 import com.stripe.model.PaymentIntent;
 import com.stripe.model.StripeObject;
 import com.stripe.net.Webhook;
-import com.example.Billing.application.service.StripePaymentService;
+import com.example.Billing.application.service.interfaces.IStripePaymentService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.AllArgsConstructor;
@@ -50,7 +50,7 @@ import java.util.Map;
 @Tag(name = "Stripe Webhooks", description = "Real-time payment status updates from Stripe")
 public class StripeWebhookController {
 
-    private final StripePaymentService stripePaymentService;
+    private final IStripePaymentService stripePaymentService;
 
     @Value("${stripe.webhook.secret:}")
     private String webhookSecret;
@@ -277,16 +277,13 @@ public class StripeWebhookController {
     // NESTED CLASSES FOR RESPONSE/REQUEST SERIALIZATION
     // ========================================================================
 
-    @Data
-    @NoArgsConstructor
-    @AllArgsConstructor
     @Builder
-    public static class WebhookResponse {
-        private String status;  // "success" or "error"
-        private String eventId;
-        private String eventType;
-        private long processingTime_ms;
-        private String timestamp;
-        private String message;  // Optional error message
-    }
+    public record WebhookResponse(
+        String status,
+        String eventId,
+        String eventType,
+        long processingTime_ms,
+        String timestamp,
+        String message
+    ) {}
 }

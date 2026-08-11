@@ -1,17 +1,18 @@
 package com.example.Billing.infrastructure.event;
 
 import com.example.Billing.application.service.PDFGenerationService;
+import com.example.Billing.infrastructure.client.AuthServiceClient;
 import com.example.Billing.infrastructure.client.EmailServiceClient;
+import com.example.Billing.infrastructure.client.dto.AuthUserResponse;
 import com.example.Billing.infrastructure.persistence.document.InvoiceDocument;
 import com.example.Billing.infrastructure.persistence.repository.InvoiceRepository;
+import com.example.Billing.shared.enums.InvoiceStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.RestTemplate;
 
 import java.time.Instant;
-import java.util.Map;
 
 @Component
 @RequiredArgsConstructor
@@ -21,7 +22,7 @@ public class InvoicePaidEventListener {
     private final PDFGenerationService pdfGenerationService;
     private final InvoiceRepository invoiceRepository;
     private final EmailServiceClient emailServiceClient;
-    private final RestTemplate restTemplate;
+    private final AuthServiceClient authServiceClient;
 
     /**
      * Fetch user email from Auth Service
@@ -30,11 +31,9 @@ public class InvoicePaidEventListener {
     private String getUserEmailFromAuthService(String userId) {
         try {
             log.debug("📧 [Event Hook] Fetching user email from Auth Service for user: {}", userId);
-            String url = "http://localhost:8081/api/v1/users/" + userId;
-            Map<String, Object> response = restTemplate.getForObject(url, Map.class);
-            if (response != null && response.containsKey("data")) {
-                Map<String, Object> data = (Map<String, Object>) response.get("data");
-                String email = (String) data.get("email");
+            AuthUserResponse response = authServiceClient.getUserById(userId);
+            if (response != null && response.data() != null) {
+                String email = response.data().email();
                 if (email != null && !email.isEmpty()) {
                     return email;
                 }
@@ -91,7 +90,7 @@ public class InvoicePaidEventListener {
 
             // Step 2: Update invoice status to PAID
             log.info("💳 [Step 2/3] Marking invoice as PAID...");
-            invoice.setStatus("PAID");
+            invoice.setStatus(InvoiceStatus.PAID);
             invoice.setPaidDate(Instant.now());
             invoiceRepository.save(invoice);
             log.info("✅ [Step 2/3] Invoice marked as PAID");

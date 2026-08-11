@@ -7,44 +7,31 @@ import lombok.NoArgsConstructor;
 
 import java.time.Instant;
 
-@Data
-@NoArgsConstructor
-@AllArgsConstructor
 @Builder
-public class CostEstimateDTO {
-
-    private CurrentMonthDataDTO currentMonthData;
-    private StorageBreakdownDTO storageBreakdown;
-    private Double costPerDay;
-    private Double ratePerGBDay;
-
-    @Data
-    @NoArgsConstructor
-    @AllArgsConstructor
+public record CostEstimateDTO(
+    CurrentMonthDataDTO currentMonthData,
+    StorageBreakdownDTO storageBreakdown,
+    Double costPerDay,
+    Double ratePerGBDay
+) {
     @Builder
-    public static class CurrentMonthDataDTO {
-        private Instant startDate;
-        private Integer daysElapsed;
-        private Double estimatedGBDays;
-        private Double estimatedCost;
-        private Double projectedMonthlyTotal;
-    }
+    public record CurrentMonthDataDTO(
+        Instant startDate,
+        Integer daysElapsed,
+        Double estimatedGBDays,
+        Double estimatedCost,
+        Double projectedMonthlyTotal
+    ) {}
 
-    @Data
-    @NoArgsConstructor
-    @AllArgsConstructor
     @Builder
-    public static class StorageBreakdownDTO {
-        private StorageTypeDTO images;
-        private StorageTypeDTO videos;
-
-        @Data
-        @NoArgsConstructor
-        @AllArgsConstructor
+    public record StorageBreakdownDTO(
+        StorageTypeDTO images,
+        StorageTypeDTO videos
+    ) {
         @Builder
-        public static class StorageTypeDTO {
-            private Double gbDays;
-            private Double cost;
-        }
+        public record StorageTypeDTO(
+            Double gbDays,
+            Double cost
+        ) {}
     }
 }

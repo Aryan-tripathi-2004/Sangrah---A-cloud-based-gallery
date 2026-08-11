@@ -1,6 +1,7 @@
 package com.example.Billing.infrastructure.persistence.repository;
 
 import com.example.Billing.infrastructure.persistence.document.InvoiceDocument;
+import com.example.Billing.shared.enums.InvoiceStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.mongodb.repository.MongoRepository;
@@ -29,9 +30,9 @@ public interface InvoiceRepository extends MongoRepository<InvoiceDocument, Stri
         Instant endDate
     );
 
-    List<InvoiceDocument> findByStatusOrderByDueDateAsc(String status);
+    List<InvoiceDocument> findByStatusOrderByDueDateAsc(InvoiceStatus status);
 
-    long countByUserIdAndStatus(String userId, String status);
+    long countByUserIdAndStatus(String userId, InvoiceStatus status);
 
     List<InvoiceDocument> findByPaymentIntentId(String paymentIntentId);
 }

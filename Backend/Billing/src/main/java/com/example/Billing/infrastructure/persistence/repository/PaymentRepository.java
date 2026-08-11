@@ -1,6 +1,7 @@
 package com.example.Billing.infrastructure.persistence.repository;
 
 import com.example.Billing.infrastructure.persistence.document.PaymentDocument;
+import com.example.Billing.shared.enums.PaymentStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.mongodb.repository.MongoRepository;
@@ -22,9 +23,9 @@ public interface PaymentRepository extends MongoRepository<PaymentDocument, Stri
     List<PaymentDocument> findByInvoiceIdOrderByTransactionDateDesc(String invoiceId);
 
     List<PaymentDocument> findByStatusAndNextRetryDateLessThanEqualOrderByNextRetryDateAsc(
-        String status,
+        PaymentStatus status,
         Instant dateTime
     );
 
-    long countByUserIdAndStatus(String userId, String status);
+    long countByUserIdAndStatus(String userId, PaymentStatus status);
 }

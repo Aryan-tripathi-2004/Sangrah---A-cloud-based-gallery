@@ -13,25 +13,21 @@ import java.math.BigDecimal;
 /**
  * DTO for recording storage usage ledger entry.
  */
-@Data
 @Builder
-@NoArgsConstructor
-@AllArgsConstructor
 @Schema(description = "Request to record storage usage")
-public class StorageUsageRequest {
-
+public record StorageUsageRequest(
     @NotBlank(message = "User ID is required")
     @Schema(description = "User ID", example = "user123")
-    private String userId;
+    String userId,
 
     @NotNull(message = "Storage used (bytes) is required")
     @Schema(description = "Storage used in bytes", example = "1024000")
-    private Long bytesUsed;
+    Long bytesUsed,
 
     @NotBlank(message = "Record type is required")
     @Schema(description = "Type of storage usage (UPLOAD, DELETE, etc)", example = "UPLOAD")
-    private String recordType;
+    String recordType,
 
     @Schema(description = "Metadata about the storage usage")
-    private String metadata;
-}
+    String metadata
+) {}

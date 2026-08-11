@@ -1,4 +1,4 @@
-package com.example.Billing.application.service;
+package com.example.Billing.application.service.impl;
 
 import com.example.Billing.api.dto.response.CostEstimateDTO;
 import com.example.Billing.infrastructure.persistence.document.StorageUsageLedgerDocument;
@@ -14,10 +14,12 @@ import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 
+import com.example.Billing.application.service.interfaces.ICostEstimationService;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class CostEstimationService {
+public class CostEstimationServiceImpl implements ICostEstimationService {
 
     private final StorageUsageLedgerRepository ledgerRepository;
     private final BillingCalculator calculator;
@@ -150,18 +152,4 @@ public class CostEstimationService {
             .build();
     }
 
-    // Inner class for cost details
-    @lombok.Data
-    @lombok.NoArgsConstructor
-    @lombok.AllArgsConstructor
-    @lombok.Builder
-    public static class BillingCostDetails {
-        private Double imageGBDays;
-        private Double imageCost;
-        private Double videoGBDays;
-        private Double videoCost;
-        private Double totalGBDays;
-        private Double totalCost;
-        private Integer fileCount;
-    }
 }
