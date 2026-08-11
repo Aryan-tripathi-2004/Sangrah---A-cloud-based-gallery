@@ -2,6 +2,7 @@ package com.example.Auth.infrastructure.persistence.document;
 
 import lombok.*;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Version;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
@@ -28,6 +29,10 @@ public class RefreshTokenDocument {
 
     private Instant createdAt;
     private Instant revokedAt;  // null if not revoked
+
+    /** Optimistic locking field managed by Spring Data MongoDB. */
+    @Version
+    private Long version;
 
     public boolean isExpired() {
         return Instant.now().isAfter(expiresAt);

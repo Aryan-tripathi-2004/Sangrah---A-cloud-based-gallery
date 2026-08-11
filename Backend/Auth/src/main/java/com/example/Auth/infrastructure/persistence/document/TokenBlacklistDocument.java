@@ -1,7 +1,9 @@
 package com.example.Auth.infrastructure.persistence.document;
 
+import com.example.Auth.shared.enums.RevocationReason;
 import lombok.*;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Version;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
@@ -27,7 +29,13 @@ public class TokenBlacklistDocument {
     private Instant expiresAt;
 
     private Instant blacklistedAt;
-    private String reason;  // "LOGOUT", "TOKEN_REFRESH", etc.
+
+    /** Strongly-typed revocation reason — replaces raw {@code String reason}. */
+    private RevocationReason reason;
+
+    /** Optimistic locking field managed by Spring Data MongoDB. */
+    @Version
+    private Long version;
 
     public boolean isExpired() {
         return Instant.now().isAfter(expiresAt);

@@ -1,5 +1,6 @@
-package com.example.Auth.application.service;
+package com.example.Auth.application.service.impl;
 
+import com.example.Auth.application.service.interfaces.IJwtService;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
@@ -12,12 +13,12 @@ import java.util.Date;
 import java.util.UUID;
 
 @Service
-public class JwtService {
+public class JwtServiceImpl implements IJwtService {
     private final SecretKey secretKey;
     private final long accessTokenExpirySeconds;
     private final long refreshTokenExpirySeconds;
 
-    public JwtService(@Value("${jwt.secret}") String secret,
+    public JwtServiceImpl(@Value("${jwt.secret}") String secret,
                       @Value("${jwt.access-token-expiration-seconds}") long accessTokenExpirySeconds,
                       @Value("${jwt.refresh-token-expiration-seconds}") long refreshTokenExpirySeconds) {
         this.secretKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
@@ -25,9 +26,7 @@ public class JwtService {
         this.refreshTokenExpirySeconds = refreshTokenExpirySeconds;
     }
 
-    /**
-     * Generate short-lived access token (15 minutes)
-     */
+    @Override
     public String generateAccessToken(String userId, String email) {
         Instant now = Instant.now();
         return Jwts.builder()
@@ -41,13 +40,9 @@ public class JwtService {
                 .compact();
     }
 
-    /**
-     * Generate long-lived refresh token (7 days)
-     * Used to obtain new access tokens without re-authenticating
-     */
+    @Override
     public String generateRefreshToken(String userId) {
         Instant now = Instant.now();
-        // Refresh tokens use a unique JTI (JWT ID) claim for tracking and revocation
         return Jwts.builder()
                 .subject(userId)
                 .claim("type", "REFRESH")
@@ -58,9 +53,7 @@ public class JwtService {
                 .compact();
     }
 
-    /**
-     * Get refresh token expiry seconds (for database TTL index)
-     */
+    @Override
     public long getRefreshTokenExpirySeconds() {
         return refreshTokenExpirySeconds;
     }
