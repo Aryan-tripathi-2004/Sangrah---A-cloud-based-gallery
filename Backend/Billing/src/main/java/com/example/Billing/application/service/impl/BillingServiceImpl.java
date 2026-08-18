@@ -1,20 +1,27 @@
-package com.example.Billing.application.service;
+package com.example.Billing.application.service.impl;
 
 import com.example.Billing.api.dto.response.InvoiceDTO;
 import com.example.Billing.api.dto.response.PaymentDTO;
+import com.example.Billing.application.service.PDFGenerationService;
+import com.example.Billing.application.service.interfaces.IBillingService;
+import com.example.Billing.application.service.interfaces.ICostEstimationService;
+import com.example.Billing.infrastructure.client.AuthServiceClient;
+import com.example.Billing.infrastructure.client.dto.AuthUserResponse;
+import com.example.Billing.infrastructure.mapper.InvoiceMapper;
+import com.example.Billing.infrastructure.mapper.PaymentMapper;
 import com.example.Billing.infrastructure.persistence.document.InvoiceDocument;
 import com.example.Billing.infrastructure.persistence.document.PaymentDocument;
 import com.example.Billing.infrastructure.persistence.document.UserBillingSettingsDocument;
 import com.example.Billing.infrastructure.persistence.repository.InvoiceRepository;
 import com.example.Billing.infrastructure.persistence.repository.PaymentRepository;
 import com.example.Billing.infrastructure.persistence.repository.UserBillingSettingsRepository;
+import com.example.Billing.shared.enums.InvoiceStatus;
 import com.example.Billing.shared.util.BillingCalculator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -24,15 +31,17 @@ import java.util.Map;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class BillingService {
+public class BillingServiceImpl implements IBillingService {
 
     private final InvoiceRepository invoiceRepository;
     private final PaymentRepository paymentRepository;
     private final UserBillingSettingsRepository userSettingsRepository;
-    private final CostEstimationService costEstimationService;
+    private final ICostEstimationService costEstimationService;
     private final BillingCalculator calculator;
     private final PDFGenerationService pdfGenerationService;
-    private final RestTemplate restTemplate;
+    private final AuthServiceClient authServiceClient;
+    private final InvoiceMapper invoiceMapper;
+    private final PaymentMapper paymentMapper;
 
     /**
      * Get invoice details
@@ -47,7 +56,7 @@ public class BillingService {
             throw new RuntimeException("Unauthorized access to invoice");
         }
 
-        return mapToDTO(invoice);
+        return invoiceMapper.toDTO(invoice);
     }
 
     /**
@@ -105,7 +114,7 @@ public class BillingService {
         log.info("📋 Fetching invoice history for user {}", userId);
 
         return invoiceRepository.findByUserIdOrderByIssuedDateDesc(userId, pageable)
-            .map(this::mapToDTO);
+            .map(invoiceMapper::toDTO);
     }
 
     /**
@@ -123,7 +132,7 @@ public class BillingService {
             .toList();
 
         return payments.stream()
-            .map(this::mapPaymentToDTO)
+            .map(paymentMapper::toDTO)
             .toList();
     }
 
@@ -147,7 +156,7 @@ public class BillingService {
         });
 
         // Calculate charges from StorageUsageLedger
-        CostEstimationService.BillingCostDetails costs =
+        ICostEstimationService.BillingCostDetails costs =
             costEstimationService.calculateCostForPeriod(userId, startDate, endDate);
 
         // Get user settings (for tax rate, etc.)
@@ -168,20 +177,20 @@ public class BillingService {
                 .endDate(endDate)
                 .build())
             .storageMetrics(InvoiceDocument.StorageMetrics.builder()
-                .imageGBDays(costs.getImageGBDays())
-                .imageCost(costs.getImageCost())
-                .videoGBDays(costs.getVideoGBDays())
-                .videoCost(costs.getVideoCost())
-                .totalGBDays(costs.getTotalGBDays())
+                .imageGBDays(costs.imageGBDays())
+                .imageCost(costs.imageCost())
+                .videoGBDays(costs.videoGBDays())
+                .videoCost(costs.videoCost())
+                .totalGBDays(costs.totalGBDays())
                 .build())
             .charges(InvoiceDocument.Charges.builder()
                 .storageRate(BillingCalculator.STORAGE_RATE_PER_GB_DAY)
-                .subtotal(costs.getTotalCost())
+                .subtotal(costs.totalCost())
                 .taxRate(0.0)  // TODO: Get tax rate from settings
                 .tax(0.0)
-                .totalAmount(costs.getTotalCost())
+                .totalAmount(costs.totalCost())
                 .build())
-            .status("PENDING")
+            .status(InvoiceStatus.PENDING)
             .issuedDate(Instant.now())
             .dueDate(Instant.now().plusSeconds(15 * 24 * 3600))  // 15 days from now
             .paidDate(null)
@@ -191,7 +200,7 @@ public class BillingService {
 
         // Save invoice to database first
         InvoiceDocument savedInvoice = invoiceRepository.save(invoice);
-        log.info("✅ Invoice created: {} (total: ${}) (email: {})", invoiceId, costs.getTotalCost(), userEmail);
+        log.info("✅ Invoice created: {} (total: ${}) (email: {})", invoiceId, costs.totalCost(), userEmail);
 
         // ✨ BEST PRACTICE: Generate PDF immediately when invoice is created (not on payment)
         // This allows users to download and review the invoice BEFORE paying
@@ -207,7 +216,7 @@ public class BillingService {
             // PDF can be generated later if needed
         }
 
-        return mapToDTO(savedInvoice);
+        return invoiceMapper.toDTO(savedInvoice);
     }
 
     /**
@@ -223,14 +232,14 @@ public class BillingService {
             throw new RuntimeException("Unauthorized access to invoice");
         }
 
-        invoice.setStatus("PAID");
+        invoice.setStatus(InvoiceStatus.PAID);
         invoice.setPaidDate(Instant.now());
         invoice.setUpdatedAt(Instant.now());
 
         InvoiceDocument saved = invoiceRepository.save(invoice);
         log.info("✅ Invoice marked as PAID: {}", invoiceId);
 
-        return mapToDTO(saved);
+        return invoiceMapper.toDTO(saved);
     }
 
     /**
@@ -274,67 +283,16 @@ public class BillingService {
     }
 
     /**
-     * Convert document to DTO
-     */
-    private InvoiceDTO mapToDTO(InvoiceDocument doc) {
-        return InvoiceDTO.builder()
-            .id(doc.getId())
-            .invoiceId(doc.getInvoiceId())
-            .userId(doc.getUserId())
-            .billingPeriod(InvoiceDTO.BillingPeriodDTO.builder()
-                .startDate(doc.getBillingPeriod().getStartDate())
-                .endDate(doc.getBillingPeriod().getEndDate())
-                .build())
-            .storageMetrics(InvoiceDTO.StorageMetricsDTO.builder()
-                .imageGBDays(doc.getStorageMetrics().getImageGBDays())
-                .imageCost(doc.getStorageMetrics().getImageCost())
-                .videoGBDays(doc.getStorageMetrics().getVideoGBDays())
-                .videoCost(doc.getStorageMetrics().getVideoCost())
-                .totalGBDays(doc.getStorageMetrics().getTotalGBDays())
-                .build())
-            .charges(InvoiceDTO.ChargesDTO.builder()
-                .storageRate(doc.getCharges().getStorageRate())
-                .subtotal(doc.getCharges().getSubtotal())
-                .taxRate(doc.getCharges().getTaxRate())
-                .tax(doc.getCharges().getTax())
-                .totalAmount(doc.getCharges().getTotalAmount())
-                .build())
-            .status(doc.getStatus())
-            .issuedDate(doc.getIssuedDate())
-            .dueDate(doc.getDueDate())
-            .paidDate(doc.getPaidDate())
-            .build();
-    }
-
-    /**
-     * Convert PaymentDocument to PaymentDTO
-     */
-    private PaymentDTO mapPaymentToDTO(PaymentDocument doc) {
-        return PaymentDTO.builder()
-            .id(doc.getId())
-            .invoiceId(doc.getInvoiceId())
-            .amount(doc.getAmount())
-            .status(doc.getStatus())
-            .transactionDate(doc.getTransactionDate())
-            .stripeChargeId(doc.getStripeChargeId())
-            .failureReason(doc.getFailureReason())
-            .build();
-    }
-
-    /**
      * Fetch user email from Auth Service
      * Called when creating invoice to ensure email is available for payment notifications
      */
     private String getUserEmailFromAuthService(String userId) {
         try {
             log.debug("📧 Fetching user email from Auth Service for user: {}", userId);
-            String url = "http://localhost:8081/api/v1/users/" + userId;
+            AuthUserResponse response = authServiceClient.getUserById(userId);
 
-            Map<String, Object> response = restTemplate.getForObject(url, Map.class);
-
-            if (response != null && response.containsKey("data")) {
-                Map<String, Object> data = (Map<String, Object>) response.get("data");
-                String email = (String) data.get("email");
+            if (response != null && response.data() != null) {
+                String email = response.data().email();
 
                 if (email != null && !email.isEmpty()) {
                     log.info("✅ User email fetched from Auth Service: {}", email);

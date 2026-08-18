@@ -6,10 +6,17 @@ import com.example.Billing.infrastructure.persistence.document.StorageUsageLedge
 import org.mapstruct.Mapper;
 import org.mapstruct.MappingConstants;
 
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+
 /**
  * MapStruct mapper for StorageUsageLedger Entity ↔ DTO conversions.
  */
-@Mapper(componentModel = MappingConstants.ComponentModel.SPRING)
+@Mapper(
+    componentModel = MappingConstants.ComponentModel.SPRING,
+    unmappedTargetPolicy = org.mapstruct.ReportingPolicy.IGNORE
+)
 public interface StorageUsageMapper {
 
     /**
@@ -21,4 +28,8 @@ public interface StorageUsageMapper {
      * Convert StorageUsageRequest DTO to StorageUsageLedgerDocument
      */
     StorageUsageLedgerDocument toDocument(StorageUsageRequest request);
+
+    default LocalDateTime map(Instant value) {
+        return value == null ? null : LocalDateTime.ofInstant(value, ZoneId.of("UTC"));
+    }
 }

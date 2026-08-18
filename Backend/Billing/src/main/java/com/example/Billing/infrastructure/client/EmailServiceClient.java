@@ -16,18 +16,15 @@ import lombok.NoArgsConstructor;
 )
 public interface EmailServiceClient {
 
-    @Data
     @Builder
-    @NoArgsConstructor
-    @AllArgsConstructor
-    class EmailSendRequest {
-        private String invoiceId;
-        private String userId;
-        private String userEmail;
-        private Double amount;
-        private byte[] pdfContent;
-        private String emailType;
-    }
+    record EmailSendRequest(
+        String invoiceId,
+        String userId,
+        String userEmail,
+        Double amount,
+        byte[] pdfContent,
+        String emailType
+    ) {}
 
     @PostMapping(
             value = "/api/v1/email/invoices/paid",

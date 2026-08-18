@@ -2,13 +2,11 @@ package com.example.Billing.application.service;
 
 import com.example.Billing.api.dto.response.StorageUsageLedgerDTO;
 import com.example.Billing.api.dto.response.InvoiceDTO;
+import com.example.Billing.application.service.interfaces.IBillingService;
 import com.example.Billing.infrastructure.feign.GalleryServiceClient;
 import com.example.Billing.infrastructure.event.InvoiceCreatedEvent;
 import com.example.Billing.shared.util.BillingCalculator;
-import lombok.AllArgsConstructor;
 import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -39,7 +37,7 @@ import java.util.Set;
 public class InvoiceGenerationService {
 
     private final GalleryServiceClient galleryServiceClient;
-    private final BillingService billingService;
+    private final IBillingService billingService;
     private final BillingCalculator billingCalculator;
     private final ApplicationEventPublisher eventPublisher;
 
@@ -58,7 +56,7 @@ public class InvoiceGenerationService {
 
             log.info("✅ ===== MONTHLY INVOICE GENERATION COMPLETED =====");
             log.info("📈 Summary: Generated {} invoices, {} failures",
-                result.getGeneratedCount(), result.getFailureCount());
+                result.generatedCount(), result.failureCount());
 
         } catch (Exception e) {
             log.error("❌ CRITICAL: Monthly invoice generation job failed", e);
@@ -88,35 +86,36 @@ public class InvoiceGenerationService {
         // Step 3: Get unique users from ledger entries
         Set<String> userIds = new HashSet<>();
         for (StorageUsageLedgerDTO entry : ledgerEntries) {
-            if (entry.getUserId() != null) {
-                userIds.add(entry.getUserId());
+            if (entry.userId() != null) {
+                userIds.add(entry.userId());
             }
         }
 
         log.info("👥 Found {} unique users with storage usage", userIds.size());
 
         // Step 4: Generate invoices for each user
-        InvoiceGenerationResult result = InvoiceGenerationResult.builder()
-            .generatedAt(Instant.now())
-            .generatedCount(0)
-            .failureCount(0)
-            .billingPeriodStart(startOfPreviousMonth)
-            .billingPeriodEnd(endOfPreviousMonth)
-            .build();
+        int generatedCount = 0;
+        int failureCount = 0;
 
         for (String userId : userIds) {
             try {
                 generateInvoiceForUser(userId, startOfPreviousMonth, endOfPreviousMonth);
-                result.setGeneratedCount(result.getGeneratedCount() + 1);
+                generatedCount++;
                 log.debug("✅ Invoice generated for user: {}", userId);
 
             } catch (Exception e) {
                 log.error("❌ Failed to generate invoice for user: {}", userId, e);
-                result.setFailureCount(result.getFailureCount() + 1);
+                failureCount++;
             }
         }
 
-        return result;
+        return InvoiceGenerationResult.builder()
+            .generatedAt(Instant.now())
+            .generatedCount(generatedCount)
+            .failureCount(failureCount)
+            .billingPeriodStart(startOfPreviousMonth)
+            .billingPeriodEnd(endOfPreviousMonth)
+            .build();
     }
 
     /**
@@ -141,10 +140,10 @@ public class InvoiceGenerationService {
         // ✨ NEW: Publish event for listeners (notification service sends email)
         eventPublisher.publishEvent(new InvoiceCreatedEvent(
             this,
-            createdInvoice.getId(),
+            createdInvoice.id(),
             userId,
-            createdInvoice.getInvoiceId(),
-            createdInvoice.getCharges().getTotalAmount()
+            createdInvoice.invoiceId(),
+            createdInvoice.charges().totalAmount()
         ));
         log.debug("📢 Published InvoiceCreatedEvent for invoice: {}", invoiceId);
     }
@@ -182,50 +181,51 @@ public class InvoiceGenerationService {
         // Get unique users from ledger entries
         Set<String> userIds = new HashSet<>();
         for (StorageUsageLedgerDTO entry : ledgerEntries) {
-            if (entry.getUserId() != null) {
-                userIds.add(entry.getUserId());
+            if (entry.userId() != null) {
+                userIds.add(entry.userId());
             }
         }
 
         log.info("👥 Found {} unique users with storage usage in current month", userIds.size());
 
         // Generate invoices for each user
-        InvoiceGenerationResult result = InvoiceGenerationResult.builder()
-            .generatedAt(java.time.Instant.now())
-            .generatedCount(0)
-            .failureCount(0)
-            .billingPeriodStart(startOfCurrentMonth)
-            .billingPeriodEnd(endOfCurrentMonth)
-            .build();
+        int generatedCount = 0;
+        int failureCount = 0;
 
         for (String userId : userIds) {
             try {
                 String invoiceId = billingCalculator.generateInvoiceId(invoiceSequence++);
                 InvoiceDTO createdInvoice = billingService.createInvoice(userId, invoiceId, startOfCurrentMonth, endOfCurrentMonth);
-                result.setGeneratedCount(result.getGeneratedCount() + 1);
+                generatedCount++;
                 log.debug("✅ Invoice generated for user: {}", userId);
 
                 // ✨ NEW: Publish event for listeners (send notification email)
                 eventPublisher.publishEvent(new InvoiceCreatedEvent(
                     this,
-                    createdInvoice.getId(),
+                    createdInvoice.id(),
                     userId,
-                    createdInvoice.getInvoiceId(),
-                    createdInvoice.getCharges().getTotalAmount()
+                    createdInvoice.invoiceId(),
+                    createdInvoice.charges().totalAmount()
                 ));
                 log.debug("📢 Published InvoiceCreatedEvent for invoice: {}", invoiceId);
 
             } catch (Exception e) {
                 log.error("❌ Failed to generate invoice for user: {}", userId, e);
-                result.setFailureCount(result.getFailureCount() + 1);
+                failureCount++;
             }
         }
 
         log.info("✅ ===== CURRENT MONTH INVOICE GENERATION COMPLETED =====");
         log.info("📈 Summary: Generated {} invoices, {} failures",
-            result.getGeneratedCount(), result.getFailureCount());
+            generatedCount, failureCount);
 
-        return result;
+        return InvoiceGenerationResult.builder()
+            .generatedAt(java.time.Instant.now())
+            .generatedCount(generatedCount)
+            .failureCount(failureCount)
+            .billingPeriodStart(startOfCurrentMonth)
+            .billingPeriodEnd(endOfCurrentMonth)
+            .build();
     }
 
     /**
@@ -242,15 +242,12 @@ public class InvoiceGenerationService {
     /**
      * Result DTO for invoice generation job
      */
-    @Data
-    @NoArgsConstructor
-    @AllArgsConstructor
     @Builder
-    public static class InvoiceGenerationResult {
-        private Instant generatedAt;
-        private Integer generatedCount;
-        private Integer failureCount;
-        private Instant billingPeriodStart;
-        private Instant billingPeriodEnd;
-    }
+    public record InvoiceGenerationResult(
+        Instant generatedAt,
+        Integer generatedCount,
+        Integer failureCount,
+        Instant billingPeriodStart,
+        Instant billingPeriodEnd
+    ) {}
 }

@@ -5,7 +5,7 @@ import com.stripe.model.Event;
 import com.stripe.model.PaymentIntent;
 import com.stripe.model.StripeObject;
 import com.stripe.net.Webhook;
-import com.example.Billing.application.service.StripePaymentService;
+import com.example.Billing.application.service.interfaces.IStripePaymentService;
 import com.example.Billing.infrastructure.persistence.repository.InvoiceRepository;
 import com.example.Billing.infrastructure.persistence.document.InvoiceDocument;
 import io.swagger.v3.oas.annotations.Operation;
@@ -21,7 +21,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import jakarta.servlet.http.HttpServletRequest;
+import com.example.Billing.api.resolver.CurrentUserId;
+import com.example.Billing.shared.exception.ResourceNotFoundException;
+
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
@@ -38,9 +40,8 @@ import java.util.Optional;
 @Tag(name = "Stripe Payments", description = "Payment processing and Stripe integration")
 public class StripePaymentController {
 
-    private final StripePaymentService stripePaymentService;
+    private final IStripePaymentService stripePaymentService;
     private final InvoiceRepository invoiceRepository;
-    private final HttpServletRequest request;
 
     @Value("${stripe.webhook.secret:}")
     private String webhookSecret;
@@ -52,47 +53,33 @@ public class StripePaymentController {
     @PostMapping("/{invoiceId}/checkout")
     @Operation(summary = "Create payment intent for invoice")
     public ResponseEntity<CheckoutSessionResponse> createCheckoutSession(
-            @PathVariable String invoiceId) {
+            @PathVariable String invoiceId,
+            @CurrentUserId String userId) throws Exception {
         log.info("💳 Creating checkout session for invoice: {}", invoiceId);
 
-        try {
-            String userId = request.getHeader("X-User-Id");
-            if (userId == null || userId.isEmpty()) {
-                throw new IllegalArgumentException("X-User-Id header missing");
-            }
+        // Get invoice
+        InvoiceDocument invoice = invoiceRepository.findByInvoiceId(invoiceId)
+            .orElseThrow(() -> new ResourceNotFoundException("Invoice not found"));
 
-            // Get invoice
-            Optional<InvoiceDocument> invoiceOpt = invoiceRepository.findByInvoiceId(invoiceId);
-            if (invoiceOpt.isEmpty()) {
-                return ResponseEntity.notFound().build();
-            }
-
-            InvoiceDocument invoice = invoiceOpt.get();
-
-            // Verify user owns this invoice
-            if (!invoice.getUserId().equals(userId)) {
-                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
-            }
-
-            // Create payment intent
-            Double amount = invoice.getCharges().getTotalAmount();
-            String clientSecret = stripePaymentService.createPaymentIntent(
-                userId, invoiceId, amount
-            );
-
-            log.info("✅ Checkout session created for invoice: {}", invoiceId);
-
-            return ResponseEntity.ok(CheckoutSessionResponse.builder()
-                .invoiceId(invoiceId)
-                .clientSecret(clientSecret)
-                .amount(amount)
-                .currency("usd")
-                .build());
-
-        } catch (Exception e) {
-            log.error("❌ Error creating checkout session", e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        // Verify user owns this invoice
+        if (!invoice.getUserId().equals(userId)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
+
+        // Create payment intent
+        Double amount = invoice.getCharges().getTotalAmount();
+        String clientSecret = stripePaymentService.createPaymentIntent(
+            userId, invoiceId, amount
+        );
+
+        log.info("✅ Checkout session created for invoice: {}", invoiceId);
+
+        return ResponseEntity.ok(CheckoutSessionResponse.builder()
+            .invoiceId(invoiceId)
+            .clientSecret(clientSecret)
+            .amount(amount)
+            .currency("usd")
+            .build());
     }
 
     /**
@@ -161,24 +148,14 @@ public class StripePaymentController {
             @PathVariable String invoiceId) {
         log.info("📊 Getting payment status for invoice: {}", invoiceId);
 
-        try {
-            Optional<InvoiceDocument> invoiceOpt = invoiceRepository.findByInvoiceId(invoiceId);
-            if (invoiceOpt.isEmpty()) {
-                return ResponseEntity.notFound().build();
-            }
+        InvoiceDocument invoice = invoiceRepository.findByInvoiceId(invoiceId)
+            .orElseThrow(() -> new ResourceNotFoundException("Invoice not found"));
 
-            InvoiceDocument invoice = invoiceOpt.get();
-
-            return ResponseEntity.ok(PaymentStatusResponse.builder()
-                .invoiceId(invoiceId)
-                .status(invoice.getStatus())  // PENDING, PAID, OVERDUE
-                .paidDate(invoice.getPaidDate())
-                .build());
-
-        } catch (Exception e) {
-            log.error("❌ Error getting payment status", e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
-        }
+        return ResponseEntity.ok(PaymentStatusResponse.builder()
+            .invoiceId(invoiceId)
+            .status(invoice.getStatus().name())  // PENDING, PAID, OVERDUE
+            .paidDate(invoice.getPaidDate())
+            .build());
     }
 
     /**
@@ -189,51 +166,36 @@ public class StripePaymentController {
     @PostMapping("/{invoiceId}/sync")
     @Operation(summary = "Sync payment status from Stripe and update database")
     public ResponseEntity<PaymentStatusResponse> syncPaymentStatus(
-            @PathVariable String invoiceId) {
+            @PathVariable String invoiceId) throws Exception {
         log.info("🔄 Syncing payment status with Stripe for invoice: {}", invoiceId);
 
-        try {
-            Optional<InvoiceDocument> invoiceOpt = invoiceRepository.findByInvoiceId(invoiceId);
-            if (invoiceOpt.isEmpty()) {
-                log.warn("⚠️ Invoice not found: {}", invoiceId);
-                return ResponseEntity.notFound().build();
-            }
+        InvoiceDocument invoice = invoiceRepository.findByInvoiceId(invoiceId)
+            .orElseThrow(() -> new ResourceNotFoundException("Invoice not found: " + invoiceId));
 
-            InvoiceDocument invoice = invoiceOpt.get();
-
-            // If no payment intent ID, return current status
-            if (invoice.getPaymentIntentId() == null || invoice.getPaymentIntentId().isEmpty()) {
-                log.warn("⚠️ No payment intent ID for invoice: {}", invoiceId);
-                return ResponseEntity.ok(PaymentStatusResponse.builder()
-                    .invoiceId(invoiceId)
-                    .status(invoice.getStatus())
-                    .paidDate(invoice.getPaidDate())
-                    .build());
-            }
-
-            // Call Stripe service to sync status
-            stripePaymentService.syncPaymentStatusWithStripe(invoiceId, invoice.getPaymentIntentId());
-
-            // Re-fetch invoice to get updated status
-            invoiceOpt = invoiceRepository.findByInvoiceId(invoiceId);
-            if (invoiceOpt.isEmpty()) {
-                return ResponseEntity.notFound().build();
-            }
-
-            invoice = invoiceOpt.get();
-
-            log.info("✅ Payment status synced: {}", invoice.getStatus());
-
+        // If no payment intent ID, return current status
+        if (invoice.getPaymentIntentId() == null || invoice.getPaymentIntentId().isEmpty()) {
+            log.warn("⚠️ No payment intent ID for invoice: {}", invoiceId);
             return ResponseEntity.ok(PaymentStatusResponse.builder()
                 .invoiceId(invoiceId)
-                .status(invoice.getStatus())
+                .status(invoice.getStatus().name())
                 .paidDate(invoice.getPaidDate())
                 .build());
-
-        } catch (Exception e) {
-            log.error("❌ Error syncing payment status", e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
+
+        // Call Stripe service to sync status
+        stripePaymentService.syncPaymentStatusWithStripe(invoiceId, invoice.getPaymentIntentId());
+
+        // Re-fetch invoice to get updated status
+        invoice = invoiceRepository.findByInvoiceId(invoiceId)
+            .orElseThrow(() -> new ResourceNotFoundException("Invoice not found"));
+
+        log.info("✅ Payment status synced: {}", invoice.getStatus());
+
+        return ResponseEntity.ok(PaymentStatusResponse.builder()
+            .invoiceId(invoiceId)
+            .status(invoice.getStatus().name())
+            .paidDate(invoice.getPaidDate())
+            .build());
     }
 
     /**
@@ -259,34 +221,25 @@ public class StripePaymentController {
     /**
      * Response DTOs
      */
-    @Data
-    @NoArgsConstructor
-    @AllArgsConstructor
     @Builder
-    public static class CheckoutSessionResponse {
-        private String invoiceId;
-        private String clientSecret;
-        private Double amount;
-        private String currency;
-    }
+    public record CheckoutSessionResponse(
+        String invoiceId,
+        String clientSecret,
+        Double amount,
+        String currency
+    ) {}
 
-    @Data
-    @NoArgsConstructor
-    @AllArgsConstructor
     @Builder
-    public static class PaymentStatusResponse {
-        private String invoiceId;
-        private String status;      // PENDING, PAID, OVERDUE
-        private Instant paidDate;
-    }
+    public record PaymentStatusResponse(
+        String invoiceId,
+        String status,
+        Instant paidDate
+    ) {}
 
-    @Data
-    @NoArgsConstructor
-    @AllArgsConstructor
     @Builder
-    public static class ErrorResponse {
-        private String error;
-        private String message;
-        private Instant timestamp;
-    }
+    public record ErrorResponse(
+        String error,
+        String message,
+        Instant timestamp
+    ) {}
 }

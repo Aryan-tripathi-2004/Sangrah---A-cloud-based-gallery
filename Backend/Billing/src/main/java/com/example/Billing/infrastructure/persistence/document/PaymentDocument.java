@@ -1,16 +1,20 @@
 package com.example.Billing.infrastructure.persistence.document;
 
+import com.example.Billing.shared.enums.PaymentStatus;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
-import lombok.Data;
+import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.Setter;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Version;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.index.Indexed;
 
 import java.time.Instant;
 
-@Data
+@Getter
+@Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
@@ -19,6 +23,9 @@ public class PaymentDocument {
 
     @Id
     private String id;
+
+    @Version
+    private Long version;
 
     @Indexed
     private String userId;
@@ -33,7 +40,7 @@ public class PaymentDocument {
     private String stripeChargeId;
 
     @Indexed
-    private String status;  // SUCCESS, FAILED, PENDING
+    private PaymentStatus status;  // SUCCESS, FAILED, PENDING
 
     private String failureReason;
     private Integer retryCount;
@@ -42,7 +49,8 @@ public class PaymentDocument {
     private Instant transactionDate;
     private Instant createdAt;
 
-    @Data
+    @Getter
+    @Setter
     @NoArgsConstructor
     @AllArgsConstructor
     @Builder

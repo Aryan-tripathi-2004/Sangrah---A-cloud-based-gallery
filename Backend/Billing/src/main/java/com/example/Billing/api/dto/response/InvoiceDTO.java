@@ -1,61 +1,44 @@
 package com.example.Billing.api.dto.response;
 
-import lombok.AllArgsConstructor;
+import com.example.Billing.shared.enums.InvoiceStatus;
 import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
 
 import java.time.Instant;
 
-@Data
-@NoArgsConstructor
-@AllArgsConstructor
 @Builder
-public class InvoiceDTO {
-
-    private String id;
-    private String invoiceId;
-    private String userId;
-
-    private BillingPeriodDTO billingPeriod;
-    private StorageMetricsDTO storageMetrics;
-    private ChargesDTO charges;
-
-    private String status;  // PENDING, PAID, OVERDUE
-    private Instant issuedDate;
-    private Instant dueDate;
-    private Instant paidDate;
-
-    @Data
-    @NoArgsConstructor
-    @AllArgsConstructor
+public record InvoiceDTO(
+    String id,
+    String invoiceId,
+    String userId,
+    BillingPeriodDTO billingPeriod,
+    StorageMetricsDTO storageMetrics,
+    ChargesDTO charges,
+    InvoiceStatus status,
+    Instant issuedDate,
+    Instant dueDate,
+    Instant paidDate
+) {
     @Builder
-    public static class BillingPeriodDTO {
-        private Instant startDate;
-        private Instant endDate;
-    }
+    public record BillingPeriodDTO(
+        Instant startDate,
+        Instant endDate
+    ) {}
 
-    @Data
-    @NoArgsConstructor
-    @AllArgsConstructor
     @Builder
-    public static class StorageMetricsDTO {
-        private Double imageGBDays;
-        private Double imageCost;
-        private Double videoGBDays;
-        private Double videoCost;
-        private Double totalGBDays;
-    }
+    public record StorageMetricsDTO(
+        Double imageGBDays,
+        Double imageCost,
+        Double videoGBDays,
+        Double videoCost,
+        Double totalGBDays
+    ) {}
 
-    @Data
-    @NoArgsConstructor
-    @AllArgsConstructor
     @Builder
-    public static class ChargesDTO {
-        private Double storageRate;
-        private Double subtotal;
-        private Double taxRate;
-        private Double tax;
-        private Double totalAmount;
-    }
+    public record ChargesDTO(
+        Double storageRate,
+        Double subtotal,
+        Double taxRate,
+        Double tax,
+        Double totalAmount
+    ) {}
 }

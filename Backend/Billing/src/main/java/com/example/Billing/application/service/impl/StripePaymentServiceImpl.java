@@ -1,4 +1,4 @@
-package com.example.Billing.application.service;
+package com.example.Billing.application.service.impl;
 
 import com.stripe.Stripe;
 import com.stripe.exception.StripeException;
@@ -6,6 +6,7 @@ import com.stripe.model.Customer;
 import com.stripe.model.PaymentIntent;
 import com.stripe.param.CustomerCreateParams;
 import com.stripe.param.PaymentIntentCreateParams;
+import com.example.Billing.application.service.interfaces.IStripePaymentService;
 import com.example.Billing.infrastructure.persistence.document.InvoiceDocument;
 import com.example.Billing.infrastructure.persistence.document.PaymentDocument;
 import com.example.Billing.infrastructure.persistence.document.UserBillingSettingsDocument;
@@ -14,6 +15,8 @@ import com.example.Billing.infrastructure.persistence.repository.PaymentReposito
 import com.example.Billing.infrastructure.persistence.repository.UserBillingSettingsRepository;
 import com.example.Billing.infrastructure.event.InvoicePaidEvent;
 import com.example.Billing.infrastructure.event.PaymentFailedEvent;
+import com.example.Billing.shared.enums.InvoiceStatus;
+import com.example.Billing.shared.enums.PaymentStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -38,7 +41,7 @@ import java.util.Optional;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class StripePaymentService {
+public class StripePaymentServiceImpl implements IStripePaymentService {
 
     private final InvoiceRepository invoiceRepository;
     private final PaymentRepository paymentRepository;
@@ -134,7 +137,7 @@ public class StripePaymentService {
             InvoiceDocument invoice = invoices.get(0);
 
             // Mark invoice as PAID
-            invoice.setStatus("PAID");
+            invoice.setStatus(InvoiceStatus.PAID);
             invoice.setPaidDate(Instant.now());
             invoice.setUpdatedAt(Instant.now());
             invoiceRepository.save(invoice);
@@ -148,7 +151,7 @@ public class StripePaymentService {
                 .userId(invoice.getUserId())
                 .invoiceId(invoice.getId())
                 .amount(amount)
-                .status("SUCCESS")
+                .status(PaymentStatus.SUCCESS)
                 .stripePaymentIntentId(paymentIntentId)
                 .stripeChargeId(null)  // Charge ID can be queried from Stripe if needed using paymentIntentId
                 .transactionDate(Instant.now())
@@ -200,7 +203,7 @@ public class StripePaymentService {
                 .userId(invoice.getUserId())
                 .invoiceId(invoice.getId())
                 .amount(amount)
-                .status("FAILED")
+                .status(PaymentStatus.FAILED)
                 .stripePaymentIntentId(paymentIntentId)
                 .failureReason(failureReason)
                 .retryCount(0)
@@ -237,7 +240,7 @@ public class StripePaymentService {
 
         try {
             List<PaymentDocument> failedPayments = paymentRepository
-                .findByStatusAndNextRetryDateLessThanEqualOrderByNextRetryDateAsc("FAILED", Instant.now());
+                .findByStatusAndNextRetryDateLessThanEqualOrderByNextRetryDateAsc(PaymentStatus.FAILED, Instant.now());
 
             log.info("📊 Found {} payments due for retry", failedPayments.size());
 
@@ -254,7 +257,7 @@ public class StripePaymentService {
                         InvoiceDocument invoice = invoiceOpt.get();
 
                         // Only retry PENDING invoices
-                        if ("PENDING".equals(invoice.getStatus())) {
+                        if (InvoiceStatus.PENDING.equals(invoice.getStatus())) {
                             log.info("🔄 Retrying payment for invoice: {}", invoice.getInvoiceId());
 
                             // Create new payment intent
@@ -308,7 +311,7 @@ public class StripePaymentService {
                 log.info("✅ Payment intent succeeded! Updating invoice: {}", invoiceId);
 
                 // Mark invoice as PAID
-                invoice.setStatus("PAID");
+                invoice.setStatus(InvoiceStatus.PAID);
                 invoice.setPaidDate(Instant.now());
                 invoice.setUpdatedAt(Instant.now());
                 invoiceRepository.save(invoice);
@@ -324,7 +327,7 @@ public class StripePaymentService {
                         .userId(invoice.getUserId())
                         .invoiceId(invoice.getId())
                         .amount(amount)
-                        .status("SUCCESS")
+                        .status(PaymentStatus.SUCCESS)
                         .stripePaymentIntentId(paymentIntentId)
                         .stripeChargeId(null)
                         .transactionDate(Instant.now())

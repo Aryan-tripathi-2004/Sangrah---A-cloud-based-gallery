@@ -1,7 +1,10 @@
 package com.example.Billing.infrastructure.persistence.document;
 
+import com.example.Billing.shared.enums.MediaDomain;
 import lombok.*;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Version;
+import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
@@ -15,8 +18,12 @@ import java.time.Instant;
 public class StorageUsageLedgerDocument {
     @Id
     private String id;
+
+    @Version
+    private Long version;
     private String userId;
-    private String domain;
+    @Indexed
+    private MediaDomain domain;
     private String domainRefId;
     private long sizeBytes;
     private Instant startAt;
