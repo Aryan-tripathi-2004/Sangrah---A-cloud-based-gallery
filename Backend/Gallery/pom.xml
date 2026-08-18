@@ -120,13 +120,19 @@
 				<configuration>
 					<annotationProcessorPaths>
 						<path>
-							<groupId>org.mapstruct</groupId>
-							<artifactId>mapstruct-processor</artifactId>
-							<version>${mapstruct.version}</version>
+							<groupId>org.projectlombok</groupId>
+							<artifactId>lombok</artifactId>
+							<!-- Optional: Add version if Maven warns, but spring-boot-dependencies manages it -->
 						</path>
 						<path>
 							<groupId>org.projectlombok</groupId>
-							<artifactId>lombok</artifactId>
+							<artifactId>lombok-mapstruct-binding</artifactId>
+							<version>0.2.0</version>
+						</path>
+						<path>
+							<groupId>org.mapstruct</groupId>
+							<artifactId>mapstruct-processor</artifactId>
+							<version>${mapstruct.version}</version>
 						</path>
 					</annotationProcessorPaths>
 				</configuration>
