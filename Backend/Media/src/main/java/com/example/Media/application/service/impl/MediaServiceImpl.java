@@ -1,10 +1,13 @@
-package com.example.Media.application.service;
+package com.example.Media.application.service.impl;
 
+import com.example.Media.application.service.interfaces.IMediaService;
 import com.example.Media.infrastructure.persistence.document.MediaDocument;
 import com.example.Media.infrastructure.persistence.document.StorageUsageLedgerDocument;
 import com.example.Media.infrastructure.persistence.repository.MediaRepository;
 import com.example.Media.infrastructure.persistence.repository.StorageUsageLedgerRepository;
 import com.example.Media.infrastructure.storage.StorageProvider;
+import com.example.Media.shared.enums.MediaDomain;
+import com.example.Media.shared.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.tika.Tika;
@@ -20,10 +23,24 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * Concrete implementation of {@link IMediaService}.
+ *
+ * <p>All business logic has been moved verbatim from the former {@code MediaService}
+ * class. The only structural changes are:
+ * <ul>
+ *   <li>This class now {@code implements IMediaService}, satisfying Dependency Inversion.</li>
+ *   <li>{@code String domain} parameters are replaced with the type-safe {@link MediaDomain}
+ *       enum to align with the updated document and repository contracts.</li>
+ *   <li>A new {@link #getStorageLedger} method has been added to decouple the controller
+ *       from the {@link StorageUsageLedgerRepository}.</li>
+ * </ul>
+ * </p>
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class MediaService {
+public class MediaServiceImpl implements IMediaService {
 
     private final MediaRepository mediaRepository;
     private final StorageUsageLedgerRepository ledgerRepository;
@@ -33,7 +50,8 @@ public class MediaService {
     /**
      * Upload a file with deduplication support
      */
-    public MediaDocument uploadMedia(String userId, String domain, String entityRefId, MultipartFile file) {
+    @Override
+    public MediaDocument uploadMedia(String userId, MediaDomain domain, String entityRefId, MultipartFile file) {
         try {
             log.info("📤 [Media Upload] Starting upload for user: {} | domain: {} | file: {}",
                 userId, domain, file.getOriginalFilename());
@@ -104,6 +122,7 @@ public class MediaService {
     /**
      * Retrieve a file by media ID
      */
+    @Override
     public Resource getMediaFile(String mediaId) {
         try {
             log.info("📥 [Media Download] Fetching file for mediaId: {}", mediaId);
@@ -111,7 +130,7 @@ public class MediaService {
             MediaDocument mediaDoc = mediaRepository.findByIdAndDeletedAtIsNull(mediaId)
                     .orElseThrow(() -> {
                         log.error("❌ [Media Download] Media not found or deleted: {}", mediaId);
-                        return new RuntimeException("Media not found or deleted: " + mediaId);
+                        return new ResourceNotFoundException("MediaDocument", "id", mediaId);
                     });
 
             log.info("📄 [Media Download] Found media: {} | StorageKey: {}", mediaId, mediaDoc.getStorageKey());
@@ -126,19 +145,21 @@ public class MediaService {
     /**
      * Get media details by ID
      */
+    @Override
     public MediaDocument getMediaDetails(String mediaId) {
         log.info("📋 [Media Details] Fetching details for mediaId: {}", mediaId);
 
         return mediaRepository.findByIdAndDeletedAtIsNull(mediaId)
                 .orElseThrow(() -> {
                     log.error("❌ [Media Details] Media not found: {}", mediaId);
-                    return new RuntimeException("Media not found: " + mediaId);
+                    return new ResourceNotFoundException("MediaDocument", "id", mediaId);
                 });
     }
 
     /**
      * Soft delete a media file
      */
+    @Override
     public void deleteMedia(String mediaId) {
         try {
             log.info("🗑️  [Media Delete] Soft deleting mediaId: {}", mediaId);
@@ -146,7 +167,7 @@ public class MediaService {
             MediaDocument mediaDoc = mediaRepository.findByIdAndDeletedAtIsNull(mediaId)
                     .orElseThrow(() -> {
                         log.error("❌ [Media Delete] Media not found or already deleted: {}", mediaId);
-                        return new RuntimeException("Media not found or already deleted: " + mediaId);
+                        return new ResourceNotFoundException("MediaDocument", "id", mediaId);
                     });
 
             // Mark as deleted
@@ -176,7 +197,8 @@ public class MediaService {
     /**
      * List media files for a user in a domain
      */
-    public List<MediaDocument> listMediaByUserAndDomain(String userId, String domain) {
+    @Override
+    public List<MediaDocument> listMediaByUserAndDomain(String userId, MediaDomain domain) {
         log.debug("📋 [Media List] Listing media for user: {} | domain: {}", userId, domain);
 
         List<MediaDocument> media = mediaRepository.findByUserIdAndDomainAndDeletedAtIsNull(userId, domain);
@@ -188,6 +210,7 @@ public class MediaService {
     /**
      * List all media for a user across all domains
      */
+    @Override
     public List<MediaDocument> listMediaByUser(String userId) {
         log.debug("📋 [Media List] Listing all media for user: {}", userId);
 
@@ -200,11 +223,25 @@ public class MediaService {
     /**
      * Get storage usage stats for a user
      */
+    @Override
     public long getStorageUsageBytes(String userId) {
         List<MediaDocument> userMedia = mediaRepository.findByUserIdAndDeletedAtIsNull(userId);
         long totalBytes = userMedia.stream().mapToLong(m -> m.getSizeBytes() != null ? m.getSizeBytes() : 0L).sum();
         log.debug("📊 [Storage Usage] User {} is using {} bytes", userId, totalBytes);
         return totalBytes;
+    }
+
+    /**
+     * Query the storage usage ledger for a user within a billing period.
+     */
+    @Override
+    public List<StorageUsageLedgerDocument> getStorageLedger(String userId, Instant start, Instant end) {
+        log.info("📊 [Storage Ledger] Querying ledger | user: {} | period: {} to {}", userId, start, end);
+
+        List<StorageUsageLedgerDocument> ledgerEntries = ledgerRepository.findByUserIdAndStartAtBetween(userId, start, end);
+        log.info("📋 [Storage Ledger] Found {} ledger entries", ledgerEntries.size());
+
+        return ledgerEntries;
     }
 
     /**

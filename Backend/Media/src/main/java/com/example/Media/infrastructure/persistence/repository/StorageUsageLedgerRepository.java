@@ -1,6 +1,7 @@
 package com.example.Media.infrastructure.persistence.repository;
 
 import com.example.Media.infrastructure.persistence.document.StorageUsageLedgerDocument;
+import com.example.Media.shared.enums.MediaDomain;
 import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.stereotype.Repository;
 
@@ -14,7 +15,7 @@ public interface StorageUsageLedgerRepository extends MongoRepository<StorageUsa
     List<StorageUsageLedgerDocument> findByUserIdAndStartAtBetween(String userId, Instant startDate, Instant endDate);
 
     // Find ledger entries for a user and domain in a date range
-    List<StorageUsageLedgerDocument> findByUserIdAndDomainAndStartAtBetween(String userId, String domain, Instant startDate, Instant endDate);
+    List<StorageUsageLedgerDocument> findByUserIdAndDomainAndStartAtBetween(String userId, MediaDomain domain, Instant startDate, Instant endDate);
 
     // Find all active ledger entries for a user
     List<StorageUsageLedgerDocument> findByUserIdAndEndAtIsNull(String userId);
@@ -26,5 +27,5 @@ public interface StorageUsageLedgerRepository extends MongoRepository<StorageUsa
     List<StorageUsageLedgerDocument> findByUserId(String userId);
 
     // Find entries by domain
-    List<StorageUsageLedgerDocument> findByDomain(String domain);
+    List<StorageUsageLedgerDocument> findByDomain(MediaDomain domain);
 }
