@@ -1,13 +1,12 @@
 package com.example.Auth.api.dto;
 
-import lombok.Builder;
-import lombok.Getter;
-
-@Getter
-@Builder
-public class UserDTO {
-    private String id;
-    private String email;
-    private String displayName;
-    private String createdAt;
-}
+/**
+ * Immutable representation of a user's public profile data.
+ * Used in API responses — never exposes passwordHash or internal fields.
+ */
+public record UserDTO(
+        String id,
+        String email,
+        String displayName,
+        String createdAt
+) {}
