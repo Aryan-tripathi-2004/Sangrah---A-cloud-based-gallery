@@ -1,46 +1,32 @@
 package com.example.Event.api.dto.response;
 
-import com.fasterxml.jackson.annotation.JsonFormat;
+import com.example.Event.shared.enums.ApprovalStatus;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-
-import java.time.LocalDateTime;
 
 /**
  * DTO for event media response.
  */
-@Data
-@Builder
-@NoArgsConstructor
-@AllArgsConstructor
+@JsonInclude(JsonInclude.Include.NON_NULL)
 @Schema(description = "Event media details")
-public class EventMediaResponse {
-
-    @Schema(description = "Media ID", example = "507f1f77bcf86cd799439011")
-    private String mediaId;
-
-    @Schema(description = "Event ID")
-    private String eventId;
-
-    @Schema(description = "Uploader user ID")
-    private String uploaderId;
-
-    @Schema(description = "Media type (PHOTO, VIDEO, DOCUMENT)", example = "PHOTO")
-    private String mediaType;
-
-    @Schema(description = "Original file name")
-    private String fileName;
-
-    @Schema(description = "File size in bytes")
-    private Long fileSize;
-
-    @Schema(description = "Cloud storage path")
-    private String storagePath;
-
-    @Schema(description = "Media upload timestamp")
-    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
-    private LocalDateTime createdAt;
+public record EventMediaResponse(
+        @Schema(description = "Media ID", example = "507f1f77bcf86cd799439011")
+        String mediaId,
+        String id,
+        @Schema(description = "Event ID")
+        String eventId,
+        @Schema(description = "Uploader user ID")
+        String uploaderId,
+        @Schema(description = "Media MIME type")
+        String mediaType,
+        @Schema(description = "Original file name")
+        String fileName,
+        @Schema(description = "File size in bytes")
+        Long fileSize,
+        @Schema(description = "Cloud storage path")
+        String storagePath,
+        @Schema(description = "Media upload timestamp")
+        String createdAt,
+        ApprovalStatus status
+) {
 }

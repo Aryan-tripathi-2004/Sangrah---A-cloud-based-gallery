@@ -1,8 +1,8 @@
 package com.example.Event.infrastructure.persistence.repository;
 
 import com.example.Event.infrastructure.persistence.document.EventMediaApprovalDocument;
+import com.example.Event.shared.enums.ApprovalStatus;
 import org.springframework.data.mongodb.repository.MongoRepository;
-import org.springframework.data.mongodb.repository.Query;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -24,10 +24,10 @@ public interface EventMediaApprovalRepository extends MongoRepository<EventMedia
     List<EventMediaApprovalDocument> findByEventIdAndUploaderUserId(String eventId, String uploaderUserId);
 
     // Find all PENDING approvals for an event (for moderation review)
-    List<EventMediaApprovalDocument> findByEventIdAndStatus(String eventId, String status);
+    List<EventMediaApprovalDocument> findByEventIdAndStatus(String eventId, ApprovalStatus status);
 
     // Find all media that was APPROVED in an event
-    List<EventMediaApprovalDocument> findByEventIdAndStatusOrderByCreatedAtDesc(String eventId, String status);
+    List<EventMediaApprovalDocument> findByEventIdAndStatusOrderByCreatedAtDesc(String eventId, ApprovalStatus status);
 
     // Delete approvals for a media (if media is deleted)
     void deleteByMediaId(String mediaId);

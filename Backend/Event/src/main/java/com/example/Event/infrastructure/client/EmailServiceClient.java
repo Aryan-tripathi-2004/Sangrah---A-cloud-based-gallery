@@ -1,13 +1,11 @@
 package com.example.Event.infrastructure.client;
 
+import com.example.Event.infrastructure.client.dto.EmailNotificationRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
-
-import java.util.HashMap;
-import java.util.Map;
 
 @Component
 @RequiredArgsConstructor
@@ -19,214 +17,100 @@ public class EmailServiceClient {
     @Value("${email-service.url:http://localhost:8086}")
     private String emailServiceUrl;
 
-    /**
-     * Send email when user is added as collaborator
-     */
     public void sendCollaboratorAddedEmail(String collaboratorEmail, String eventTitle, String ownerName) {
-        try {
-            log.info("📧 [Email Client] Sending collaborator added email to: {}", collaboratorEmail);
-
-            Map<String, Object> payload = new HashMap<>();
-            payload.put("userEmail", collaboratorEmail);
-            payload.put("type", "collaborator-added");
-            payload.put("subject", "Added as Collaborator: " + eventTitle);
-            payload.put("body", String.format("You have been added as a collaborator to the event '%s' by %s.", 
-                    eventTitle, ownerName != null ? ownerName : "the event owner"));
-
-            restTemplate.postForObject(
-                    emailServiceUrl + "/api/v1/email/notify",
-                    payload,
-                    String.class
-            );
-
-            log.info("✅ [Email Client] Collaborator added email sent successfully to: {}", collaboratorEmail);
-        } catch (Exception e) {
-            log.warn("⚠️ [Email Client] Failed to send collaborator added email: {}", e.getMessage());
-        }
+        send(new EmailNotificationRequest(
+                collaboratorEmail,
+                "collaborator-added",
+                "Added as Collaborator: " + eventTitle,
+                String.format(
+                        "You have been added as a collaborator to the event '%s' by %s.",
+                        eventTitle,
+                        ownerName != null ? ownerName : "the event owner")));
     }
 
-    /**
-     * Send email when access request is received
-     */
     public void sendAccessRequestEmail(String ownerEmail, String eventTitle, String requesterEmail) {
-        try {
-            log.info("📧 [Email Client] Sending access request email to: {}", ownerEmail);
-
-            Map<String, Object> payload = new HashMap<>();
-            payload.put("userEmail", ownerEmail);
-            payload.put("type", "access-request");
-            payload.put("subject", "New Access Request: " + eventTitle);
-            payload.put("body", String.format("User %s has requested access to your event '%s'. Please review the request in the application.", 
-                    requesterEmail, eventTitle));
-
-            restTemplate.postForObject(
-                    emailServiceUrl + "/api/v1/email/notify",
-                    payload,
-                    String.class
-            );
-
-            log.info("✅ [Email Client] Access request email sent successfully to: {}", ownerEmail);
-        } catch (Exception e) {
-            log.warn("⚠️ [Email Client] Failed to send access request email: {}", e.getMessage());
-        }
+        send(new EmailNotificationRequest(
+                ownerEmail,
+                "access-request",
+                "New Access Request: " + eventTitle,
+                String.format(
+                        "User %s has requested access to your event '%s'. Please review the request in the application.",
+                        requesterEmail,
+                        eventTitle)));
     }
 
-    /**
-     * Send email when access request is approved
-     */
     public void sendAccessApprovedEmail(String requesterEmail, String eventTitle) {
-        try {
-            log.info("📧 [Email Client] Sending access approved email to: {}", requesterEmail);
-
-            Map<String, Object> payload = new HashMap<>();
-            payload.put("userEmail", requesterEmail);
-            payload.put("type", "access-approved");
-            payload.put("subject", "Access Approved: " + eventTitle);
-            payload.put("body", "Your access request to the event '" + eventTitle + "' has been approved. You can now access the event and its resources.");
-
-            restTemplate.postForObject(
-                    emailServiceUrl + "/api/v1/email/notify",
-                    payload,
-                    String.class
-            );
-
-            log.info("✅ [Email Client] Access approved email sent successfully to: {}", requesterEmail);
-        } catch (Exception e) {
-            log.warn("⚠️ [Email Client] Failed to send access approved email: {}", e.getMessage());
-        }
+        send(new EmailNotificationRequest(
+                requesterEmail,
+                "access-approved",
+                "Access Approved: " + eventTitle,
+                "Your access request to the event '" + eventTitle + "' has been approved. You can now access the event and its resources."));
     }
 
-    /**
-     * Send email when media is approved
-     */
     public void sendMediaApprovedEmail(String uploaderEmail, String eventTitle, String mediaTitle) {
-        try {
-            log.info("📧 [Email Client] Sending media approved email to: {}", uploaderEmail);
-
-            Map<String, Object> payload = new HashMap<>();
-            payload.put("userEmail", uploaderEmail);
-            payload.put("type", "media-approved");
-            payload.put("subject", "Media Approved: " + mediaTitle);
-            payload.put("body", String.format("Your media '%s' for event '%s' has been approved and is now visible in the gallery.", 
-                    mediaTitle, eventTitle));
-
-            restTemplate.postForObject(
-                    emailServiceUrl + "/api/v1/email/notify",
-                    payload,
-                    String.class
-            );
-
-            log.info("✅ [Email Client] Media approved email sent successfully to: {}", uploaderEmail);
-        } catch (Exception e) {
-            log.warn("⚠️ [Email Client] Failed to send media approved email: {}", e.getMessage());
-        }
+        send(new EmailNotificationRequest(
+                uploaderEmail,
+                "media-approved",
+                "Media Approved: " + mediaTitle,
+                String.format(
+                        "Your media '%s' for event '%s' has been approved and is now visible in the gallery.",
+                        mediaTitle,
+                        eventTitle)));
     }
 
-    /**
-     * Send email when media is rejected
-     */
     public void sendMediaRejectedEmail(String uploaderEmail, String eventTitle, String mediaTitle, String rejectionReason) {
-        try {
-            log.info("📧 [Email Client] Sending media rejected email to: {}", uploaderEmail);
-
-            String resolvedReason = (rejectionReason == null || rejectionReason.isBlank())
+        String resolvedReason = rejectionReason == null || rejectionReason.isBlank()
                 ? "No specific reason was provided by the event owner"
                 : rejectionReason.trim();
 
-            Map<String, Object> payload = new HashMap<>();
-            payload.put("userEmail", uploaderEmail);
-            payload.put("type", "media-rejected");
-            payload.put("subject", "Media Rejected: " + mediaTitle);
-            payload.put("body", String.format("Your media '%s' for event '%s' was not approved. Reason: %s", 
-                mediaTitle, eventTitle, resolvedReason));
-
-            restTemplate.postForObject(
-                    emailServiceUrl + "/api/v1/email/notify",
-                    payload,
-                    String.class
-            );
-
-            log.info("✅ [Email Client] Media rejected email sent successfully to: {}", uploaderEmail);
-        } catch (Exception e) {
-            log.warn("⚠️ [Email Client] Failed to send media rejected email: {}", e.getMessage());
-        }
+        send(new EmailNotificationRequest(
+                uploaderEmail,
+                "media-rejected",
+                "Media Rejected: " + mediaTitle,
+                String.format(
+                        "Your media '%s' for event '%s' was not approved. Reason: %s",
+                        mediaTitle,
+                        eventTitle,
+                        resolvedReason)));
     }
 
-    /**
-     * Send email when collaborator is removed
-     */
     public void sendCollaboratorRemovedEmail(String collaboratorEmail, String eventTitle) {
-        try {
-            log.info("📧 [Email Client] Sending collaborator removed email to: {}", collaboratorEmail);
-
-            Map<String, Object> payload = new HashMap<>();
-            payload.put("userEmail", collaboratorEmail);
-            payload.put("type", "collaborator-removed");
-            payload.put("subject", "Removed from Collaborator Access: " + eventTitle);
-            payload.put("body", String.format(
-                "You have been removed as a collaborator from the event '%s'. You will no longer be able to access collaborator-only actions or content for this event. If you believe this was a mistake, please contact the event owner.",
-                eventTitle
-            ));
-
-            restTemplate.postForObject(
-                    emailServiceUrl + "/api/v1/email/notify",
-                    payload,
-                    String.class
-            );
-
-            log.info("✅ [Email Client] Collaborator removed email sent successfully to: {}", collaboratorEmail);
-        } catch (Exception e) {
-            log.warn("⚠️ [Email Client] Failed to send collaborator removed email: {}", e.getMessage());
-        }
+        send(new EmailNotificationRequest(
+                collaboratorEmail,
+                "collaborator-removed",
+                "Removed from Collaborator Access: " + eventTitle,
+                String.format(
+                        "You have been removed as a collaborator from the event '%s'. You will no longer be able to access collaborator-only actions or content for this event. If you believe this was a mistake, please contact the event owner.",
+                        eventTitle)));
     }
 
-    /**
-     * Send email when access request is rejected
-     */
     public void sendAccessRejectedEmail(String requesterEmail, String eventTitle, String rejectionReason) {
-        try {
-            log.info("📧 [Email Client] Sending access rejected email to: {}", requesterEmail);
-
-            Map<String, Object> payload = new HashMap<>();
-            payload.put("userEmail", requesterEmail);
-            payload.put("type", "access-rejected");
-            payload.put("subject", "Access Request Denied: " + eventTitle);
-            payload.put("body", "Your access request to the event '" + eventTitle + "' has been denied. Reason: " + (rejectionReason != null ? rejectionReason : "Request denied"));
-
-            restTemplate.postForObject(
-                    emailServiceUrl + "/api/v1/email/notify",
-                    payload,
-                    String.class
-            );
-
-            log.info("✅ [Email Client] Access rejected email sent successfully to: {}", requesterEmail);
-        } catch (Exception e) {
-            log.warn("⚠️ [Email Client] Failed to send access rejected email: {}", e.getMessage());
-        }
+        send(new EmailNotificationRequest(
+                requesterEmail,
+                "access-rejected",
+                "Access Request Denied: " + eventTitle,
+                "Your access request to the event '" + eventTitle + "' has been denied. Reason: "
+                        + (rejectionReason != null ? rejectionReason : "Request denied")));
     }
 
-    /**
-     * Send email when access is revoked
-     */
     public void sendAccessRevokedEmail(String userEmail, String eventTitle) {
+        send(new EmailNotificationRequest(
+                userEmail,
+                "access-revoked",
+                "Access Revoked: " + eventTitle,
+                "Your access to the event '" + eventTitle + "' has been revoked. You will no longer be able to access this event and its resources."));
+    }
+
+    private void send(EmailNotificationRequest payload) {
         try {
-            log.info("📧 [Email Client] Sending access revoked email to: {}", userEmail);
-
-            Map<String, Object> payload = new HashMap<>();
-            payload.put("userEmail", userEmail);
-            payload.put("type", "access-revoked");
-            payload.put("subject", "Access Revoked: " + eventTitle);
-            payload.put("body", "Your access to the event '" + eventTitle + "' has been revoked. You will no longer be able to access this event and its resources.");
-
+            log.info("Sending {} email to {}", payload.type(), payload.userEmail());
             restTemplate.postForObject(
                     emailServiceUrl + "/api/v1/email/notify",
                     payload,
-                    String.class
-            );
-
-            log.info("✅ [Email Client] Access revoked email sent successfully to: {}", userEmail);
+                    String.class);
+            log.info("{} email sent successfully to {}", payload.type(), payload.userEmail());
         } catch (Exception e) {
-            log.warn("⚠️ [Email Client] Failed to send access revoked email: {}", e.getMessage());
+            log.warn("Failed to send {} email: {}", payload.type(), e.getMessage());
         }
     }
 }

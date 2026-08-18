@@ -1,33 +1,40 @@
 package com.example.Event.api.controller;
 
-import com.example.Event.application.service.EventModerationService;
+import com.example.Event.api.annotation.CurrentUserId;
+import com.example.Event.api.dto.request.EventSettingsRequest;
+import com.example.Event.api.dto.response.EventSettingsResponse;
+import com.example.Event.application.service.interfaces.IEventService;
 import io.swagger.v3.oas.annotations.Operation;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
-import java.util.Map;
-
-// TODO: Implement event settings feature in Phase 2
-// @RestController
-// @RequestMapping("/api/v1/events/{eventId}/settings")
+@Validated
+@RestController
+@RequestMapping("/api/v1/events/{eventId}/settings")
 @RequiredArgsConstructor
 public class EventSettingsController {
-    private final EventModerationService moderationService;
+    private final IEventService eventService;
 
-    // TODO: Implement in Phase 2
-    /*
     @GetMapping
     @Operation(summary = "Get event settings")
-    public ResponseEntity<Map<String, Boolean>> get(@PathVariable String eventId) {
-        return ResponseEntity.ok(Map.of("moderationEnabled", moderationService.getModeration(eventId)));
+    public ResponseEntity<EventSettingsResponse> get(@PathVariable String eventId) {
+        return ResponseEntity.ok(eventService.getSettings(eventId));
     }
 
     @PatchMapping
     @Operation(summary = "Update event settings")
-    public ResponseEntity<Map<String, Boolean>> update(@PathVariable String eventId, @RequestBody Map<String, Boolean> payload) {
-        boolean updated = moderationService.setModeration(eventId, payload.getOrDefault("moderationEnabled", true));
-        return ResponseEntity.ok(Map.of("moderationEnabled", updated));
+    public ResponseEntity<EventSettingsResponse> update(
+            @PathVariable String eventId,
+            @Valid @RequestBody EventSettingsRequest request,
+            @CurrentUserId String userId) {
+        return ResponseEntity.ok(eventService.updateSettings(eventId, request, userId));
     }
-    */
 }

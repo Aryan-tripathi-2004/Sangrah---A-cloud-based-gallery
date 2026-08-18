@@ -1,16 +1,20 @@
 package com.example.Event.infrastructure.persistence.document;
 
+import com.example.Event.shared.enums.ApprovalStatus;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
-import lombok.Data;
+import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.Setter;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Version;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.index.Indexed;
 
 import java.time.Instant;
 
-@Data
+@Getter
+@Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
@@ -19,6 +23,8 @@ public class EventMediaApprovalDocument {
 
     @Id
     private String id;
+    @Version
+    private Long version;
 
     @Indexed
     private String eventId;
@@ -29,7 +35,7 @@ public class EventMediaApprovalDocument {
     @Indexed
     private String uploaderUserId;
 
-    private String status;  // PENDING, APPROVED, REJECTED
+    private ApprovalStatus status;
 
     private String reviewedByUserId;  // Who approved/rejected this media
     private Instant reviewedAt;
@@ -43,20 +49,20 @@ public class EventMediaApprovalDocument {
      * Check if approval is pending review
      */
     public boolean isPending() {
-        return "PENDING".equals(status);
+        return ApprovalStatus.PENDING == status;
     }
 
     /**
      * Check if approval is approved
      */
     public boolean isApproved() {
-        return "APPROVED".equals(status);
+        return ApprovalStatus.APPROVED == status;
     }
 
     /**
      * Check if approval is rejected
      */
     public boolean isRejected() {
-        return "REJECTED".equals(status);
+        return ApprovalStatus.REJECTED == status;
     }
 }
