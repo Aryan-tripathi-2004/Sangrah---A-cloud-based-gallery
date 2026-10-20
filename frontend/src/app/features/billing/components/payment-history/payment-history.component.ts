@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { BillingService, PaymentDTO } from '../../billing.service';
 import { StatusBadgeComponent } from '../status-badge/status-badge.component';
@@ -7,6 +7,7 @@ import { Observable } from 'rxjs';
 @Component({
   selector: 'app-payment-history',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CommonModule, StatusBadgeComponent],
   templateUrl: './payment-history.component.html'
 })

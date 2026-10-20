@@ -1,10 +1,12 @@
 package com.example.Notification.application.service.interfaces;
 
 import com.example.Notification.api.dto.request.InternalNotificationRequest;
+import com.example.Notification.api.dto.request.NotificationStatusUpdateRequest;
 import com.example.Notification.api.dto.response.BulkActionResponse;
 import com.example.Notification.api.dto.response.HealthResponse;
 import com.example.Notification.api.dto.response.NotificationActionResponse;
 import com.example.Notification.api.dto.response.NotificationListResponse;
+import com.example.Notification.api.dto.response.NotificationPreferenceResponse;
 import com.example.Notification.api.dto.response.NotificationResponse;
 
 import java.util.List;
@@ -21,11 +23,17 @@ public interface INotificationService {
 
     BulkActionResponse markAllAsRead(String userId);
 
+    BulkActionResponse updateNotificationStatus(String userId, NotificationStatusUpdateRequest request);
+
     void deleteNotification(String notificationId);
 
     long getTotalCount(String userId);
 
     long getUnreadCount(String userId);
+
+    NotificationPreferenceResponse getPreferences(String userId);
+
+    NotificationPreferenceResponse updatePreferences(String userId, Boolean inAppEnabled, Boolean emailEnabled);
 
     HealthResponse getHealth();
 

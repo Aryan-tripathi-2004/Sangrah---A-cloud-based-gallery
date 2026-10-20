@@ -1,9 +1,12 @@
 package com.example.Email.shared.exception;
 
 import jakarta.mail.MessagingException;
+import jakarta.validation.ConstraintViolationException;
+import com.example.Email.shared.exception.EmailProcessingException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -77,6 +80,52 @@ public class GlobalExceptionHandler {
         return problem;
     }
 
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ProblemDetail handleConstraintViolationException(ConstraintViolationException ex) {
+        log.warn("⚠️ [GLOBAL HANDLER] Constraint violation: {}", ex.getMessage());
+        List<String> violations = ex.getConstraintViolations().stream()
+                .map(v -> v.getPropertyPath().toString() + ": " + v.getMessage())
+                .collect(Collectors.toList());
+
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST,
+                "One or more request parameters failed validation."
+        );
+        problem.setType(VALIDATION_TYPE);
+        problem.setTitle("Constraint Violation");
+        problem.setProperty("violations", violations);
+        problem.setProperty("timestamp", Instant.now());
+        problem.setProperty("service", "email-service");
+        return problem;
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ProblemDetail handleHttpMessageNotReadable(HttpMessageNotReadableException ex) {
+        log.warn("⚠️ [GLOBAL HANDLER] Unreadable request body: {}", ex.getMessage());
+        Throwable rootCause = ex.getMostSpecificCause();
+        String detail = (rootCause != null && rootCause.getMessage() != null)
+                ? rootCause.getMessage()
+                : "Malformed or invalid request body.";
+
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, detail);
+        problem.setType(VALIDATION_TYPE);
+        problem.setTitle("Invalid Request Body");
+        problem.setProperty("timestamp", Instant.now());
+        problem.setProperty("service", "email-service");
+        return problem;
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ProblemDetail handleIllegalArgumentException(IllegalArgumentException ex) {
+        log.warn("⚠️ [GLOBAL HANDLER] Illegal argument: {}", ex.getMessage());
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
+        problem.setType(VALIDATION_TYPE);
+        problem.setTitle("Invalid Argument");
+        problem.setProperty("timestamp", Instant.now());
+        problem.setProperty("service", "email-service");
+        return problem;
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // 2. SMTP / Messaging failures
     // ─────────────────────────────────────────────────────────────────────────
@@ -130,7 +179,32 @@ public class GlobalExceptionHandler {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 4. Catch-all safety net
+    // 4. Email processing failures
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Handle {@link EmailProcessingException} thrown when the email could not be
+     * built or sent due to an internal processing error.
+     *
+     * <p>Returns HTTP {@code 500 Internal Server Error}.
+     */
+    @ExceptionHandler(EmailProcessingException.class)
+    public ProblemDetail handleEmailProcessingException(EmailProcessingException ex) {
+        log.error("❌ [GLOBAL HANDLER] Email processing failed: {}", ex.getMessage(), ex);
+
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.INTERNAL_SERVER_ERROR,
+                "Email processing failed. Please try again later."
+        );
+        problem.setType(URI.create("https://sangrah.com/problems/email-processing-error"));
+        problem.setTitle("Email Processing Error");
+        problem.setProperty("timestamp", Instant.now());
+        problem.setProperty("service", "email-service");
+        return problem;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 5. Catch-all safety net
     // ─────────────────────────────────────────────────────────────────────────
 
     /**

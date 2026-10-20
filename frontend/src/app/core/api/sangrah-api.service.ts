@@ -1,603 +1,321 @@
-import { HttpClient, HttpParams } from '@angular/common/http';
-import { Injectable, inject, Optional } from '@angular/core';
-import { Observable, BehaviorSubject, throwError } from 'rxjs';
-import { map, tap, catchError } from 'rxjs/operators';
+import { Injectable, inject } from '@angular/core';
+import { Observable } from 'rxjs';
+import {
+  User,
+  LoginPayload,
+  RegisterPayload,
+  AuthResponse,
+  EventCollaborator,
+  AddCollaboratorPayload,
+  UpdateCollaboratorPermissionsPayload,
+  Event,
+  UpdateEventPayload,
+  EventMediaUploadResponse,
+  EventAccessRequest,
+  AccessRequestResponse,
+  AccessStatusResponse,
+  EventPolicies,
+  Gallery,
+  MediaItem,
+  StorageUsage,
+  TimelineGroup,
+  TimelineResponse,
+  Notification,
+  NotificationListResponse,
+  CostEstimateDTO,
+  InvoiceDTO,
+  PaymentDTO,
+  CheckoutSessionResponse,
+  PaymentStatusResponse,
+  PagedResponse
+} from './models/api.models';
+import { AuthApiService } from './services/auth-api.service';
+import { UserApiService } from './services/user-api.service';
+import { GalleryApiService } from './services/gallery-api.service';
+import { EventApiService } from './services/event-api.service';
+import { BillingApiService } from './services/billing-api.service';
+import { NotificationApiService } from './services/notification-api.service';
 
-export interface User {
-  id: string;
-  email: string;
-  displayName: string;
-  createdAt: string;
-}
+// Re-export all models for seamless backward compatibility
+export * from './models/api.models';
+export * from './services/auth-api.service';
+export * from './services/user-api.service';
+export * from './services/gallery-api.service';
+export * from './services/event-api.service';
+export * from './services/billing-api.service';
+export * from './services/notification-api.service';
 
-export interface EventCollaborator {
-  userId: string;
-  canUploadMedia?: boolean;
-  canReviewMedia?: boolean;
-  canReviewAccessRequests?: boolean;
-  canDirectUpload?: boolean;
-  canDeleteMedia?: boolean;
-  canEditEventDetails?: boolean;
-  addedAt?: string;
-  addedByUserId?: string;
-}
-
-export interface Event {
-  id: string;
-  ownerUserId: string;
-  title: string;
-  description: string;
-  eventDate: string;
-  visibility: string;
-  moderationEnabled: boolean;
-  status: string;
-  coverImageId?: string;
-  createdAt: string;
-  uploadPolicy?: string;
-  moderationRequired?: boolean;
-  requiresApproval?: boolean; // NEW: Flag indicating user needs to request access
-  accessStatus?: string; // NEW: Access status (NO_ACCESS, APPROVED, PENDING)
-  message?: string; // NEW: Message about access status
-  collaborators?: EventCollaborator[]; // NEW: List of collaborators with permissions
-}
-
-export interface UpdateEventPayload {
-  title: string;
-  description?: string;
-  eventDate: string;
-  visibility: 'PUBLIC' | 'PROTECTED' | 'PRIVATE' | string;
-  moderationEnabled: boolean;
-}
-
-export interface Gallery {
-  id: string;
-  ownerUserId: string;
-  originalFileName: string;
-  mimeType: string;
-  sizeBytes: number;
-  uploadedAt: string;
-  visibility: string;
-}
-
-export interface MediaItem {
-  id: string;
-  originalFileName: string;
-  mimeType: string;
-  sizeBytes: number;
-  type: string;
-  checksumSha256: string;
-  metadata: Record<string, unknown>;
-  uploadedAt: string;
-  deletedAt?: string;
-}
-
-export interface StorageUsage {
-  totalBytesUsed: number;
-  fileCount: number;
-  breakdown: {
-    imageBytes: number;
-    videoBytes: number;
-  };
-  formatted: {
-    totalFormatted: string;
-    imageFormatted: string;
-    videoFormatted: string;
-  };
-  message: string;
-}
-
-export interface TimelineGroup {
-  type: string;
-  groupType: string;
-  label: string;
-  count: number;
-  items: MediaItem[];
-}
-
-export interface TimelineResponse {
-  view: string;
-  groups: TimelineGroup[];
-  totalGroups: number;
-}
-
-export interface Notification {
-  id: string;
-  recipientUserId: string;
-  type: string;
-  payload: Record<string, unknown>;
-  read: boolean;
-  createdAt: string;
-}
-
-// Billing interfaces
-export interface CostEstimateDTO {
-  currentMonthData: {
-    startDate: string;
-    daysElapsed: number;
-    estimatedGBDays: number;
-    estimatedCost: number;
-    projectedMonthlyTotal: number;
-  };
-  storageBreakdown: {
-    images: { gbDays: number; cost: number };
-    videos: { gbDays: number; cost: number };
-  };
-  costPerDay: number;
-  ratePerGBDay: number;
-}
-
-export interface InvoiceDTO {
-  id: string;
-  invoiceId: string;
-  userId: string;
-  billingPeriod: {
-    startDate: string;
-    endDate: string;
-  };
-  storageMetrics: {
-    imageGBDays: number;
-    imageCost: number;
-    videoGBDays: number;
-    videoCost: number;
-    totalGBDays: number;
-  };
-  charges: {
-    storageRate: number;
-    subtotal: number;
-    taxRate: number;
-    tax: number;
-    totalAmount: number;
-  };
-  status: 'PENDING' | 'PAID' | 'OVERDUE';
-  issuedDate: string;
-  dueDate: string;
-  paidDate: string | null;
-}
-
-export interface PaymentDTO {
-  id: string;
-  invoiceId: string;
-  amount: number;
-  status: 'SUCCESS' | 'FAILED' | 'PENDING';
-  transactionDate: string;
-  stripeChargeId?: string;
-  failureReason?: string;
-}
-
-export interface PagedResponse<T> {
-  content: T[];
-  totalElements: number;
-  totalPages: number;
-  number: number;
-  size: number;
-  isEmpty: boolean;
-}
-
-export interface AuthResponse {
-  token: string;
-  refreshToken?: string;
-  user: User;
-}
-
+/**
+ * SangrahApiService: Enterprise Facade adhering to the Single Responsibility Principle.
+ * Decomposes domain logic into dedicated microservices (Auth, User, Gallery, Event, Billing, Notification)
+ * while preserving backward compatibility for existing consumers across the application.
+ */
 @Injectable({ providedIn: 'root' })
 export class SangrahApiService {
-  private readonly http = inject(HttpClient);
-  private readonly baseUrl = 'http://localhost:8080/api/v1';
-  private currentUserSubject = new BehaviorSubject<User | null>(null);
-  public currentUser$ = this.currentUserSubject.asObservable();
+  private readonly authApi = inject(AuthApiService);
+  private readonly userApi = inject(UserApiService);
+  private readonly galleryApi = inject(GalleryApiService);
+  private readonly eventApi = inject(EventApiService);
+  private readonly billingApi = inject(BillingApiService);
+  private readonly notificationApi = inject(NotificationApiService);
 
-  // Auth endpoints
-  login(payload: { email: string; password: string }): Observable<AuthResponse> {
-    return this.http.post<AuthResponse>(`${this.baseUrl}/auth/login`, payload).pipe(
-      tap(response => {
-        // Only access localStorage in browser environment (SSR safe)
-        if (typeof window !== 'undefined') {
-          localStorage.setItem('token', response.token);
-          // ⭐ NEW: Store refresh token for automatic token refresh
-          if (response.refreshToken) {
-            localStorage.setItem('refreshToken', response.refreshToken);
-          }
-        }
-        this.currentUserSubject.next(response.user);
-      })
-    );
+  public readonly currentUser$ = this.authApi.currentUser$;
+
+  // ===== AUTH DOMAIN =====
+
+  login(payload: LoginPayload): Observable<AuthResponse> {
+    return this.authApi.login(payload);
   }
 
-  register(payload: { email: string; password: string; displayName: string }): Observable<AuthResponse> {
-    return this.http.post<AuthResponse>(`${this.baseUrl}/auth/register`, payload).pipe(
-      tap(response => {
-        // Only access localStorage in browser environment (SSR safe)
-        if (typeof window !== 'undefined') {
-          localStorage.setItem('token', response.token);
-          // ⭐ NEW: Store refresh token for automatic token refresh
-          if (response.refreshToken) {
-            localStorage.setItem('refreshToken', response.refreshToken);
-          }
-        }
-        this.currentUserSubject.next(response.user);
-      })
-    );
+  register(payload: RegisterPayload): Observable<AuthResponse> {
+    return this.authApi.register(payload);
   }
 
   logout(): void {
-    // Only access localStorage in browser environment (SSR safe)
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('token');
-      localStorage.removeItem('refreshToken'); // ⭐ NEW: Clear refresh token too
-    }
-    this.currentUserSubject.next(null);
+    this.authApi.logout();
   }
 
-  // ⭐ NEW: Refresh access token using refresh token
   refreshAccessToken(): Observable<AuthResponse> {
-    const refreshToken = typeof window !== 'undefined' ? localStorage.getItem('refreshToken') : null;
-    if (!refreshToken) {
-      console.error('❌ No refresh token available in localStorage');
-      throw new Error('No refresh token available');
-    }
-
-    console.log('🔄 [refreshAccessToken] Attempting to refresh with token ending in:', refreshToken.substring(refreshToken.length - 10));
-
-    return this.http.post<AuthResponse>(`${this.baseUrl}/auth/token/refresh`, { refreshToken }).pipe(
-      tap(response => {
-        console.log('✅ [refreshAccessToken] Token refreshed successfully');
-        if (typeof window !== 'undefined') {
-          localStorage.setItem('token', response.token);
-          if (response.refreshToken) {
-            localStorage.setItem('refreshToken', response.refreshToken);
-          }
-        }
-      }),
-      catchError((err) => {
-        console.error('❌ [refreshAccessToken] HTTP error:', {
-          status: err.status,
-          statusText: err.statusText,
-          message: err.message,
-          errorBody: err.error
-        });
-        return throwError(() => err);
-      })
-    );
+    return this.authApi.refreshAccessToken();
   }
+
+  // ===== USER DOMAIN =====
 
   getProfile(): Observable<User> {
-    return this.http.get<User>(`${this.baseUrl}/users/profile`);
+    return this.userApi.getProfile();
   }
 
   updateProfile(payload: Partial<User>): Observable<User> {
-    return this.http.put<User>(`${this.baseUrl}/users/profile`, payload);
+    return this.userApi.updateProfile(payload);
+  }
+
+  uploadProfileAvatar(file: File): Observable<User> {
+    return this.userApi.uploadProfileAvatar(file);
   }
 
   deleteAccount(): Observable<void> {
-    return this.http.delete<void>(`${this.baseUrl}/users/profile`);
+    return this.userApi.deleteAccount();
   }
 
-  // Gallery endpoints
+  // ===== GALLERY & ASSET DOMAIN =====
+
   uploadGalleryMedia(file: File): Observable<MediaItem> {
-    const formData = new FormData();
-    formData.append('file', file);
-    return this.http.post<MediaItem>(`${this.baseUrl}/gallery/media`, formData);
+    return this.galleryApi.uploadGalleryMedia(file);
   }
 
   listGalleryMedia(): Observable<{ count: number; items: MediaItem[] }> {
-    return this.http.get<{ count: number; items: MediaItem[] }>(`${this.baseUrl}/gallery/media`);
+    return this.galleryApi.listGalleryMedia();
   }
 
   getGalleryMedia(mediaId: string): Observable<MediaItem> {
-    return this.http.get<MediaItem>(`${this.baseUrl}/gallery/media/${mediaId}`);
+    return this.galleryApi.getGalleryMedia(mediaId);
   }
 
   deleteGalleryMedia(mediaId: string): Observable<{ message: string; mediaId: string }> {
-    return this.http.delete<{ message: string; mediaId: string }>(`${this.baseUrl}/gallery/media/${mediaId}`);
+    return this.galleryApi.deleteGalleryMedia(mediaId);
   }
 
   getGalleryMediaFile(mediaId: string): string {
-    const token = this.getTokenFromStorage();
-    const url = `${this.baseUrl}/gallery/media/${mediaId}/file`;
-    return token ? `${url}?token=${encodeURIComponent(token)}` : url;
+    return this.galleryApi.getGalleryMediaFile(mediaId);
   }
 
   getMediaFileUrl(mediaId: string): string {
-    const token = this.getTokenFromStorage();
-    const url = `${this.baseUrl}/media/${mediaId}/file`;
-    return token ? `${url}?token=${encodeURIComponent(token)}` : url;
+    return this.galleryApi.getMediaFileUrl(mediaId);
   }
 
-  getEventMediaFile(eventId: string, mediaId: string): string {
-    const token = this.getTokenFromStorage();
-    const url = `${this.baseUrl}/events/${eventId}/media/${mediaId}/file`;
-    return token ? `${url}?token=${encodeURIComponent(token)}` : url;
-  }
-
-  /**
-   * Get JWT token from localStorage (for image/video URLs)
-   */
-  private getTokenFromStorage(): string | null {
-    if (typeof window === 'undefined') {
-      return null;
-    }
-    return localStorage.getItem('token');
+  getAvatarUrl(avatarUrlOrMediaId?: string | null): string | null {
+    return this.galleryApi.getAvatarUrl(avatarUrlOrMediaId);
   }
 
   getStorageUsageGallery(): Observable<StorageUsage> {
-    return this.http.get<StorageUsage>(`${this.baseUrl}/gallery/usage`);
+    return this.galleryApi.getStorageUsageGallery();
   }
 
-  getGalleryDailyTimeline(): Observable<TimelineResponse> {
-    return this.http.get<TimelineResponse>(`${this.baseUrl}/gallery/timeline/daily`);
+  getGalleryTimeline(groupBy: 'DAILY' | 'MONTHLY' | 'YEARLY' = 'DAILY'): Observable<TimelineResponse> {
+    return this.galleryApi.getGalleryTimeline(groupBy);
   }
 
-  getGalleryMonthlyTimeline(): Observable<TimelineResponse> {
-    return this.http.get<TimelineResponse>(`${this.baseUrl}/gallery/timeline/monthly`);
-  }
-
-  getGalleryYearlyTimeline(): Observable<TimelineResponse> {
-    return this.http.get<TimelineResponse>(`${this.baseUrl}/gallery/timeline/yearly`);
-  }
-
-  // Backward compatibility methods
-  /**
-   * @deprecated Use getGalleryMonthlyTimeline() instead
-   */
-  getGalleryTimeline(): Observable<TimelineResponse> {
-    return this.getGalleryMonthlyTimeline();
-  }
-
-  /**
-   * @deprecated Use getStorageUsageGallery() instead
-   */
   getStorageUsage(): Observable<StorageUsage> {
-    return this.getStorageUsageGallery();
+    return this.galleryApi.getStorageUsage();
   }
 
-  // Event endpoints
+  // ===== EVENT DOMAIN =====
+
   getGlobalEvents(): Observable<Event[]> {
-    return this.http.get<Event[]>(`${this.baseUrl}/events/global`);
+    return this.eventApi.getGlobalEvents();
   }
 
   getPublicEvents(): Observable<Event[]> {
-    return this.http.get<Event[]>(`${this.baseUrl}/events/global?visibility=PUBLIC`);
+    return this.eventApi.getPublicEvents();
   }
 
   getMyEvents(): Observable<Event[]> {
-    return this.http.get<Event[]>(`${this.baseUrl}/events/my-events`);
+    return this.eventApi.getMyEvents();
   }
 
   getEventById(eventId: string): Observable<Event> {
-    return this.http.get<Event>(`${this.baseUrl}/events/${eventId}`);
+    return this.eventApi.getEventById(eventId);
   }
 
-  createEvent(payload: Partial<Event>): Observable<any> {
-    return this.http.post<any>(`${this.baseUrl}/events`, payload).pipe(
-      map(response => ({ ...response, id: response.eventId || response.id })),
-      catchError(error => {
-        console.error('Create event failed:', error);
-        return throwError(() => error);
-      })
-    );
+  createEvent(payloadOrFormData: FormData | Partial<Event>, coverMediaFile?: File): Observable<Event & { id: string }> {
+    return this.eventApi.createEvent(payloadOrFormData, coverMediaFile);
   }
 
   updateEvent(eventId: string, eventData: UpdateEventPayload, coverMediaFile?: File): Observable<Event> {
-    const formData = new FormData();
-    formData.append(
-      'eventDetails',
-      new Blob([JSON.stringify(eventData)], { type: 'application/json' })
-    );
-
-    if (coverMediaFile) {
-      formData.append('coverMedia', coverMediaFile);
-    }
-
-    return this.http.put<Event>(`${this.baseUrl}/events/${eventId}`, formData);
+    return this.eventApi.updateEvent(eventId, eventData, coverMediaFile);
   }
 
   deleteEvent(eventId: string): Observable<void> {
-    return this.http.delete<void>(`${this.baseUrl}/events/${eventId}`);
+    return this.eventApi.deleteEvent(eventId);
   }
 
   getEventMedia(eventId: string): Observable<Gallery[]> {
-    return this.http.get<Gallery[]>(`${this.baseUrl}/events/${eventId}/media`);
+    return this.eventApi.getEventMedia(eventId);
   }
 
-  uploadEventMedia(eventId: string, file: File): Observable<any> {
-    const formData = new FormData();
-    formData.append('file', file);
-
-    return this.http.post<any>(`${this.baseUrl}/events/${eventId}/media`, formData);
+  uploadEventMedia(eventId: string, file: File): Observable<EventMediaUploadResponse> {
+    return this.eventApi.uploadEventMedia(eventId, file);
   }
 
-  approveEventMedia(eventId: string, mediaId: string): Observable<any> {
-    return this.http.patch<any>(`${this.baseUrl}/events/${eventId}/media/${mediaId}/approve`, {});
+  updateEventMediaStatus(
+    eventId: string,
+    mediaId: string,
+    status: 'APPROVED' | 'REJECTED',
+    reason?: string
+  ): Observable<{ status: string; reason?: string }> {
+    return this.eventApi.updateEventMediaStatus(eventId, mediaId, status, reason);
   }
 
-  rejectEventMedia(eventId: string, mediaId: string, reason: string): Observable<any> {
-    return this.http.patch<any>(`${this.baseUrl}/events/${eventId}/media/${mediaId}/reject`, { reason });
+  deleteEventMedia(eventId: string, mediaId: string): Observable<{ message: string }> {
+    return this.eventApi.deleteEventMedia(eventId, mediaId);
   }
 
-  deleteEventMedia(eventId: string, mediaId: string): Observable<any> {
-    return this.http.delete<any>(`${this.baseUrl}/events/${eventId}/media/${mediaId}`);
+  getEventMediaFile(eventId: string, mediaId: string): string {
+    return this.eventApi.getEventMediaFile(eventId, mediaId);
   }
 
-  // Billing endpoints
+  getEventMediaFileUrl(eventId: string, mediaId: string): string {
+    return this.eventApi.getEventMediaFileUrl(eventId, mediaId);
+  }
+
+  getPendingAccessRequests(): Observable<Event[]> {
+    return this.eventApi.getPendingAccessRequests();
+  }
+
+  getEventAccessRequests(eventId: string): Observable<EventAccessRequest[]> {
+    return this.eventApi.getEventAccessRequests(eventId);
+  }
+
+  listAccessRequests(eventId: string): Observable<EventAccessRequest[]> {
+    return this.eventApi.listAccessRequests(eventId);
+  }
+
+  updateAccessRequestStatus(
+    eventId: string,
+    requestId: string,
+    status: 'APPROVED' | 'REJECTED' | 'REVOKED',
+    details?: { approvalDuration?: string; accessExpiresAt?: string; reason?: string }
+  ): Observable<AccessRequestResponse> {
+    return this.eventApi.updateAccessRequestStatus(eventId, requestId, status, details);
+  }
+
+  requestEventAccess(eventId: string, message?: string): Observable<AccessRequestResponse> {
+    return this.eventApi.requestEventAccess(eventId, message);
+  }
+
+  getAccessStatus(eventId: string): Observable<AccessStatusResponse> {
+    return this.eventApi.getAccessStatus(eventId);
+  }
+
+  reRequestAccess(eventId: string, message?: string): Observable<AccessRequestResponse> {
+    return this.eventApi.reRequestAccess(eventId, message);
+  }
+
+  getEventCollaborators(eventId: string): Observable<EventCollaborator[]> {
+    return this.eventApi.getEventCollaborators(eventId);
+  }
+
+  addEventCollaborator(eventId: string, payload: AddCollaboratorPayload | Partial<EventCollaborator>): Observable<EventCollaborator> {
+    return this.eventApi.addEventCollaborator(eventId, payload);
+  }
+
+  removeEventCollaborator(eventId: string, userId: string): Observable<{ message: string }> {
+    return this.eventApi.removeEventCollaborator(eventId, userId);
+  }
+
+  updateCollaboratorPermissions(
+    eventId: string,
+    userId: string,
+    payload: UpdateCollaboratorPermissionsPayload | Partial<EventCollaborator>
+  ): Observable<EventCollaborator> {
+    return this.eventApi.updateCollaboratorPermissions(eventId, userId, payload);
+  }
+
+  getEventPolicies(eventId: string): Observable<EventPolicies> {
+    return this.eventApi.getEventPolicies(eventId);
+  }
+
+  updateEventPolicies(eventId: string, payload: Partial<EventPolicies>): Observable<EventPolicies> {
+    return this.eventApi.updateEventPolicies(eventId, payload);
+  }
+
+  // ===== BILLING DOMAIN =====
+
   getCostEstimate(): Observable<CostEstimateDTO> {
-    return this.http.get<CostEstimateDTO>(`${this.baseUrl}/billing/cost-estimate`);
+    return this.billingApi.getCostEstimate();
   }
 
   getInvoices(params?: { page?: string; size?: string }): Observable<PagedResponse<InvoiceDTO>> {
-    let url = `${this.baseUrl}/billing/invoices`;
-    if (params && (params.page || params.size)) {
-      const queryParams = [];
-      if (params.page) queryParams.push(`page=${params.page}`);
-      if (params.size) queryParams.push(`size=${params.size}`);
-      url += '?' + queryParams.join('&');
-    }
-    return this.http.get<PagedResponse<InvoiceDTO>>(url);
+    return this.billingApi.getInvoices(params);
   }
 
   getInvoiceDetail(invoiceId: string): Observable<InvoiceDTO> {
-    return this.http.get<InvoiceDTO>(`${this.baseUrl}/billing/invoices/${invoiceId}`);
+    return this.billingApi.getInvoiceDetail(invoiceId);
   }
 
   payInvoice(invoiceId: string): Observable<{ sessionUrl?: string; message?: string }> {
-    return this.http.post<{ sessionUrl?: string; message?: string }>(`${this.baseUrl}/billing/invoices/${invoiceId}/pay`, {});
+    return this.billingApi.payInvoice(invoiceId);
   }
 
   getPaymentHistory(): Observable<PaymentDTO[]> {
-    return this.http.get<PaymentDTO[]>(`${this.baseUrl}/billing/payments`);
+    return this.billingApi.getPaymentHistory();
   }
 
   getBillingSummary(yearMonth: string): Observable<unknown> {
-    return this.http.get(`${this.baseUrl}/billing/monthly/${yearMonth}/summary`);
+    return this.billingApi.getBillingSummary(yearMonth);
   }
 
-  // ===== STRIPE PAYMENT METHODS =====
-
-  createCheckoutSession(invoiceId: string): Observable<{ invoiceId: string; clientSecret: string; amount: number; currency: string }> {
-    return this.http.post<{ invoiceId: string; clientSecret: string; amount: number; currency: string }>(
-      `${this.baseUrl}/billing/payments/${invoiceId}/checkout`,
-      {}
-    );
+  createCheckoutSession(invoiceId: string): Observable<CheckoutSessionResponse> {
+    return this.billingApi.createCheckoutSession(invoiceId);
   }
 
-  getPaymentStatus(invoiceId: string): Observable<{status: string, paidDate?: string}> {
-    return this.http.get<{status: string, paidDate?: string}>(
-      `${this.baseUrl}/billing/payments/${invoiceId}/status`
-    );
+  getPaymentStatus(invoiceId: string): Observable<PaymentStatusResponse> {
+    return this.billingApi.getPaymentStatus(invoiceId);
   }
 
-  // ⭐ NEW: Sync payment status with Stripe API
-  syncPaymentStatus(invoiceId: string): Observable<{status: string, paidDate?: string}> {
-    console.log('🔄 [syncPaymentStatus] Syncing with Stripe for invoice:', invoiceId);
-    return this.http.post<{status: string, paidDate?: string}>(
-      `${this.baseUrl}/billing/payments/${invoiceId}/sync`,
-      {}
-    ).pipe(
-      tap((response) => {
-        console.log('✅ [syncPaymentStatus] Sync response - Status:', response.status);
-      }),
-      catchError((err) => {
-        console.error('❌ [syncPaymentStatus] Sync failed:', err);
-        return throwError(() => err);
-      })
-    );
+  syncPaymentStatus(invoiceId: string): Observable<PaymentStatusResponse> {
+    return this.billingApi.syncPaymentStatus(invoiceId);
   }
 
-  // ⭐ NEW: Download invoice PDF
   downloadInvoicePDF(invoiceId: string): Observable<Blob> {
-    console.log('📥 [downloadInvoicePDF] Downloading PDF for invoice:', invoiceId);
-    return this.http.get(
-      `${this.baseUrl}/billing/invoices/${invoiceId}/pdf`,
-      { responseType: 'blob' }
-    ).pipe(
-      tap(() => {
-        console.log('✅ [downloadInvoicePDF] PDF downloaded successfully');
-      }),
-      catchError((err) => {
-        console.error('❌ [downloadInvoicePDF] Download failed:', err);
-        return throwError(() => err);
-      })
-    );
+    return this.billingApi.downloadInvoicePDF(invoiceId);
   }
 
-  // ===== EVENT ACCESS REQUEST METHODS =====
+  // ===== NOTIFICATION DOMAIN =====
 
-  /**
-   * Get the URL for accessing event media file (image/video).
-   * This includes the token as a query parameter for authenticated access.
-   */
-  getEventMediaFileUrl(eventId: string, mediaId: string): string {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-    const baseUrl = `${this.baseUrl}/events/${eventId}/media/${mediaId}/file`;
-    return token ? `${baseUrl}?token=${encodeURIComponent(token)}` : baseUrl;
+  getUnreadNotificationCount(): Observable<{ unreadCount: number }> {
+    return this.notificationApi.getUnreadNotificationCount();
   }
 
-  getPendingAccessRequests(): Observable<any> {
-    return this.http.get<any>(`${this.baseUrl}/events/pending-requests`);
+  getNotifications(skip: number = 0, limit: number = 50): Observable<NotificationListResponse> {
+    return this.notificationApi.getNotifications(skip, limit);
   }
 
-  getEventAccessRequests(eventId: string): Observable<any[]> {
-    return this.http.get<any[]>(`${this.baseUrl}/events/${eventId}/access-requests`);
+  markNotificationRead(notificationId: string): Observable<{ success?: boolean; [key: string]: unknown }> {
+    return this.notificationApi.markNotificationRead(notificationId);
   }
 
-  listAccessRequests(eventId: string): Observable<any[]> {
-    return this.http.get<any[]>(`${this.baseUrl}/events/${eventId}/access-requests`);
-  }
-
-  approveAccessRequest(eventId: string, requestId: string, payload?: any): Observable<any> {
-    return this.http.patch(`${this.baseUrl}/events/${eventId}/access-requests/${requestId}/approve`,
-      payload || {});
-  }
-
-  rejectAccessRequest(eventId: string, requestId: string, payload?: any): Observable<any> {
-    return this.http.patch(`${this.baseUrl}/events/${eventId}/access-requests/${requestId}/reject`,
-      payload || {});
-  }
-
-  // Revoke granted access (owner action)
-  revokeAccessRequest(eventId: string, requestId: string, payload?: any): Observable<any> {
-    return this.http.patch(`${this.baseUrl}/events/${eventId}/access-requests/${requestId}/revoke`,
-      payload || {});
-  }
-
-  // NEW: Request access to protected event
-  requestEventAccess(eventId: string, message?: string): Observable<any> {
-    const payload = message ? { message } : {};
-    return this.http.post(`${this.baseUrl}/events/${eventId}/access-requests`, payload);
-  }
-
-  // NEW: Get current user's access status for event
-  getAccessStatus(eventId: string): Observable<any> {
-    return this.http.get(`${this.baseUrl}/events/${eventId}/access-requests/access-status`);
-  }
-
-  // NEW: User re-requests access after expiration or revocation
-  reRequestAccess(eventId: string, message?: string): Observable<any> {
-    const payload = message ? { message } : {};
-    return this.http.patch(`${this.baseUrl}/events/${eventId}/access-requests/re-request`, payload);
-  }
-
-  // ===== EVENT COLLABORATOR METHODS =====
-
-  getEventCollaborators(eventId: string): Observable<any> {
-    return this.http.get(`${this.baseUrl}/events/${eventId}/collaborators`);
-  }
-
-  addEventCollaborator(eventId: string, payload: any): Observable<any> {
-    return this.http.post(`${this.baseUrl}/events/${eventId}/collaborators`, payload);
-  }
-
-  removeEventCollaborator(eventId: string, userId: string): Observable<any> {
-    return this.http.delete(`${this.baseUrl}/events/${eventId}/collaborators/${userId}`);
-  }
-
-  updateCollaboratorPermissions(eventId: string, userId: string, payload: any): Observable<any> {
-    return this.http.patch(`${this.baseUrl}/events/${eventId}/collaborators/${userId}`, payload);
-  }
-
-  // ===== NOTIFICATION METHODS =====
-
-  getNotifications(skip: number = 0, limit: number = 50): Observable<any> {
-    let params = new HttpParams()
-      .set('skip', skip.toString())
-      .set('limit', limit.toString());
-    return this.http.get(`${this.baseUrl}/notifications`, { params });
-  }
-
-  markNotificationRead(notificationId: string): Observable<any> {
-    return this.http.patch(`${this.baseUrl}/notifications/${notificationId}/read`, {});
-  }
-
-  markAllNotificationsRead(): Observable<any> {
-    return this.http.post(`${this.baseUrl}/notifications/mark-all-read`, {});
-  }
-
-  // ===== EVENT POLICY METHODS =====
-
-  getEventPolicies(eventId: string): Observable<any> {
-    return this.http.get(`${this.baseUrl}/events/${eventId}/policies`);
-  }
-
-  updateEventPolicies(eventId: string, payload: any): Observable<any> {
-    return this.http.patch(`${this.baseUrl}/events/${eventId}/policies`, payload);
+  markAllNotificationsRead(): Observable<{ success?: boolean; [key: string]: unknown }> {
+    return this.notificationApi.markAllNotificationsRead();
   }
 }

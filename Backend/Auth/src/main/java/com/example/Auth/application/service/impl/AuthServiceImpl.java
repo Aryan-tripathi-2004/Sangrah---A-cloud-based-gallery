@@ -1,9 +1,10 @@
 package com.example.Auth.application.service.impl;
 
-import com.example.Auth.api.dto.UserDTO;
 import com.example.Auth.api.dto.request.LoginRequest;
 import com.example.Auth.api.dto.request.RegisterRequest;
 import com.example.Auth.api.dto.response.AuthTokenResponse;
+import com.example.Auth.api.dto.response.MessageResponse;
+import com.example.Auth.api.dto.response.TokenValidationResponse;
 import com.example.Auth.application.service.interfaces.IAuthService;
 import com.example.Auth.application.service.interfaces.IJwtService;
 import com.example.Auth.infrastructure.mapper.AuthMapper;
@@ -21,10 +22,13 @@ import com.example.Auth.shared.exception.DomainValidationException;
 import com.example.Auth.shared.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Set;
 
 @Slf4j
@@ -38,7 +42,14 @@ public class AuthServiceImpl implements IAuthService {
     private final PasswordEncoder passwordEncoder;
     private final AuthMapper authMapper;
 
+    @Value("${jwt.access-token-expiration-seconds}")
+    private long accessTokenExpirySeconds;
+
+    @Value("${auth.session.max-active}")
+    private int maxActiveSessions;
+
     @Override
+    @Transactional
     public AuthTokenResponse register(RegisterRequest request) {
         log.info("🔍 Checking if user exists with email: {}", request.email());
         if (userRepository.existsByEmail(request.email())) {
@@ -78,6 +89,7 @@ public class AuthServiceImpl implements IAuthService {
     }
 
     @Override
+    @Transactional
     public AuthTokenResponse login(LoginRequest request) {
         log.info("🔐 Login attempt for email: {}", request.email());
         UserDocument user = userRepository.findByEmail(request.email())
@@ -98,7 +110,10 @@ public class AuthServiceImpl implements IAuthService {
             throw new AuthenticationException("User account is not active");
         }
 
-        log.info("✅ User active, generating JWT tokens");
+        log.info("✅ User active, managing session limits");
+        evictExcessActiveSessions(user.getId());
+
+        log.info("✅ Generating JWT tokens");
         String accessToken = jwtService.generateAccessToken(user.getId(), user.getEmail());
         String refreshToken = jwtService.generateRefreshToken(user.getId());
 
@@ -115,68 +130,41 @@ public class AuthServiceImpl implements IAuthService {
         return new AuthTokenResponse(accessToken, refreshToken, authMapper.toUserDTO(user));
     }
 
-    @Override
-    public UserDTO getUserById(String userId) {
-        log.info("📋 Fetching user profile for userId: {}", userId);
-        UserDocument user = userRepository.findById(userId)
-                .orElseThrow(() -> {
-                    log.warn("❌ User not found with id: {}", userId);
-                    return new ResourceNotFoundException("User not found");
-                });
-        log.info("✅ User found: {}", user.getEmail());
-        return authMapper.toUserDTO(user);
-    }
+    /**
+     * Evicts older active sessions if the user has reached or exceeded maxActiveSessions.
+     * Prevents unbounded collection growth and session accumulation in MongoDB.
+     */
+    private void evictExcessActiveSessions(String userId) {
+        try {
+            long activeSessions = refreshTokenRepository.countByUserIdAndRevokedAtIsNull(userId);
+            if (activeSessions >= maxActiveSessions) {
+                long sessionsToRevoke = activeSessions - maxActiveSessions + 1;
+                log.info("🧹 Active sessions ({}) reached limit ({}), evicting {} oldest session(s) for user: {}",
+                        activeSessions, maxActiveSessions, sessionsToRevoke, userId);
 
-    @Override
-    public UserDTO getUserByEmail(String email) {
-        log.info("📋 Fetching user profile for email: {}", email);
-        UserDocument user = userRepository.findByEmail(email)
-                .orElseThrow(() -> {
-                    log.warn("❌ User not found with email: {}", email);
-                    return new ResourceNotFoundException("User not found with email: " + email);
-                });
-        log.info("✅ User found with email: {}", email);
-        return authMapper.toUserDTO(user);
-    }
+                List<RefreshTokenDocument> oldestSessions = refreshTokenRepository
+                        .findByUserIdAndRevokedAtIsNullOrderByCreatedAtAsc(userId);
 
-    @Override
-    public UserDTO updateUser(String userId, UserDTO updateRequest) {
-        log.info("📝 Updating user profile for userId: {}", userId);
-        UserDocument user = userRepository.findById(userId)
-                .orElseThrow(() -> {
-                    log.warn("❌ User not found with id: {}", userId);
-                    return new ResourceNotFoundException("User not found");
-                });
+                List<String> idsToDelete = oldestSessions.stream()
+                        .limit(sessionsToRevoke)
+                        .map(RefreshTokenDocument::getId)
+                        .filter(id -> id != null && !id.isBlank())
+                        .toList();
 
-        if (updateRequest.displayName() != null && !updateRequest.displayName().isBlank()) {
-            user.setDisplayName(updateRequest.displayName());
-            log.info("✏️ Updated displayName to: {}", updateRequest.displayName());
+                if (!idsToDelete.isEmpty()) {
+                    refreshTokenRepository.deleteAllById(idsToDelete);
+                    log.info("🚪 Successfully evicted {} oldest active session(s) for user: {}", idsToDelete.size(), userId);
+                }
+            }
+        } catch (Exception ex) {
+            log.warn("⚠️ Failed to evict excess sessions for user: {}. Continuing login without disruption. Cause: {}",
+                    userId, ex.getMessage(), ex);
         }
-
-        user.setUpdatedAt(Instant.now());
-        user = userRepository.save(user);
-        log.info("✅ User profile updated successfully");
-
-        return authMapper.toUserDTO(user);
     }
 
-    @Override
-    public void deleteUser(String userId) {
-        log.info("🗑️ Deleting user account for userId: {}", userId);
-        UserDocument user = userRepository.findById(userId)
-                .orElseThrow(() -> {
-                    log.warn("❌ User not found with id: {}", userId);
-                    return new ResourceNotFoundException("User not found");
-                });
-
-        refreshTokenRepository.deleteByUserId(userId);
-        log.info("🔒 Refresh tokens revoked for userId: {}", userId);
-
-        userRepository.delete(user);
-        log.info("✅ User account deleted: {}", userId);
-    }
 
     @Override
+    @Transactional
     public AuthTokenResponse refreshAccessToken(String refreshToken) {
         log.info("🔄 Attempting to refresh access token");
 
@@ -197,6 +185,19 @@ public class AuthServiceImpl implements IAuthService {
         }
 
         if (refreshTokenDoc.isRevoked()) {
+            // RFC 6819 Token Rotation Grace Period (30 seconds)
+            // Allows near-simultaneous concurrent requests across multiple components or tabs without killing the session
+            Instant graceCutoff = refreshTokenDoc.getRevokedAt() != null
+                    ? refreshTokenDoc.getRevokedAt().plusSeconds(30)
+                    : null;
+            if (graceCutoff != null && Instant.now().isBefore(graceCutoff)
+                    && refreshTokenDoc.getReplacedByToken() != null) {
+                log.info("🔄 Refresh token was rotated within 30s grace window (concurrent refresh). Returning active token.");
+                UserDocument user = userRepository.findById(refreshTokenDoc.getUserId())
+                        .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+                String newAccessToken = jwtService.generateAccessToken(user.getId(), user.getEmail());
+                return new AuthTokenResponse(newAccessToken, refreshTokenDoc.getReplacedByToken(), authMapper.toUserDTO(user));
+            }
             log.warn("❌ Refresh token has been revoked");
             throw new AuthenticationException("Refresh token has been revoked");
         }
@@ -222,31 +223,66 @@ public class AuthServiceImpl implements IAuthService {
         refreshTokenRepository.save(newRefreshTokenDoc);
 
         refreshTokenDoc.setRevokedAt(Instant.now());
+        refreshTokenDoc.setReplacedByToken(newRefreshToken);
         refreshTokenRepository.save(refreshTokenDoc);
-        log.info("🔒 Old refresh token revoked (token rotation)");
+        log.info("🔒 Old refresh token revoked (token rotation) and linked to successor");
 
         log.info("✅ Token refresh successful");
         return new AuthTokenResponse(newAccessToken, newRefreshToken, authMapper.toUserDTO(user));
     }
 
+
+    private static final String BEARER_PREFIX = "Bearer ";
+
     @Override
-    public void logout(String token, Instant expiresAt) {
-        log.info("🚪 Logout request - adding token to blacklist");
+    @Transactional
+    public MessageResponse logout(String authHeader, String userId) {
+        log.info("🚪 Logout request - adding token to blacklist and revoking refresh sessions");
+
+        if (authHeader == null || !authHeader.startsWith(BEARER_PREFIX)) {
+            throw new AuthenticationException("Invalid Authorization header format");
+        }
+        String token = authHeader.substring(BEARER_PREFIX.length());
+
+        if (userId == null || userId.isBlank()) {
+            try {
+                userId = jwtService.extractUserId(token);
+            } catch (Exception e) {
+                log.warn("⚠️ Could not extract userId from token during logout: {}", e.getMessage());
+            }
+        }
+
+        Instant expiresAt = Instant.now().plusSeconds(accessTokenExpirySeconds);
 
         if (tokenBlacklistRepository.existsByToken(token)) {
             log.warn("⚠️ Token already blacklisted");
-            return;
+        } else {
+            TokenBlacklistDocument blacklistDoc = TokenBlacklistDocument.builder()
+                    .token(token)
+                    .userId(userId != null ? userId : "unknown")
+                    .expiresAt(expiresAt)
+                    .blacklistedAt(Instant.now())
+                    .reason(RevocationReason.LOGOUT)
+                    .build();
+
+            tokenBlacklistRepository.save(blacklistDoc);
+            log.info("✅ Token added to blacklist, will auto-expire on: {}", expiresAt);
         }
 
-        TokenBlacklistDocument blacklistDoc = TokenBlacklistDocument.builder()
-                .token(token)
-                .userId("unknown")
-                .expiresAt(expiresAt)
-                .blacklistedAt(Instant.now())
-                .reason(RevocationReason.LOGOUT)
-                .build();
+        if (userId != null && !userId.isBlank()) {
+            refreshTokenRepository.deleteByUserId(userId);
+            log.info("🔒 Active refresh tokens revoked for user: {}", userId);
+        }
 
-        tokenBlacklistRepository.save(blacklistDoc);
-        log.info("✅ Token added to blacklist, will auto-expire on: {}", expiresAt);
+        return new MessageResponse("Logout successful", Instant.now().toString());
+    }
+
+    @Override
+    public TokenValidationResponse validateToken(String authHeader) {
+        log.info("🔍 Token validation request");
+        if (authHeader == null || !authHeader.startsWith(BEARER_PREFIX)) {
+            throw new AuthenticationException("Authorization header missing or invalid");
+        }
+        return new TokenValidationResponse(true);
     }
 }

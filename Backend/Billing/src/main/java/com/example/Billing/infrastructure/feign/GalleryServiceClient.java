@@ -2,11 +2,11 @@ package com.example.Billing.infrastructure.feign;
 
 import com.example.Billing.api.dto.response.StorageUsageLedgerDTO;
 import org.springframework.cloud.openfeign.FeignClient;
+import org.springframework.data.domain.Page;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
 import java.time.Instant;
-import java.util.List;
 
 /**
  * Feign Client for Gallery Service
@@ -26,15 +26,19 @@ import java.util.List;
 public interface GalleryServiceClient {
 
     /**
-     * Query storage ledger entries for a date range
+     * Query storage ledger entries for a date range with pagination
      * @param startDate Start of date range (inclusive)
      * @param endDate End of date range (inclusive)
-     * @return List of storage usage ledger entries
+     * @param page Page index (0-based)
+     * @param size Page size
+     * @return Paginated storage usage ledger entries
      */
     @GetMapping("/api/v1/gallery/ledger")
-    List<StorageUsageLedgerDTO> getLedgerEntries(
-        @RequestParam Instant startDate,
-        @RequestParam Instant endDate
+    Page<StorageUsageLedgerDTO> getLedgerEntries(
+        @RequestParam("startDate") Instant startDate,
+        @RequestParam("endDate") Instant endDate,
+        @RequestParam("page") int page,
+        @RequestParam("size") int size
     );
 
     /**

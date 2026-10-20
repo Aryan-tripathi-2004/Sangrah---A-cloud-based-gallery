@@ -1,6 +1,7 @@
 package com.example.Gallery.infrastructure.persistence.repository;
 
 import com.example.Gallery.infrastructure.persistence.document.GalleryMediaDocument;
+import org.springframework.data.mongodb.repository.Aggregation;
 import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.stereotype.Repository;
 
@@ -64,4 +65,34 @@ public interface GalleryMediaRepository extends MongoRepository<GalleryMediaDocu
      */
     List<GalleryMediaDocument> findByUserIdAndUploadedAtBetweenAndDeletedAtIsNullOrderByUploadedAtDesc(
             String userId, Instant startDate, Instant endDate);
+
+    /**
+     * Push daily timeline grouping down to MongoDB engine using aggregation pipeline.
+     */
+    @Aggregation(pipeline = {
+        "{ $match: { userId: ?0, deletedAt: null } }",
+        "{ $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$uploadedAt' } }, items: { $push: '$$ROOT' } } }",
+        "{ $sort: { '_id': -1 } }"
+    })
+    List<TimelineGroupAggregationResult> getGroupedTimelineDaily(String userId);
+
+    /**
+     * Push monthly timeline grouping down to MongoDB engine using aggregation pipeline.
+     */
+    @Aggregation(pipeline = {
+        "{ $match: { userId: ?0, deletedAt: null } }",
+        "{ $group: { _id: { $dateToString: { format: '%Y-%m', date: '$uploadedAt' } }, items: { $push: '$$ROOT' } } }",
+        "{ $sort: { '_id': -1 } }"
+    })
+    List<TimelineGroupAggregationResult> getGroupedTimelineMonthly(String userId);
+
+    /**
+     * Push yearly timeline grouping down to MongoDB engine using aggregation pipeline.
+     */
+    @Aggregation(pipeline = {
+        "{ $match: { userId: ?0, deletedAt: null } }",
+        "{ $group: { _id: { $dateToString: { format: '%Y', date: '$uploadedAt' } }, items: { $push: '$$ROOT' } } }",
+        "{ $sort: { '_id': -1 } }"
+    })
+    List<TimelineGroupAggregationResult> getGroupedTimelineYearly(String userId);
 }

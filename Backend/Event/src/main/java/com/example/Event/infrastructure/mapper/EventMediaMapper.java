@@ -9,14 +9,10 @@ import com.example.Event.api.dto.response.EventMediaModerationResponse;
 import com.example.Event.api.dto.response.EventMediaResponse;
 import com.example.Event.api.dto.response.EventMediaUploadResponse;
 import com.example.Event.api.dto.response.MessageResponse;
-import com.example.Event.infrastructure.client.MediaServiceClient;
-import com.example.Event.infrastructure.client.UserServiceClient;
 import com.example.Event.infrastructure.client.dto.MediaServiceResponse;
 import com.example.Event.infrastructure.persistence.document.EventMediaApprovalDocument;
 import com.example.Event.infrastructure.persistence.document.EventMediaDocument;
 import com.example.Event.shared.enums.ApprovalStatus;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.mapstruct.InjectionStrategy;
 import org.mapstruct.Mapper;
 import org.mapstruct.MappingConstants;
@@ -26,22 +22,9 @@ import org.springframework.http.MediaType;
 import java.time.Instant;
 import java.util.List;
 
-@Slf4j
 @Mapper(componentModel = MappingConstants.ComponentModel.SPRING,
         injectionStrategy = InjectionStrategy.CONSTRUCTOR)
 public abstract class EventMediaMapper {
-
-    protected UserServiceClient userServiceClient;
-    protected MediaServiceClient mediaServiceClient;
-
-    protected EventMediaMapper() {
-    }
-
-    @Autowired
-    public EventMediaMapper(UserServiceClient userServiceClient, MediaServiceClient mediaServiceClient) {
-        this.userServiceClient = userServiceClient;
-        this.mediaServiceClient = mediaServiceClient;
-    }
 
     public EventMediaResponse toResponse(EventMediaDocument document) {
         if (document == null) {
@@ -89,8 +72,7 @@ public abstract class EventMediaMapper {
     }
 
     public EventMediaDetailResponse toDetailResponse(String eventId, String mediaId, ApprovalStatus moderationStatus) {
-        MediaServiceResponse details = mediaServiceClient.getMediaDetails(mediaId);
-        return new EventMediaDetailResponse(mediaId, eventId, details, moderationStatus);
+        return toDetailResponse(mediaId, eventId, null, moderationStatus);
     }
 
     public EventMediaDetailResponse toDetailResponse(String mediaId, String eventId, MediaServiceResponse details, ApprovalStatus moderationStatus) {
@@ -120,27 +102,23 @@ public abstract class EventMediaMapper {
                 null,
                 toIso(approval.getCreatedAt()),
                 null,
-                null);
+                null,
+                approval.getRejectionReason());
     }
 
     public EventMediaItemResponse toDetailedItem(EventMediaApprovalDocument approval) {
         if (approval == null) {
             return null;
         }
-        String uploaderName = userServiceClient.getUserDisplayName(approval.getUploaderUserId());
-        MediaServiceResponse mediaDetails = null;
-        try {
-            mediaDetails = mediaServiceClient.getMediaDetails(approval.getMediaId());
-        } catch (Exception e) {
-            log.warn("Could not fetch media details for {}: {}", approval.getMediaId(), e.getMessage());
-        }
-        return toDetailedItem(approval, uploaderName, mediaDetails);
+        return toDetailedItem(approval, approval.getUploaderUserId(), null);
     }
 
     public EventMediaItemResponse toDetailedItem(EventMediaApprovalDocument approval, String uploaderName, MediaServiceResponse mediaDetails) {
         if (approval == null) {
             return null;
         }
+        String resolvedFileName = mediaDetails != null ? mediaDetails.resolvedTitle() : null;
+        String mimeType = mediaDetails != null ? mediaDetails.mimeType() : null;
         return new EventMediaItemResponse(
                 approval.getMediaId(),
                 approval.getMediaId(),
@@ -148,8 +126,9 @@ public abstract class EventMediaMapper {
                 approval.getUploaderUserId(),
                 uploaderName,
                 toIso(approval.getCreatedAt()),
-                mediaDetails != null ? mediaDetails.originalFileName() : null,
-                mediaDetails != null ? mediaDetails.mimeType() : null);
+                resolvedFileName,
+                mimeType,
+                approval.getRejectionReason());
     }
 
     public String toIso(Instant instant) {

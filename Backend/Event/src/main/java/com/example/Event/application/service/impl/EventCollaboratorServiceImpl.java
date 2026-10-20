@@ -9,8 +9,8 @@ import com.example.Event.api.dto.response.CollaboratorsResponse;
 import com.example.Event.api.dto.response.MessageResponse;
 import com.example.Event.application.service.interfaces.IEventCollaboratorService;
 import com.example.Event.infrastructure.client.EmailServiceClient;
-import com.example.Event.infrastructure.client.NotificationServiceClient;
-import com.example.Event.infrastructure.client.UserServiceClient;
+import com.example.Event.infrastructure.client.NotificationIntegrationService;
+import com.example.Event.infrastructure.client.UserIntegrationService;
 import com.example.Event.infrastructure.mapper.EventCollaboratorMapper;
 import com.example.Event.infrastructure.persistence.document.EventDocument;
 import com.example.Event.infrastructure.persistence.repository.EventRepository;
@@ -33,9 +33,9 @@ import java.util.Optional;
 public class EventCollaboratorServiceImpl implements IEventCollaboratorService {
 
     private final EventRepository eventRepository;
-    private final NotificationServiceClient notificationServiceClient;
+    private final NotificationIntegrationService notificationIntegrationService;
     private final EmailServiceClient emailServiceClient;
-    private final UserServiceClient userServiceClient;
+    private final UserIntegrationService userIntegrationService;
     private final EventCollaboratorMapper collaboratorMapper;
 
     @Override
@@ -147,8 +147,7 @@ public class EventCollaboratorServiceImpl implements IEventCollaboratorService {
                 .anyMatch(collaborator -> userId.equals(collaborator.getUserId()));
     }
 
-    @Override
-    public List<EventDocument.EventCollaborator> getCollaboratorDocuments(String eventId) {
+    private List<EventDocument.EventCollaborator> getCollaboratorDocuments(String eventId) {
         EventDocument event = findEvent(eventId);
         return event.getCollaborators() != null ? event.getCollaborators() : Collections.emptyList();
     }
@@ -259,7 +258,7 @@ public class EventCollaboratorServiceImpl implements IEventCollaboratorService {
 
     private String resolveCollaboratorUserId(String userEmail) {
         try {
-            String collaboratorId = userServiceClient.getUserIdByEmail(userEmail);
+            String collaboratorId = userIntegrationService.getUserIdByEmail(userEmail);
             if (collaboratorId == null || collaboratorId.isBlank()) {
                 throw new DomainValidationException("User ID not found for email: " + userEmail);
             }
@@ -274,7 +273,7 @@ public class EventCollaboratorServiceImpl implements IEventCollaboratorService {
     private CollaboratorResponse enrichCollaborator(EventDocument.EventCollaborator collaborator, String knownEmail) {
         String displayName;
         try {
-            displayName = userServiceClient.getUserDisplayName(collaborator.getUserId());
+            displayName = userIntegrationService.getUserDisplayName(collaborator.getUserId());
         } catch (Exception e) {
             log.warn("Could not fetch displayName for {}: {}", collaborator.getUserId(), e.getMessage());
             displayName = collaborator.getUserId();
@@ -287,8 +286,8 @@ public class EventCollaboratorServiceImpl implements IEventCollaboratorService {
             EventDocument event,
             String ownerUserId) {
         try {
-            String ownerEmail = userServiceClient.getUserEmail(ownerUserId);
-            notificationServiceClient.notifyCollaboratorAdded(
+            String ownerEmail = userIntegrationService.getUserEmail(ownerUserId);
+            notificationIntegrationService.notifyCollaboratorAdded(
                     collaborator.getUserId(),
                     event.getId(),
                     event.getTitle(),
@@ -298,8 +297,8 @@ public class EventCollaboratorServiceImpl implements IEventCollaboratorService {
         }
 
         try {
-            String ownerName = userServiceClient.getUserDisplayName(ownerUserId);
-            String collaboratorEmail = userServiceClient.getUserEmail(collaborator.getUserId());
+            String ownerName = userIntegrationService.getUserDisplayName(ownerUserId);
+            String collaboratorEmail = userIntegrationService.getUserEmail(collaborator.getUserId());
             emailServiceClient.sendCollaboratorAddedEmail(collaboratorEmail, event.getTitle(), ownerName);
         } catch (Exception e) {
             log.warn("Failed to send collaborator added email: {}", e.getMessage());
@@ -308,13 +307,13 @@ public class EventCollaboratorServiceImpl implements IEventCollaboratorService {
 
     private void notifyCollaboratorRemoved(String collaboratorId, String eventId, String eventTitle) {
         try {
-            notificationServiceClient.notifyCollaboratorRemoved(collaboratorId, eventId, eventTitle);
+            notificationIntegrationService.notifyCollaboratorRemoved(collaboratorId, eventId, eventTitle);
         } catch (Exception e) {
             log.warn("Failed to send collaborator removed notification: {}", e.getMessage());
         }
 
         try {
-            String collaboratorEmail = userServiceClient.getUserEmail(collaboratorId);
+            String collaboratorEmail = userIntegrationService.getUserEmail(collaboratorId);
             emailServiceClient.sendCollaboratorRemovedEmail(collaboratorEmail, eventTitle);
         } catch (Exception e) {
             log.warn("Failed to send collaborator removed email: {}", e.getMessage());

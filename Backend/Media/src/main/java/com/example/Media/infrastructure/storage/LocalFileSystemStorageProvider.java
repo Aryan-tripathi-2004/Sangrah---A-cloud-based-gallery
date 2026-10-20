@@ -19,33 +19,33 @@ import java.util.UUID;
 @Component
 public class LocalFileSystemStorageProvider implements StorageProvider {
 
-    @Value("${sangrah.storage.root:./storage}")
+    @Value("${sangrah.storage.root}")
     private String storageRoot;
 
     @PostConstruct
     public void init() {
-        Path resolvedPath = Paths.get(storageRoot).toAbsolutePath();
+        Path resolvedPath = Paths.get(storageRoot).toAbsolutePath().normalize();
         log.info("🔧 Media Storage initialized: {} → {}", storageRoot, resolvedPath);
     }
 
     @Override
     public String save(MultipartFile file) throws IOException {
         try {
-            log.debug("📁 Saving file to local filesystem: {}", file.getOriginalFilename());
+            log.debug("📁 Saving file to local filesystem");
 
-            // Resolve storage path - handle both relative and absolute paths
-            Path storagePath = Paths.get(storageRoot).toAbsolutePath();
-            log.debug("📂 Storage path resolved to: {}", storagePath);
-
-            // Create storage directory if not exists
+            Path storagePath = Paths.get(storageRoot).toAbsolutePath().normalize();
             Files.createDirectories(storagePath);
 
-            // Generate unique filename
-            String originalFilename = file.getOriginalFilename();
-            String uniqueKey = UUID.randomUUID() + "-" + originalFilename;
-            Path filePath = storagePath.resolve(uniqueKey);
+            // Discard the potentially malicious client filename completely
+            // Generate a completely safe, server-controlled unique identifier
+            String uniqueKey = UUID.randomUUID().toString();
+            
+            // Ensure the resolved path remains strictly within the intended storage boundary
+            Path filePath = storagePath.resolve(uniqueKey).normalize();
+            if (!filePath.startsWith(storagePath)) {
+                throw new SecurityException("Path traversal attempt detected.");
+            }
 
-            // Save file
             file.transferTo(filePath.toFile());
             log.info("✅ File saved successfully: {} at {}", uniqueKey, filePath);
 
@@ -53,15 +53,19 @@ public class LocalFileSystemStorageProvider implements StorageProvider {
 
         } catch (IOException e) {
             log.error("❌ Failed to save file: {}", e.getMessage(), e);
-            throw new IOException("Failed to save file: " + e.getMessage(), e);
+            throw new IOException("Failed to save file securely.", e);
         }
     }
 
     @Override
     public Resource load(String storageKey) throws IOException {
         try {
-            Path storagePath = Paths.get(storageRoot).toAbsolutePath();
-            Path filePath = storagePath.resolve(storageKey);
+            Path storagePath = Paths.get(storageRoot).toAbsolutePath().normalize();
+            Path filePath = storagePath.resolve(storageKey).normalize();
+            
+            if (!filePath.startsWith(storagePath)) {
+                throw new SecurityException("Path traversal attempt detected.");
+            }
 
             if (!Files.exists(filePath)) {
                 log.warn("⚠️ File not found: {} (looked in {})", storageKey, filePath);
@@ -80,8 +84,12 @@ public class LocalFileSystemStorageProvider implements StorageProvider {
     @Override
     public void delete(String storageKey) throws IOException {
         try {
-            Path storagePath = Paths.get(storageRoot).toAbsolutePath();
-            Path filePath = storagePath.resolve(storageKey);
+            Path storagePath = Paths.get(storageRoot).toAbsolutePath().normalize();
+            Path filePath = storagePath.resolve(storageKey).normalize();
+            
+            if (!filePath.startsWith(storagePath)) {
+                throw new SecurityException("Path traversal attempt detected.");
+            }
 
             if (!Files.exists(filePath)) {
                 log.warn("⚠️ File not found for deletion: {}", storageKey);
@@ -100,8 +108,14 @@ public class LocalFileSystemStorageProvider implements StorageProvider {
     @Override
     public boolean exists(String storageKey) {
         try {
-            Path storagePath = Paths.get(storageRoot).toAbsolutePath();
-            Path filePath = storagePath.resolve(storageKey);
+            Path storagePath = Paths.get(storageRoot).toAbsolutePath().normalize();
+            Path filePath = storagePath.resolve(storageKey).normalize();
+            
+            if (!filePath.startsWith(storagePath)) {
+                log.error("❌ Path traversal attempt detected during existence check.");
+                return false;
+            }
+            
             return Files.exists(filePath);
         } catch (Exception e) {
             log.error("❌ Error checking file existence: {}", e.getMessage());

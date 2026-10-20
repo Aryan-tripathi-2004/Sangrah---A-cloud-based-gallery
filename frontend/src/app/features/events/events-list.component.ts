@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, inject, ChangeDetectorRef, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterLink, Router, ActivatedRoute } from '@angular/router';
 import { SangrahApiService, Event } from '../../core/api/sangrah-api.service';
@@ -10,6 +10,7 @@ import { EventAccessRequestComponent } from './components/event-access-request.c
 @Component({
   selector: 'app-events-list',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CommonModule, RouterLink, LayoutComponent, EventAccessRequestComponent],
   templateUrl: './events-list.component.html',
 })

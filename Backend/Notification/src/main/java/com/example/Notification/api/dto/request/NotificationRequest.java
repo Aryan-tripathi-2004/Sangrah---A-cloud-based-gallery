@@ -26,7 +26,7 @@ public record NotificationRequest(
     String message,
 
     @NotNull(message = "Notification type is required")
-    @Schema(description = "Type of notification (INFO, WARNING, ERROR, SUCCESS)", example = "INFO")
+    @Schema(description = "Type of notification", example = "INFO")
     NotificationType notificationType,
 
     @Schema(description = "Related resource ID")

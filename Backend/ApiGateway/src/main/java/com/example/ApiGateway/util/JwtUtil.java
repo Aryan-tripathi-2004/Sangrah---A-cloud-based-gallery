@@ -19,54 +19,93 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class JwtUtil {
 
-    @Value("${jwt.secret:sangrah_secret_key_for_jwt_token_validation_please_change_in_production}")
+    @Value("${jwt.secret}")
     private String jwtSecret;
 
-    @Value("${jwt.expiration:86400000}")
+    @Value("${jwt.expiration}")
     private long jwtExpiration;
+
+    @Value("${jwt.claim.role-key}")
+    private String roleClaimKey = "role";
+
+    @Value("${jwt.claim.email-key}")
+    private String emailClaimKey = "email";
+
+    @Value("${jwt.claim.type-key}")
+    private String typeClaimKey = "type";
 
     private SecretKey getSigningKey() {
         return Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
     }
 
     /**
+     * Parse and cryptographically verify the JWT token once, returning all claims.
+     */
+    public Claims extractAllClaims(String token) {
+        return getAllClaimsFromToken(token);
+    }
+
+    /**
      * Validate JWT token
      */
-    public boolean validateToken(String token) {
-        try {
-            Jwts.parser()
-                    .verifyWith(getSigningKey())
-                    .build()
-                    .parseSignedClaims(token);
-            return true;
-        } catch (Exception e) {
-            log.error("❌ JWT Validation Error: {}", e.getMessage());
-            return false;
-        }
+    public void validateToken(String token) {
+        extractAllClaims(token);
     }
 
     /**
      * Extract user ID from token
      */
     public String extractUserId(String token) {
-        Claims claims = getAllClaimsFromToken(token);
-        return claims.getSubject();
+        return extractUserId(extractAllClaims(token));
+    }
+
+    /**
+     * Extract user ID from pre-parsed claims
+     */
+    public String extractUserId(Claims claims) {
+        return claims != null ? claims.getSubject() : null;
     }
 
     /**
      * Extract role from token
      */
     public String extractRole(String token) {
-        Claims claims = getAllClaimsFromToken(token);
-        return (String) claims.get("role");
+        return extractRole(extractAllClaims(token));
+    }
+
+    /**
+     * Extract role from pre-parsed claims
+     */
+    public String extractRole(Claims claims) {
+        return claims != null ? (String) claims.get(roleClaimKey) : null;
     }
 
     /**
      * Extract email from token
      */
     public String extractEmail(String token) {
-        Claims claims = getAllClaimsFromToken(token);
-        return (String) claims.get("email");
+        return extractEmail(extractAllClaims(token));
+    }
+
+    /**
+     * Extract email from pre-parsed claims
+     */
+    public String extractEmail(Claims claims) {
+        return claims != null ? (String) claims.get(emailClaimKey) : null;
+    }
+
+    /**
+     * Extract token type from token
+     */
+    public String extractTokenType(String token) {
+        return extractTokenType(extractAllClaims(token));
+    }
+
+    /**
+     * Extract token type from pre-parsed claims
+     */
+    public String extractTokenType(Claims claims) {
+        return claims != null ? (String) claims.get(typeClaimKey) : null;
     }
 
     /**
@@ -74,25 +113,37 @@ public class JwtUtil {
      */
     public boolean isTokenExpired(String token) {
         Date expiration = getExpirationDateFromToken(token);
-        return expiration.before(new Date());
+        return expiration != null && expiration.before(new Date());
     }
 
     /**
      * Get expiration date from token
      */
     public Date getExpirationDateFromToken(String token) {
-        Claims claims = getAllClaimsFromToken(token);
-        return claims.getExpiration();
+        Claims claims = extractAllClaims(token);
+        return claims != null ? claims.getExpiration() : null;
     }
 
     /**
      * Get all claims from token
      */
-    private Claims getAllClaimsFromToken(String token) {
+    public Claims getAllClaimsFromToken(String token) {
         return Jwts.parser()
                 .verifyWith(getSigningKey())
                 .build()
                 .parseSignedClaims(token)
                 .getPayload();
+    }
+
+    public String getRoleClaimKey() {
+        return roleClaimKey;
+    }
+
+    public String getEmailClaimKey() {
+        return emailClaimKey;
+    }
+
+    public String getTypeClaimKey() {
+        return typeClaimKey;
     }
 }

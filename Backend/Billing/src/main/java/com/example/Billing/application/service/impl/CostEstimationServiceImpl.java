@@ -1,5 +1,8 @@
 package com.example.Billing.application.service.impl;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+
 import com.example.Billing.api.dto.response.CostEstimateDTO;
 import com.example.Billing.infrastructure.persistence.document.StorageUsageLedgerDocument;
 import com.example.Billing.infrastructure.persistence.repository.StorageUsageLedgerRepository;
@@ -30,7 +33,7 @@ public class CostEstimationServiceImpl implements ICostEstimationService {
      * @return Cost estimate with projection
      */
     public CostEstimateDTO estimateCurrentMonthCost(String userId) {
-        log.info("📊 Estimating current month cost for user: {}", userId);
+        log.info("dY\"S Estimating current month cost for user: {}", userId);
 
         Instant monthStart = calculator.getCurrentMonthStart();
         Instant now = Instant.now();
@@ -39,24 +42,24 @@ public class CostEstimationServiceImpl implements ICostEstimationService {
         List<StorageUsageLedgerDocument> currentMonthEntries =
             ledgerRepository.findByUserIdAndCreatedAtGreaterThanEqual(userId, monthStart);
 
-        log.info("📋 Found {} storage entries for user {} in current month", currentMonthEntries.size(), userId);
+        log.info("dY\"< Found {} storage entries for user {} in current month", currentMonthEntries.size(), userId);
 
         // Calculate current usage
-        double currentImageGBDays = 0.0;
-        double currentVideoGBDays = 0.0;
+        BigDecimal currentImageGBDays = BigDecimal.ZERO;
+        BigDecimal currentVideoGBDays = BigDecimal.ZERO;
         int daysElapsed = (int) ChronoUnit.DAYS.between(monthStart, now);
         if (daysElapsed <= 0) daysElapsed = 1;
 
         for (StorageUsageLedgerDocument entry : currentMonthEntries) {
-            double gbDays = calculator.calculateGBDays(entry.getSizeBytes(), entry.getStartAt(), entry.getEndAt());
+            BigDecimal gbDays = calculator.calculateGBDays(entry.getSizeBytes(), entry.getStartAt(), entry.getEndAt());
 
             // Determine type (would need mediaType field - for now assume all images)
             // TODO: Get media type from Gallery service or add to ledger
-            currentImageGBDays += gbDays;
+            currentImageGBDays = currentImageGBDays.add(gbDays);
         }
 
-        double currentCost = calculator.calculateCost(currentImageGBDays);
-        double projectedTotal = calculator.projectMonthlyTotal(currentImageGBDays, daysElapsed);
+        BigDecimal currentCost = calculator.calculateCost(currentImageGBDays);
+        BigDecimal projectedTotal = calculator.projectMonthlyTotal(currentImageGBDays, daysElapsed);
 
         // Build response
         CostEstimateDTO.CurrentMonthDataDTO monthData = CostEstimateDTO.CurrentMonthDataDTO.builder()
@@ -75,8 +78,8 @@ public class CostEstimationServiceImpl implements ICostEstimationService {
 
         CostEstimateDTO.StorageBreakdownDTO.StorageTypeDTO videos =
             CostEstimateDTO.StorageBreakdownDTO.StorageTypeDTO.builder()
-                .gbDays(0.0)
-                .cost(0.0)
+                .gbDays(BigDecimal.ZERO)
+                .cost(BigDecimal.ZERO)
                 .build();
 
         CostEstimateDTO.StorageBreakdownDTO breakdown = CostEstimateDTO.StorageBreakdownDTO.builder()
@@ -84,16 +87,16 @@ public class CostEstimationServiceImpl implements ICostEstimationService {
             .videos(videos)
             .build();
 
-        double costPerDay = daysElapsed > 0 ? currentCost / daysElapsed : 0.0;
+        BigDecimal costPerDay = daysElapsed > 0 ? currentCost.divide(BigDecimal.valueOf(daysElapsed), 2, RoundingMode.HALF_UP) : BigDecimal.ZERO;
 
-        log.info("💰 Cost estimate: ${:.2f} current | ${:.2f} projected | ${:.2f}/day",
+        log.info("dY' Cost estimate: ${} current | ${} projected | ${}/day",
             currentCost, projectedTotal, costPerDay);
 
         return CostEstimateDTO.builder()
             .currentMonthData(monthData)
             .storageBreakdown(breakdown)
             .costPerDay(costPerDay)
-            .ratePerGBDay(BillingCalculator.STORAGE_RATE_PER_GB_DAY)
+            .ratePerGBDay(BigDecimal.valueOf(0.01))
             .build();
     }
 
@@ -105,13 +108,13 @@ public class CostEstimationServiceImpl implements ICostEstimationService {
      * @return Cost breakdown
      */
     public BillingCostDetails calculateCostForPeriod(String userId, Instant startDate, Instant endDate) {
-        log.info("📊 Calculating cost for user {} from {} to {}", userId, startDate, endDate);
+        log.info("dY\"S Calculating cost for user {} from {} to {}", userId, startDate, endDate);
 
         List<StorageUsageLedgerDocument> entries =
             ledgerRepository.findByUserIdAndCreatedAtGreaterThanEqual(userId, startDate);
 
-        double totalImageGBDays = 0.0;
-        double totalVideoGBDays = 0.0;
+        BigDecimal totalImageGBDays = BigDecimal.ZERO;
+        BigDecimal totalVideoGBDays = BigDecimal.ZERO;
         int fileCount = 0;
 
         for (StorageUsageLedgerDocument entry : entries) {
@@ -128,24 +131,24 @@ public class CostEstimationServiceImpl implements ICostEstimationService {
             Instant periodStart = fileStart.isBefore(startDate) ? startDate : fileStart;
             Instant periodEnd = fileEnd.isBefore(endDate) ? fileEnd : endDate;
 
-            double gbDays = calculator.calculateGBDays(entry.getSizeBytes(), periodStart, periodEnd);
+            BigDecimal gbDays = calculator.calculateGBDays(entry.getSizeBytes(), periodStart, periodEnd);
 
             // TODO: Get media type from Gallery service
-            totalImageGBDays += gbDays;
+            totalImageGBDays = totalImageGBDays.add(gbDays);
             fileCount++;
         }
 
-        double imageCost = calculator.calculateCost(totalImageGBDays);
-        double totalCost = imageCost;  // + videoCost when implemented
+        BigDecimal imageCost = calculator.calculateCost(totalImageGBDays);
+        BigDecimal totalCost = imageCost;  // + videoCost when implemented
 
-        log.info("💰 Period cost calculated: ${:.2f} ({} files, {:.2f} GB-days)",
+        log.info("dY' Period cost calculated: ${} ({} files, {} GB-days)",
             totalCost, fileCount, totalImageGBDays);
 
         return BillingCostDetails.builder()
             .imageGBDays(totalImageGBDays)
             .imageCost(imageCost)
-            .videoGBDays(0.0)
-            .videoCost(0.0)
+            .videoGBDays(BigDecimal.ZERO)
+            .videoCost(BigDecimal.ZERO)
             .totalGBDays(totalImageGBDays)
             .totalCost(totalCost)
             .fileCount(fileCount)

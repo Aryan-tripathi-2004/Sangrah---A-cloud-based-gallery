@@ -1,8 +1,11 @@
 package com.example.Billing.shared.util;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -13,7 +16,9 @@ import java.time.temporal.ChronoUnit;
 @Component
 public class BillingCalculator {
 
-    public static final double STORAGE_RATE_PER_GB_DAY = 0.01;  // $0.01 per GB-day
+    @Value("${billing.storage-rate-per-gb-day}")
+    private BigDecimal storageRatePerGbDay;
+
     public static final double BYTES_PER_GB = 1_073_741_824.0;  // 1 GB
 
     /**
@@ -23,9 +28,9 @@ public class BillingCalculator {
      * @param deletedDate When file was deleted (null if still stored)
      * @return GB-days
      */
-    public Double calculateGBDays(Long sizeBytes, Instant uploadDate, Instant deletedDate) {
+    public BigDecimal calculateGBDays(Long sizeBytes, Instant uploadDate, Instant deletedDate) {
         if (sizeBytes == null || uploadDate == null) {
-            return 0.0;
+            return BigDecimal.ZERO;
         }
 
         // Determine end date
@@ -38,10 +43,10 @@ public class BillingCalculator {
         }
 
         // Convert bytes to GB and multiply by days
-        double gbAmount = sizeBytes / BYTES_PER_GB;
-        double gbDays = gbAmount * daysBetween;
+        BigDecimal gbAmount = BigDecimal.valueOf(sizeBytes).divide(BigDecimal.valueOf(BYTES_PER_GB), 6, RoundingMode.HALF_UP);
+        BigDecimal gbDays = gbAmount.multiply(BigDecimal.valueOf(daysBetween));
 
-        log.debug("📊 GB-Days calculation: {} bytes, {} days = {:.2f} GB-days",
+        log.debug("GB-Days calculation: {} bytes, {} days = {} GB-days",
             sizeBytes, daysBetween, gbDays);
 
         return gbDays;
@@ -52,11 +57,11 @@ public class BillingCalculator {
      * @param gbDays GB-days to charge for
      * @return Cost in dollars
      */
-    public Double calculateCost(Double gbDays) {
-        if (gbDays == null || gbDays <= 0) {
-            return 0.0;
+    public BigDecimal calculateCost(BigDecimal gbDays) {
+        if (gbDays == null || gbDays.compareTo(BigDecimal.ZERO) <= 0) {
+            return BigDecimal.ZERO;
         }
-        return gbDays * STORAGE_RATE_PER_GB_DAY;
+        return gbDays.multiply(storageRatePerGbDay).setScale(2, RoundingMode.HALF_UP);
     }
 
     /**
@@ -65,15 +70,15 @@ public class BillingCalculator {
      * @param taxRate Tax rate as decimal (e.g., 0.08 for 8%)
      * @return Total with tax
      */
-    public Double calculateWithTax(Double subtotal, Double taxRate) {
-        if (subtotal == null || subtotal <= 0) {
-            return 0.0;
+    public BigDecimal calculateWithTax(BigDecimal subtotal, BigDecimal taxRate) {
+        if (subtotal == null || subtotal.compareTo(BigDecimal.ZERO) <= 0) {
+            return BigDecimal.ZERO;
         }
-        if (taxRate == null || taxRate <= 0) {
+        if (taxRate == null || taxRate.compareTo(BigDecimal.ZERO) <= 0) {
             return subtotal;
         }
-        double tax = subtotal * taxRate;
-        return subtotal + tax;
+        BigDecimal tax = subtotal.multiply(taxRate).setScale(2, RoundingMode.HALF_UP);
+        return subtotal.add(tax);
     }
 
     /**
@@ -90,7 +95,7 @@ public class BillingCalculator {
 
         Instant end = previousMonth.atEndOfMonth()
             .atStartOfDay(ZoneId.of("UTC"))
-            .plusSeconds(86400)  // Add 1 day
+            .plusDays(1) // Utilize declarative date arithmetic
             .toInstant();
 
         return new Instant[] { start, end };
@@ -112,13 +117,18 @@ public class BillingCalculator {
      * @param daysElapsed Days elapsed in current month
      * @return Projected total for full month
      */
-    public Double projectMonthlyTotal(Double currentGBDays, Integer daysElapsed) {
-        if (currentGBDays == null || currentGBDays <= 0 || daysElapsed == null || daysElapsed <= 0) {
-            return 0.0;
+    public BigDecimal projectMonthlyTotal(BigDecimal currentGBDays, Integer daysElapsed) {
+        if (currentGBDays == null || currentGBDays.compareTo(BigDecimal.ZERO) <= 0 || daysElapsed == null || daysElapsed <= 0) {
+            return BigDecimal.ZERO;
         }
 
-        // Project to 31 days (conservative estimate)
-        double projectedGBDays = (currentGBDays / daysElapsed) * 31;
+        // Dynamically calculate the actual number of days in the current month
+        int daysInCurrentMonth = YearMonth.now(ZoneId.of("UTC")).lengthOfMonth();
+
+        BigDecimal projectedGBDays = currentGBDays
+            .divide(BigDecimal.valueOf(daysElapsed), 4, RoundingMode.HALF_UP)
+            .multiply(BigDecimal.valueOf(daysInCurrentMonth));
+
         return calculateCost(projectedGBDays);
     }
 
@@ -143,11 +153,11 @@ public class BillingCalculator {
     /**
      * Format amount as currency
      */
-    public String formatCurrency(Double amount) {
+    public String formatCurrency(BigDecimal amount) {
         if (amount == null) {
             return "$0.00";
         }
-        return String.format("$%.2f", amount);
+        return String.format("$%.2f", amount.doubleValue());
     }
 
     /**

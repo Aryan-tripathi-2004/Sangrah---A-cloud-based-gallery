@@ -1,5 +1,5 @@
-﻿import { Component, Input, OnInit, ChangeDetectorRef, inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, Input, OnInit, ChangeDetectorRef, inject, ChangeDetectionStrategy } from '@angular/core';
+
 import { FormsModule } from '@angular/forms';
 import { SangrahApiService } from '../../../core/api/sangrah-api.service';
 
@@ -21,7 +21,8 @@ interface EventCollaborator {
 @Component({
   selector: 'app-event-collaborators',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [FormsModule],
   templateUrl: './event-collaborators.component.html',
   styles: []
 })

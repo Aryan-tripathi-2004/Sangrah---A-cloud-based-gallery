@@ -5,9 +5,6 @@ import com.example.Event.api.dto.request.UpdateCollaboratorPermissionsRequest;
 import com.example.Event.api.dto.response.CollaboratorMutationResponse;
 import com.example.Event.api.dto.response.CollaboratorsResponse;
 import com.example.Event.api.dto.response.MessageResponse;
-import com.example.Event.infrastructure.persistence.document.EventDocument;
-
-import java.util.List;
 
 public interface IEventCollaboratorService {
     CollaboratorMutationResponse addCollaborator(String eventId, AddCollaboratorRequest request, String userId);
@@ -25,6 +22,4 @@ public interface IEventCollaboratorService {
     boolean hasPermission(String eventId, String userId, String permission);
 
     boolean isCollaborator(String eventId, String userId);
-
-    List<EventDocument.EventCollaborator> getCollaboratorDocuments(String eventId);
 }

@@ -1,5 +1,7 @@
 package com.example.Billing.api.dto.response;
 
+import java.math.BigDecimal;
+
 import com.example.Billing.shared.enums.PaymentStatus;
 import lombok.Builder;
 
@@ -9,7 +11,7 @@ import java.time.Instant;
 public record PaymentDTO(
     String id,
     String invoiceId,
-    Double amount,
+    BigDecimal amount,
     PaymentStatus status,
     Instant transactionDate,
     String stripeChargeId,

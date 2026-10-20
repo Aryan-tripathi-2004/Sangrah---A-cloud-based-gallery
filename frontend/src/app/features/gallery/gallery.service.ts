@@ -1,5 +1,6 @@
-import { Injectable, inject } from '@angular/core';
-import { BehaviorSubject, Observable, throwError } from 'rxjs';
+import { Injectable, inject, signal, computed } from '@angular/core';
+import { toObservable } from '@angular/core/rxjs-interop';
+import { Observable, throwError } from 'rxjs';
 import { tap, catchError, switchMap } from 'rxjs/operators';
 import { SangrahApiService, MediaItem, StorageUsage, TimelineResponse } from '../../core/api/sangrah-api.service';
 
@@ -14,38 +15,39 @@ export interface UploadProgress {
 export class GalleryService {
   private api = inject(SangrahApiService);
 
-  // State management
-  private mediaListSubject = new BehaviorSubject<MediaItem[]>([]);
-  public mediaList$ = this.mediaListSubject.asObservable();
+  // Modern Angular Signals state
+  public readonly mediaList = signal<MediaItem[]>([]);
+  public readonly storageUsage = signal<StorageUsage | null>(null);
+  public readonly timeline = signal<TimelineResponse | null>(null);
+  public readonly uploadProgress = signal<UploadProgress[]>([]);
+  public readonly loading = signal<boolean>(false);
+  public readonly currentTimelineView = signal<'daily' | 'monthly' | 'yearly'>('monthly');
 
-  private storageUsageSubject = new BehaviorSubject<StorageUsage | null>(null);
-  public storageUsage$ = this.storageUsageSubject.asObservable();
+  // Derived computed state
+  public readonly hasMedia = computed(() => this.mediaList().length > 0);
+  public readonly hasUploadsInProgress = computed(() => this.uploadProgress().length > 0);
 
-  private timelineSubject = new BehaviorSubject<TimelineResponse | null>(null);
-  public timeline$ = this.timelineSubject.asObservable();
-
-  private uploadProgressSubject = new BehaviorSubject<UploadProgress[]>([]);
-  public uploadProgress$ = this.uploadProgressSubject.asObservable();
-
-  private loadingSubject = new BehaviorSubject<boolean>(false);
-  public loading$ = this.loadingSubject.asObservable();
-
-  private currentTimelineViewSubject = new BehaviorSubject<'daily' | 'monthly' | 'yearly'>('monthly');
-  public currentTimelineView$ = this.currentTimelineViewSubject.asObservable();
+  // Backwards-compatible RxJS observables via interop
+  public readonly mediaList$: Observable<MediaItem[]> = toObservable(this.mediaList);
+  public readonly storageUsage$: Observable<StorageUsage | null> = toObservable(this.storageUsage);
+  public readonly timeline$: Observable<TimelineResponse | null> = toObservable(this.timeline);
+  public readonly uploadProgress$: Observable<UploadProgress[]> = toObservable(this.uploadProgress);
+  public readonly loading$: Observable<boolean> = toObservable(this.loading);
+  public readonly currentTimelineView$: Observable<'daily' | 'monthly' | 'yearly'> = toObservable(this.currentTimelineView);
 
   /**
    * Load all media for the user
    */
   loadMediaList(): Observable<{ count: number; items: MediaItem[] }> {
-    this.loadingSubject.next(true);
+    this.loading.set(true);
     return this.api.listGalleryMedia().pipe(
       tap(response => {
-        this.mediaListSubject.next(response.items);
-        this.loadingSubject.next(false);
+        this.mediaList.set(response.items || []);
+        this.loading.set(false);
       }),
       catchError(error => {
         console.error('Failed to load media list:', error);
-        this.loadingSubject.next(false);
+        this.loading.set(false);
         return throwError(() => error);
       })
     );
@@ -57,7 +59,7 @@ export class GalleryService {
   loadStorageUsage(): Observable<StorageUsage> {
     return this.api.getStorageUsageGallery().pipe(
       tap(usage => {
-        this.storageUsageSubject.next(usage);
+        this.storageUsage.set(usage);
       }),
       catchError(error => {
         console.error('Failed to load storage usage:', error);
@@ -70,30 +72,30 @@ export class GalleryService {
    * Load timeline with specified view
    */
   loadTimeline(view: 'daily' | 'monthly' | 'yearly' = 'monthly'): Observable<TimelineResponse> {
-    this.loadingSubject.next(true);
-    this.currentTimelineViewSubject.next(view);
+    this.loading.set(true);
+    this.currentTimelineView.set(view);
 
     let request$: Observable<TimelineResponse>;
 
     switch (view) {
       case 'daily':
-        request$ = this.api.getGalleryDailyTimeline();
+        request$ = this.api.getGalleryTimeline('DAILY');
         break;
       case 'yearly':
-        request$ = this.api.getGalleryYearlyTimeline();
+        request$ = this.api.getGalleryTimeline('YEARLY');
         break;
       default:
-        request$ = this.api.getGalleryMonthlyTimeline();
+        request$ = this.api.getGalleryTimeline('MONTHLY');
     }
 
     return request$.pipe(
       tap(response => {
-        this.timelineSubject.next(response);
-        this.loadingSubject.next(false);
+        this.timeline.set(response);
+        this.loading.set(false);
       }),
       catchError(error => {
         console.error(`Failed to load ${view} timeline:`, error);
-        this.loadingSubject.next(false);
+        this.loading.set(false);
         return throwError(() => error);
       })
     );
@@ -110,23 +112,23 @@ export class GalleryService {
     };
 
     // Add to progress list
-    const currentProgress = this.uploadProgressSubject.value;
-    this.uploadProgressSubject.next([...currentProgress, progress]);
+    this.uploadProgress.update(current => [...current, progress]);
 
     return this.api.uploadGalleryMedia(file).pipe(
       tap(() => {
         // Update progress to success
-        const updated = this.uploadProgressSubject.value.map(p =>
-          p.fileName === file.name
-            ? { ...p, progress: 100, status: 'success' as const, message: 'Upload complete' }
-            : p
+        this.uploadProgress.update(current =>
+          current.map(p =>
+            p.fileName === file.name
+              ? { ...p, progress: 100, status: 'success' as const, message: 'Upload complete' }
+              : p
+          )
         );
-        this.uploadProgressSubject.next(updated);
 
         // AutoRemove after 2 seconds
         setTimeout(() => {
-          this.uploadProgressSubject.next(
-            this.uploadProgressSubject.value.filter(p => p.fileName !== file.name)
+          this.uploadProgress.update(current =>
+            current.filter(p => p.fileName !== file.name)
           );
         }, 2000);
 
@@ -135,17 +137,18 @@ export class GalleryService {
       }),
       catchError(error => {
         // Update progress to error
-        const updated = this.uploadProgressSubject.value.map(p =>
-          p.fileName === file.name
-            ? {
-                ...p,
-                progress: 0,
-                status: 'error' as const,
-                message: error?.error?.error || 'Upload failed',
-              }
-            : p
+        this.uploadProgress.update(current =>
+          current.map(p =>
+            p.fileName === file.name
+              ? {
+                  ...p,
+                  progress: 0,
+                  status: 'error' as const,
+                  message: error?.message || error?.error?.error || 'Upload failed',
+                }
+              : p
+          )
         );
-        this.uploadProgressSubject.next(updated);
 
         return throwError(() => error);
       })
@@ -156,12 +159,12 @@ export class GalleryService {
    * Upload multiple files sequentially
    */
   uploadFiles(files: File[]): Observable<MediaItem[]> {
-    this.loadingSubject.next(true);
+    this.loading.set(true);
     const uploadedItems: MediaItem[] = [];
 
     const uploadNext = (index: number): Observable<MediaItem[]> => {
       if (index >= files.length) {
-        this.loadingSubject.next(false);
+        this.loading.set(false);
         return new Observable(observer => {
           observer.next(uploadedItems);
           observer.complete();
@@ -199,8 +202,7 @@ export class GalleryService {
     return this.api.deleteGalleryMedia(mediaId).pipe(
       tap(() => {
         // Remove from local state
-        const current = this.mediaListSubject.value;
-        this.mediaListSubject.next(current.filter(m => m.id !== mediaId));
+        this.mediaList.update(current => current.filter(m => m.id !== mediaId));
       }),
       catchError(error => {
         console.error('Failed to delete media:', error);
@@ -213,29 +215,29 @@ export class GalleryService {
    * Get current state values
    */
   getMediaListValue(): MediaItem[] {
-    return this.mediaListSubject.value;
+    return this.mediaList();
   }
 
   getStorageUsageValue(): StorageUsage | null {
-    return this.storageUsageSubject.value;
+    return this.storageUsage();
   }
 
   getTimelineValue(): TimelineResponse | null {
-    return this.timelineSubject.value;
+    return this.timeline();
   }
 
   getUploadProgressValue(): UploadProgress[] {
-    return this.uploadProgressSubject.value;
+    return this.uploadProgress();
   }
 
   /**
    * Clear all data
    */
   clear(): void {
-    this.mediaListSubject.next([]);
-    this.storageUsageSubject.next(null);
-    this.timelineSubject.next(null);
-    this.uploadProgressSubject.next([]);
-    this.loadingSubject.next(false);
+    this.mediaList.set([]);
+    this.storageUsage.set(null);
+    this.timeline.set(null);
+    this.uploadProgress.set([]);
+    this.loading.set(false);
   }
 }

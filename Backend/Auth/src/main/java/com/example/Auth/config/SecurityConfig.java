@@ -30,7 +30,8 @@ public class SecurityConfig {
                 .requestMatchers("/api/v1/auth/register").permitAll()
                 .requestMatchers("/api/v1/auth/login").permitAll()
                 .requestMatchers("/api/v1/auth/logout").permitAll()
-                .requestMatchers("/api/v1/auth/token/refresh").permitAll()  // ⭐ FIXED: Correct full path
+                .requestMatchers("/api/v1/auth/token/refresh").permitAll()
+                .requestMatchers("/api/v1/auth/token/validate").permitAll()
                 .requestMatchers("/api/v1/users/**").permitAll()
 
                 // Actuator and Swagger endpoints

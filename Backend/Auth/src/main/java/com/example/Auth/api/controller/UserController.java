@@ -2,14 +2,19 @@ package com.example.Auth.api.controller;
 
 import com.example.Auth.api.annotation.CurrentUserId;
 import com.example.Auth.api.dto.UserDTO;
+import com.example.Auth.api.dto.request.UpdateProfileRequest;
 import com.example.Auth.api.dto.response.UserWrapperResponse;
-import com.example.Auth.application.service.interfaces.IAuthService;
+import com.example.Auth.application.service.interfaces.IUserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.multipart.MultipartFile;
 
 @Slf4j
 @RestController
@@ -17,14 +22,14 @@ import org.springframework.web.bind.annotation.*;
 @RequiredArgsConstructor
 public class UserController {
 
-    private final IAuthService authService;
+    private final IUserService userService;
 
     @GetMapping("/profile")
     @Operation(summary = "Get current user profile")
     @SecurityRequirement(name = "Bearer Authentication")
     public ResponseEntity<UserDTO> getProfile(@CurrentUserId String userId) {
         log.info("  Fetching profile for user: {}", userId);
-        UserDTO user = authService.getUserById(userId);
+        UserDTO user = userService.getUserById(userId);
         log.info("  Profile fetched successfully");
         return ResponseEntity.ok(user);
     }
@@ -34,11 +39,28 @@ public class UserController {
     @SecurityRequirement(name = "Bearer Authentication")
     public ResponseEntity<UserDTO> updateProfile(
             @CurrentUserId String userId,
-            @RequestBody UserDTO updateRequest) {
+            @Valid @RequestBody UpdateProfileRequest updateRequest) {
         log.info("  Updating profile for user: {}", userId);
-        UserDTO updatedUser = authService.updateUser(userId, updateRequest);
+        
+        // Convert request DTO to UserDTO internally for service layer 
+        // to avoid cascading changes too deeply if unnecessary, 
+        // but ideally update IAuthService method signature. Let's assume we update the service too.
+        UserDTO updatedUser = userService.updateUser(userId, updateRequest);
+        
         log.info("  Profile updated successfully");
         return ResponseEntity.ok(updatedUser);
+    }
+
+    @PostMapping(value = "/profile/avatar", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(summary = "Upload current user profile avatar")
+    @SecurityRequirement(name = "Bearer Authentication")
+    public ResponseEntity<UserDTO> uploadAvatar(
+            @CurrentUserId String userId,
+            @RequestParam("file") MultipartFile file) {
+        log.info("📸 Avatar upload request for user: {}", userId);
+        UserDTO user = userService.uploadAvatar(userId, file);
+        log.info("✅ Avatar uploaded successfully for user: {}", userId);
+        return ResponseEntity.ok(user);
     }
 
     @DeleteMapping("/profile")
@@ -46,26 +68,18 @@ public class UserController {
     @SecurityRequirement(name = "Bearer Authentication")
     public ResponseEntity<Void> deleteAccount(@CurrentUserId String userId) {
         log.info("  Deleting account for user: {}", userId);
-        authService.deleteUser(userId);
+        userService.deleteUser(userId);
         log.info("  Account deleted successfully");
         return ResponseEntity.noContent().build();
     }
 
-    @GetMapping("/{userId}")
-    @Operation(summary = "Get user by id")
-    public ResponseEntity<UserWrapperResponse> byId(@PathVariable String userId) {
-        log.info("  Fetching user data for userId: {}", userId);
-        UserDTO user = authService.getUserById(userId);
-        log.info("  User found: {}", user.email());
-        return ResponseEntity.ok(new UserWrapperResponse(user, "success", null));
-    }
-
-    @GetMapping("/by-email/{email}")
-    @Operation(summary = "Get user by email")
-    public ResponseEntity<UserWrapperResponse> byEmail(@PathVariable String email) {
-        log.info("  Fetching user data for email: {}", email);
-        UserDTO user = authService.getUserByEmail(email);
-        log.info("  User found with email: {}", email);
-        return ResponseEntity.ok(new UserWrapperResponse(user, "success", null));
+    @GetMapping
+    @Operation(summary = "Find user by identifier")
+    public ResponseEntity<UserWrapperResponse> findUser(
+            @RequestParam(required = false) String id,
+            @RequestParam(required = false) String email) {
+        
+        log.info("  Fetching user data for id: {} or email: {}", id, email);
+        return ResponseEntity.ok(userService.findUserWrapper(id, email));
     }
 }

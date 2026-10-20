@@ -2,8 +2,8 @@ package com.example.Email.application.service.interfaces;
 
 import com.example.Email.api.dto.EmailSendRequest;
 import com.example.Email.api.dto.EmailSendResponse;
-
-import jakarta.mail.MessagingException;
+import com.example.Email.api.dto.response.EmailServiceInfoResponse;
+import com.example.Email.shared.enums.EmailType;
 
 /**
  * Service contract for all email dispatch operations within the Sangrah platform.
@@ -37,7 +37,7 @@ public interface IEmailService {
             String userEmail,
             Double amount,
             byte[] pdfContent
-    ) throws MessagingException;
+    );
 
     /**
      * Send a new-invoice notification with a payment link.
@@ -56,7 +56,7 @@ public interface IEmailService {
             String userEmail,
             Double amount,
             String dueDate
-    ) throws MessagingException;
+    );
 
     /**
      * Send a payment-failure alert with a retry link.
@@ -73,7 +73,7 @@ public interface IEmailService {
             String userId,
             String userEmail,
             String failureReason
-    ) throws MessagingException;
+    );
 
     /**
      * Send a generic platform notification email.
@@ -88,8 +88,21 @@ public interface IEmailService {
      */
     EmailSendResponse sendNotificationEmail(
             String userEmail,
-            String notificationType,
+            EmailType notificationType,
             String subject,
             String messageBody
-    ) throws MessagingException;
+    );
+
+    /**
+     * Asynchronously dispatch an HTML email offloaded to a background thread pool.
+     *
+     * @param toEmail     recipient email address
+     * @param subject     email subject
+     * @param htmlContent rendered HTML body
+     */
+    void sendHtmlEmailAsync(String toEmail, String subject, String htmlContent);
+
+    EmailServiceInfoResponse getServiceInfo();
+
+    String getHealth();
 }

@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter, ViewChild, ElementRef, OnInit, OnDestroy, NgZone } from '@angular/core';
+import { Component, Input, Output, EventEmitter, ViewChild, ElementRef, OnInit, OnDestroy, NgZone, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { BillingService } from '../../billing.service';
 import { Observable, Subject } from 'rxjs';
@@ -8,6 +8,7 @@ import { loadStripe, Stripe, StripeElements, StripePaymentElement } from '@strip
 @Component({
   selector: 'app-stripe-payment-modal',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CommonModule],
   templateUrl: './stripe-payment-modal.component.html',
   styles: [`
@@ -52,7 +53,8 @@ export class StripePaymentModalComponent implements OnInit, OnDestroy {
 
   constructor(
     private billingService: BillingService,
-    private ngZone: NgZone
+    private ngZone: NgZone,
+    private cdr: ChangeDetectorRef
   ) {
     this.paymentIntent$ = this.billingService.paymentIntent$;
   }
@@ -179,14 +181,17 @@ export class StripePaymentModalComponent implements OnInit, OnDestroy {
         console.log('📌 Mounting payment element...');
         this.paymentElement.mount(this.stripeContainerRef.nativeElement);
         this.stripeReady = true;
+        this.cdr.markForCheck();
         console.log('✅ Payment element mounted and ready!');
       } else {
         console.error('❌ Container ref is not available - this should not happen');
         this.paymentError = 'Payment form setup failed. Please try again.';
+        this.cdr.markForCheck();
       }
     } catch (error) {
       console.error('❌ Error setting up payment elements:', error);
       this.paymentError = 'Failed to set up payment form. Please try again.';
+      this.cdr.markForCheck();
     }
   }
 
@@ -201,6 +206,7 @@ export class StripePaymentModalComponent implements OnInit, OnDestroy {
 
     this.processing = true;
     this.paymentError = '';
+    this.cdr.markForCheck();
     console.log('🔄 Starting payment confirmation...');
     console.log('📱 Stripe instance:', !!this.stripe);
     console.log('📝 Elements:', !!this.elements);
@@ -227,12 +233,14 @@ export class StripePaymentModalComponent implements OnInit, OnDestroy {
           console.error('❌ Payment error:', result.error);
           this.paymentError = result.error.message || 'Payment failed. Please try again.';
           this.processing = false;
+          this.cdr.markForCheck();
         } else {
           // Payment successful
           console.log('✅ Payment confirmed!');
           this.showSuccessMessage = true;
           this.showProcessingMessage = true;  // Show "waiting..." message
           this.processing = false;
+          this.cdr.markForCheck();
 
           // 🔄 Sync payment status and check invoice (MVP approach - simpler and more reliable)
           console.log('🔄 Syncing payment status with backend...');
@@ -243,6 +251,7 @@ export class StripePaymentModalComponent implements OnInit, OnDestroy {
       console.error('❌ Error confirming payment:', error);
       this.paymentError = 'An unexpected error occurred. Please try again.';
       this.processing = false;
+      this.cdr.markForCheck();
     }
   }
 

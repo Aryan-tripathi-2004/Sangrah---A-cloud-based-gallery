@@ -1,29 +1,28 @@
-import { Component, inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, inject, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
 import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { RouterLink, Router } from '@angular/router';
-import { SangrahApiService } from '../../core/api/sangrah-api.service';
 import { LayoutComponent } from '../../shared/layout/layout.component';
-import { GalleryService } from '../gallery/gallery.service';
+import { EventService } from './event.service';
 
 @Component({
   selector: 'app-event-create',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, RouterLink, LayoutComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [ReactiveFormsModule, RouterLink, LayoutComponent],
   templateUrl: './event-create.component.html',
   styles: []
 })
 export class EventCreateComponent {
-  private api = inject(SangrahApiService);
   private fb = inject(FormBuilder);
   private router = inject(Router);
-  private gallery = inject(GalleryService);
+  private eventService = inject(EventService);
+  private cdr = inject(ChangeDetectorRef);
 
   eventForm: FormGroup;
   isSubmitting = false;
   errorMessage = '';
 
-  isUploadingCover = false;
+  selectedCoverFile: File | null = null;
   coverPreviewUrl: string | null = null;
 
   constructor() {
@@ -32,41 +31,26 @@ export class EventCreateComponent {
       description: ['', Validators.required],
       eventDate: ['', Validators.required],
       visibility: ['PUBLIC', Validators.required],
-      moderationEnabled: [true],
-      coverImageId: ['']
+      moderationEnabled: [true]
     });
   }
 
-  onCoverImageSelected(event: Event): void {
+  onCoverImageSelected(event: any): void {
     const input = event.target as HTMLInputElement;
 
     if (!input.files || input.files.length === 0) {
+      this.selectedCoverFile = null;
+      this.coverPreviewUrl = null;
+      this.cdr.markForCheck();
       return;
     }
 
     const file = input.files[0];
+    this.selectedCoverFile = file;
 
-    // Image preview
+    // Image preview URL
     this.coverPreviewUrl = URL.createObjectURL(file);
-
-    this.isUploadingCover = true;
-
-    this.gallery.uploadFile(file).subscribe({
-      next: (mediaItem) => {
-        this.eventForm.patchValue({
-          coverImageId: mediaItem.id
-        });
-
-        this.isUploadingCover = false;
-
-        console.log('Cover image uploaded:', mediaItem);
-      },
-      error: (error) => {
-        console.error('Cover upload failed:', error);
-        this.errorMessage = 'Failed to upload cover image';
-        this.isUploadingCover = false;
-      }
-    });
+    this.cdr.markForCheck();
   }
 
   onSubmit(): void {
@@ -74,25 +58,36 @@ export class EventCreateComponent {
 
     this.isSubmitting = true;
     this.errorMessage = '';
+    this.cdr.markForCheck();
 
-    const payload = {
+    const eventDetails = {
       title: this.eventForm.value.title,
       description: this.eventForm.value.description,
       eventDate: this.eventForm.value.eventDate,
       visibility: this.eventForm.value.visibility,
-      coverImageId: this.eventForm.value.coverImageId,
       moderationEnabled: this.eventForm.value.moderationEnabled,
     };
 
-    this.api.createEvent(payload).subscribe({
+    const formData = new FormData();
+    formData.append(
+      'eventDetails',
+      new Blob([JSON.stringify(eventDetails)], { type: 'application/json' })
+    );
+
+    if (this.selectedCoverFile) {
+      formData.append('coverMedia', this.selectedCoverFile);
+    }
+
+    this.eventService.createEvent(formData).subscribe({
       next: (event) => {
         this.isSubmitting = false;
         this.router.navigate(['/event', event.id]);
       },
       error: (error) => {
         this.isSubmitting = false;
-        this.errorMessage = error?.error?.message || 'Failed to create event';
+        this.errorMessage = error?.message || error?.error?.message || error?.error?.error || 'Failed to create event';
         console.error('Create event error:', error);
+        this.cdr.markForCheck();
       },
     });
   }

@@ -13,6 +13,7 @@ import { BillingPageComponent } from './features/billing/billing-page.component'
 import { PendingRequestsComponent } from './features/pending-requests/pending-requests.component';
 import { PendingRequestsDetailComponent } from './features/pending-requests/pending-requests-detail.component';
 import { ProfileComponent } from './features/profile/profile.component';
+import { SettingsComponent } from './features/settings/settings.component';
 import { AboutComponent } from './features/about/about.component';
 
 export const routes: Routes = [
@@ -32,6 +33,7 @@ export const routes: Routes = [
   { path: 'pending-requests', component: PendingRequestsComponent, canActivate: [authGuard], data: { title: 'Pending Requests' } },
   { path: 'pending-requests/:eventId', component: PendingRequestsDetailComponent, canActivate: [authGuard], data: { title: 'Manage Access Requests' } },
   { path: 'profile', component: ProfileComponent, canActivate: [authGuard], data: { title: 'Profile' } },
+  { path: 'settings', component: SettingsComponent, canActivate: [authGuard], data: { title: 'Account Settings' } },
 
   // Backward compatibility routes
   { path: 'register', redirectTo: 'signup' },

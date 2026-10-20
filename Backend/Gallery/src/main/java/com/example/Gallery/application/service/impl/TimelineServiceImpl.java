@@ -2,23 +2,22 @@ package com.example.Gallery.application.service.impl;
 
 import com.example.Gallery.api.dto.response.MediaItemResponse;
 import com.example.Gallery.api.dto.response.TimelineGroupResponse;
+import com.example.Gallery.api.dto.response.TimelineResponse;
 import com.example.Gallery.application.service.interfaces.ITimelineService;
 import com.example.Gallery.infrastructure.mapper.GalleryMediaMapper;
 import com.example.Gallery.infrastructure.mapper.TimelineMapper;
 import com.example.Gallery.infrastructure.persistence.document.GalleryMediaDocument;
 import com.example.Gallery.infrastructure.persistence.repository.GalleryMediaRepository;
+import com.example.Gallery.infrastructure.persistence.repository.TimelineGroupAggregationResult;
 import com.example.Gallery.shared.enums.TimelineGroupType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalDate;
 import java.time.YearMonth;
-import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -30,68 +29,69 @@ public class TimelineServiceImpl implements ITimelineService {
     private final TimelineMapper timelineMapper;
 
     @Override
-    public List<TimelineGroupResponse> getDailyTimeline(String userId) {
+    public TimelineResponse getDailyTimeline(String userId) {
         log.info("📅 Generating daily timeline for user: {}", userId);
 
-        List<GalleryMediaDocument> media = mediaRepository.findByUserIdAndDeletedAtIsNull(userId);
-        log.info("Found {} active media files", media.size());
+        List<TimelineGroupAggregationResult> groupedData = mediaRepository.getGroupedTimelineDaily(userId);
+        log.info("Found {} daily timeline groups for user: {}", groupedData.size(), userId);
 
-        Map<LocalDate, List<GalleryMediaDocument>> groupedByDay = media.stream()
-                .collect(Collectors.groupingBy(m -> m.getUploadedAt()
-                        .atZone(ZoneId.systemDefault())
-                        .toLocalDate()));
+        List<TimelineGroupResponse> groups = groupedData.stream()
+                .map(group -> buildTimelineGroup(TimelineGroupType.DAILY, group.getDate(), group.getItems()))
+                .toList();
 
-        return groupedByDay.entrySet().stream()
-                .sorted((a, b) -> b.getKey().compareTo(a.getKey()))
-                .map(entry -> buildTimelineGroup(TimelineGroupType.DAILY, entry.getKey().toString(), entry.getValue()))
-                .collect(Collectors.toList());
+        return new TimelineResponse("daily", groups, groups.size());
     }
 
     @Override
-    public List<TimelineGroupResponse> getMonthlyTimeline(String userId) {
+    public TimelineResponse getMonthlyTimeline(String userId) {
         log.info("📅 Generating monthly timeline for user: {}", userId);
 
-        List<GalleryMediaDocument> media = mediaRepository.findByUserIdAndDeletedAtIsNull(userId);
+        List<TimelineGroupAggregationResult> groupedData = mediaRepository.getGroupedTimelineMonthly(userId);
+        log.info("Found {} monthly timeline groups for user: {}", groupedData.size(), userId);
 
-        Map<YearMonth, List<GalleryMediaDocument>> groupedByMonth = media.stream()
-                .collect(Collectors.groupingBy(m ->
-                        YearMonth.from(m.getUploadedAt()
-                                .atZone(ZoneId.systemDefault())
-                                .toLocalDate())));
-
-        return groupedByMonth.entrySet().stream()
-                .sorted((a, b) -> b.getKey().compareTo(a.getKey()))
-                .map(entry -> {
-                    String label = entry.getKey().format(
-                            java.time.format.DateTimeFormatter.ofPattern("MMMM yyyy"));
-                    return buildTimelineGroup(TimelineGroupType.MONTHLY, label, entry.getValue());
+        List<TimelineGroupResponse> groups = groupedData.stream()
+                .map(group -> {
+                    String label = formatMonthlyLabel(group.getDate());
+                    return buildTimelineGroup(TimelineGroupType.MONTHLY, label, group.getItems());
                 })
-                .collect(Collectors.toList());
+                .toList();
+
+        return new TimelineResponse("monthly", groups, groups.size());
     }
 
     @Override
-    public List<TimelineGroupResponse> getYearlyTimeline(String userId) {
+    public TimelineResponse getYearlyTimeline(String userId) {
         log.info("📅 Generating yearly timeline for user: {}", userId);
 
-        List<GalleryMediaDocument> media = mediaRepository.findByUserIdAndDeletedAtIsNull(userId);
+        List<TimelineGroupAggregationResult> groupedData = mediaRepository.getGroupedTimelineYearly(userId);
+        log.info("Found {} yearly timeline groups for user: {}", groupedData.size(), userId);
 
-        Map<Integer, List<GalleryMediaDocument>> groupedByYear = media.stream()
-                .collect(Collectors.groupingBy(m ->
-                        m.getUploadedAt()
-                                .atZone(ZoneId.systemDefault())
-                                .getYear()));
+        List<TimelineGroupResponse> groups = groupedData.stream()
+                .map(group -> buildTimelineGroup(TimelineGroupType.YEARLY, group.getDate(), group.getItems()))
+                .toList();
 
-        return groupedByYear.entrySet().stream()
-                .sorted((a, b) -> b.getKey().compareTo(a.getKey()))
-                .map(entry -> buildTimelineGroup(TimelineGroupType.YEARLY, String.valueOf(entry.getKey()), entry.getValue()))
-                .collect(Collectors.toList());
+        return new TimelineResponse("yearly", groups, groups.size());
+    }
+
+    private String formatMonthlyLabel(String yearMonthStr) {
+        if (yearMonthStr == null || yearMonthStr.isBlank()) {
+            return "Unknown";
+        }
+        try {
+            return YearMonth.parse(yearMonthStr).format(DateTimeFormatter.ofPattern("MMMM yyyy"));
+        } catch (Exception e) {
+            return yearMonthStr;
+        }
     }
 
     private TimelineGroupResponse buildTimelineGroup(TimelineGroupType type, String label, List<GalleryMediaDocument> docs) {
+        if (docs == null) {
+            docs = List.of();
+        }
         List<MediaItemResponse> items = docs.stream()
                 .sorted(Comparator.comparing(GalleryMediaDocument::getUploadedAt).reversed())
                 .map(galleryMediaMapper::toMediaItemResponse)
-                .collect(Collectors.toList());
+                .toList();
 
         return timelineMapper.toTimelineGroupResponse(type, label, items);
     }

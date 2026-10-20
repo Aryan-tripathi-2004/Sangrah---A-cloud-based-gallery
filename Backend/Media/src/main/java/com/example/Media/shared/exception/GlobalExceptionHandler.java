@@ -17,6 +17,7 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 
 import java.net.URI;
 import java.time.Instant;
+import java.util.Arrays;
 
 /**
  * Centralised exception handler for all controllers in the Media microservice.
@@ -95,10 +96,14 @@ public class GlobalExceptionHandler {
             WebRequest request) {
 
         log.warn("Unreadable request body: {}", ex.getMessage());
+        Throwable rootCause = ex.getMostSpecificCause();
+        String detail = (rootCause != null && rootCause.getMessage() != null)
+                ? rootCause.getMessage()
+                : "Request body contains an invalid or unsupported value.";
         return problemResponse(
                 HttpStatus.BAD_REQUEST,
                 "Malformed request",
-                "Request body contains an invalid or unsupported value.",
+                detail,
                 request);
     }
 
@@ -117,7 +122,7 @@ public class GlobalExceptionHandler {
                 ex.getValue(),
                 ex.getName(),
                 ex.getRequiredType() != null && ex.getRequiredType().isEnum()
-                        ? "Accepted values: " + java.util.Arrays.toString(ex.getRequiredType().getEnumConstants())
+                        ? "Accepted values: " + Arrays.toString(ex.getRequiredType().getEnumConstants())
                         : "Please provide a valid value.");
 
         log.warn("Type mismatch: {}", detail);
@@ -131,6 +136,15 @@ public class GlobalExceptionHandler {
 
         log.warn("Illegal argument: {}", ex.getMessage());
         return problemResponse(HttpStatus.BAD_REQUEST, "Invalid request", ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(DomainValidationException.class)
+    public ResponseEntity<ProblemDetail> handleDomainValidation(
+            DomainValidationException ex,
+            WebRequest request) {
+
+        log.warn("Domain validation error: {}", ex.getMessage());
+        return problemResponse(HttpStatus.BAD_REQUEST, "Validation failed", ex.getMessage(), request);
     }
 
     // -------------------------------------------------------------------------
@@ -201,6 +215,19 @@ public class GlobalExceptionHandler {
      * Safety net for all unhandled exceptions. The internal message is intentionally
      * suppressed from the response body to prevent accidental information disclosure.
      */
+    @ExceptionHandler(MediaProcessingException.class)
+    public ResponseEntity<ProblemDetail> handleMediaProcessingException(
+            MediaProcessingException ex,
+            WebRequest request) {
+
+        log.error("Media processing error: {}", ex.getMessage());
+        return problemResponse(
+                HttpStatus.INTERNAL_SERVER_ERROR,
+                "Media Processing Error",
+                ex.getMessage(),
+                request);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ProblemDetail> handleGlobalException(
             Exception ex,

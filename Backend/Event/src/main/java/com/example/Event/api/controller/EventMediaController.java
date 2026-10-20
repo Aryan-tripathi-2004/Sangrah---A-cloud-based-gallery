@@ -1,9 +1,10 @@
 package com.example.Event.api.controller;
 
 import com.example.Event.api.annotation.CurrentUserId;
-import com.example.Event.api.dto.request.MediaRejectionRequest;
+import com.example.Event.api.dto.request.MediaModerationRequest;
 import com.example.Event.api.dto.response.EventMediaCollectionResponse;
 import com.example.Event.api.dto.response.EventMediaDetailResponse;
+import com.example.Event.shared.enums.ApprovalStatus;
 import com.example.Event.api.dto.response.EventMediaFileResponse;
 import com.example.Event.api.dto.response.EventMediaModerationResponse;
 import com.example.Event.api.dto.response.EventMediaUploadResponse;
@@ -13,20 +14,34 @@ import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.ByteArrayResource;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
-import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PatchMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestHeader;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import com.example.Event.shared.exception.DomainValidationException;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 @Validated
 @RestController
@@ -34,18 +49,6 @@ import org.springframework.web.multipart.MultipartFile;
 @RequiredArgsConstructor
 public class EventMediaController {
     private final IEventModerationService moderationService;
-
-    @GetMapping("/media/{mediaId}/file")
-    @Operation(summary = "Get event media file", description = "Download or stream the actual media file.")
-    public ResponseEntity<ByteArrayResource> getMediaFile(
-            @PathVariable String eventId,
-            @PathVariable String mediaId,
-            @CurrentUserId(required = false) String userId) {
-        EventMediaFileResponse response = moderationService.getMediaFile(eventId, mediaId, userId);
-        return ResponseEntity.ok()
-                .contentType(response.contentType())
-                .body(response.content());
-    }
 
     @PostMapping("/media")
     @Operation(summary = "Upload event media")
@@ -58,47 +61,47 @@ public class EventMediaController {
                 .body(moderationService.uploadMedia(eventId, file, userId, userEmail));
     }
 
-    @GetMapping("/timeline")
-    @Operation(summary = "Get event timeline")
-    public ResponseEntity<EventMediaCollectionResponse> timeline(
-            @PathVariable String eventId,
-            @CurrentUserId(required = false) String userId) {
-        return ResponseEntity.ok(moderationService.getTimeline(eventId, userId));
-    }
-
     @GetMapping("/media")
-    @Operation(summary = "Get all event media")
-    public ResponseEntity<EventMediaCollectionResponse> listEventMedia(
+    @Operation(summary = "Get event media collection", description = "Use ?view=timeline to group media sequentially")
+    public ResponseEntity<EventMediaCollectionResponse> getMediaCollection(
             @PathVariable String eventId,
-            @CurrentUserId(required = false) String userId) {
-        return ResponseEntity.ok(moderationService.listEventMedia(eventId, userId));
+            @RequestHeader(value = "X-User-Id", required = false) String userId,
+            @RequestParam(defaultValue = "list") String view) {
+            
+        return ResponseEntity.ok(moderationService.getMediaCollection(eventId, userId, view));
     }
 
-    @GetMapping("/media/{mediaId}")
-    @Operation(summary = "Get event media")
-    public ResponseEntity<EventMediaDetailResponse> get(
-            @PathVariable String eventId,
-            @PathVariable String mediaId) {
-        return ResponseEntity.ok(moderationService.getMedia(eventId, mediaId));
-    }
-
-    @PatchMapping("/media/{mediaId}/approve")
-    @Operation(summary = "Approve event media")
-    public ResponseEntity<EventMediaModerationResponse> approve(
+    @GetMapping(value = "/media/{mediaId}", produces = {MediaType.APPLICATION_JSON_VALUE, MediaType.APPLICATION_OCTET_STREAM_VALUE, "image/*", "video/*"})
+    @Operation(summary = "Get event media details or file stream")
+    public ResponseEntity<?> getMedia(
             @PathVariable String eventId,
             @PathVariable String mediaId,
-            @CurrentUserId String userId) {
-        return ResponseEntity.ok(moderationService.approveMedia(eventId, mediaId, userId));
+            @RequestHeader(value = HttpHeaders.ACCEPT, defaultValue = MediaType.APPLICATION_JSON_VALUE) String acceptHeader,
+            @RequestHeader(value = "X-User-Id", required = false) String userId) {
+            
+        if (acceptHeader.contains(MediaType.APPLICATION_JSON_VALUE)) {
+            return ResponseEntity.ok(moderationService.getMedia(eventId, mediaId));
+        }
+
+        EventMediaFileResponse response = moderationService.getMediaFile(eventId, mediaId, userId);
+        return ResponseEntity.ok()
+                .contentType(response.contentType())
+                .body(response.content());
     }
 
-    @PatchMapping("/media/{mediaId}/reject")
-    @Operation(summary = "Reject event media")
-    public ResponseEntity<EventMediaModerationResponse> reject(
+    @PatchMapping("/media/{mediaId}/status")
+    @Operation(summary = "Update media moderation status")
+    public ResponseEntity<EventMediaModerationResponse> updateMediaStatus(
             @PathVariable String eventId,
             @PathVariable String mediaId,
-            @Valid @RequestBody(required = false) MediaRejectionRequest request,
+            @Valid @RequestBody MediaModerationRequest request,
             @CurrentUserId String userId) {
-        return ResponseEntity.ok(moderationService.rejectMedia(eventId, mediaId, request, userId));
+        
+        return switch (request.status()) {
+            case APPROVED -> ResponseEntity.ok(moderationService.approveMedia(eventId, mediaId, userId));
+            case REJECTED -> ResponseEntity.ok(moderationService.rejectMedia(eventId, mediaId, request.rejectionDetails(), userId));
+            default -> throw new DomainValidationException("Invalid status transition requested. Allowed: APPROVED, REJECTED");
+        };
     }
 
     @DeleteMapping("/media/{mediaId}")

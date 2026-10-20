@@ -1,21 +1,25 @@
 package com.example.Billing.application.service;
 
-import com.example.Billing.api.dto.response.StorageUsageLedgerDTO;
 import com.example.Billing.api.dto.response.InvoiceDTO;
+import com.example.Billing.api.dto.response.InvoiceGenerationResultResponse;
+import com.example.Billing.api.dto.response.StorageUsageLedgerDTO;
 import com.example.Billing.application.service.interfaces.IBillingService;
-import com.example.Billing.infrastructure.feign.GalleryServiceClient;
+import com.example.Billing.application.service.interfaces.IInvoiceGenerationService;
 import com.example.Billing.infrastructure.event.InvoiceCreatedEvent;
+import com.example.Billing.infrastructure.feign.GalleryServiceClient;
 import com.example.Billing.shared.util.BillingCalculator;
-import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Page;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.YearMonth;
+import java.time.ZoneId;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Set;
 
 /**
@@ -34,14 +38,16 @@ import java.util.Set;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class InvoiceGenerationService {
+public class InvoiceGenerationService implements IInvoiceGenerationService {
+
+    private static final int LEDGER_PAGE_SIZE = 500;
 
     private final GalleryServiceClient galleryServiceClient;
     private final IBillingService billingService;
     private final BillingCalculator billingCalculator;
     private final ApplicationEventPublisher eventPublisher;
 
-    private volatile int invoiceSequence = 1;  // Counter for generating unique IDs
+    private final SequenceGeneratorService sequenceGeneratorService;
 
     /**
      * Main job: Generates monthly invoices for all users with storage usage
@@ -52,7 +58,7 @@ public class InvoiceGenerationService {
         log.info("📊 ===== STARTING MONTHLY INVOICE GENERATION JOB =====");
 
         try {
-            InvoiceGenerationResult result = processMonthlyInvoiceGeneration();
+            InvoiceGenerationResultResponse result = processMonthlyInvoiceGeneration();
 
             log.info("✅ ===== MONTHLY INVOICE GENERATION COMPLETED =====");
             log.info("📈 Summary: Generated {} invoices, {} failures",
@@ -67,7 +73,7 @@ public class InvoiceGenerationService {
      * Core logic for monthly invoice generation
      * Separated for testability and manual triggering
      */
-    public InvoiceGenerationResult processMonthlyInvoiceGeneration() {
+    public InvoiceGenerationResultResponse processMonthlyInvoiceGeneration() {
         // Step 1: Get previous month boundaries
         Instant[] monthRange = billingCalculator.getPreviousMonthRange();
         Instant startOfPreviousMonth = monthRange[0];
@@ -76,24 +82,12 @@ public class InvoiceGenerationService {
         log.info("📅 Generating invoices for period: {} to {}",
             startOfPreviousMonth, endOfPreviousMonth);
 
-        // Step 2: Query Gallery service for storage ledger entries (via REST API)
-        // This follows microservice principle: Gallery owns its data
-        List<StorageUsageLedgerDTO> ledgerEntries =
-            galleryServiceClient.getLedgerEntries(startOfPreviousMonth, endOfPreviousMonth);
-
-        log.info("📋 Found {} total ledger entries", ledgerEntries.size());
-
-        // Step 3: Get unique users from ledger entries
-        Set<String> userIds = new HashSet<>();
-        for (StorageUsageLedgerDTO entry : ledgerEntries) {
-            if (entry.userId() != null) {
-                userIds.add(entry.userId());
-            }
-        }
+        // Step 2: Query Gallery service for unique active users via paginated API
+        Set<String> userIds = fetchUserIdsWithStorageUsage(startOfPreviousMonth, endOfPreviousMonth);
 
         log.info("👥 Found {} unique users with storage usage", userIds.size());
 
-        // Step 4: Generate invoices for each user
+        // Step 3: Generate invoices for each user
         int generatedCount = 0;
         int failureCount = 0;
 
@@ -109,13 +103,40 @@ public class InvoiceGenerationService {
             }
         }
 
-        return InvoiceGenerationResult.builder()
-            .generatedAt(Instant.now())
-            .generatedCount(generatedCount)
-            .failureCount(failureCount)
-            .billingPeriodStart(startOfPreviousMonth)
-            .billingPeriodEnd(endOfPreviousMonth)
-            .build();
+        return new InvoiceGenerationResultResponse(
+            Instant.now(),
+            generatedCount,
+            failureCount,
+            startOfPreviousMonth,
+            endOfPreviousMonth
+        );
+    }
+
+    /**
+     * Helper method to iterate through ledger entries in bounded pages
+     * to avoid OutOfMemoryError when dealing with massive datasets.
+     */
+    private Set<String> fetchUserIdsWithStorageUsage(Instant startDate, Instant endDate) {
+        Set<String> userIds = new HashSet<>();
+        int page = 0;
+        long totalEntries = 0;
+        Page<StorageUsageLedgerDTO> ledgerPage;
+
+        do {
+            ledgerPage = galleryServiceClient.getLedgerEntries(startDate, endDate, page, LEDGER_PAGE_SIZE);
+            if (ledgerPage != null && ledgerPage.hasContent()) {
+                for (StorageUsageLedgerDTO entry : ledgerPage.getContent()) {
+                    if (entry.userId() != null && !entry.userId().isBlank()) {
+                        userIds.add(entry.userId());
+                    }
+                }
+                totalEntries += ledgerPage.getNumberOfElements();
+            }
+            page++;
+        } while (ledgerPage != null && ledgerPage.hasNext());
+
+        log.info("📋 Processed {} total ledger entries across {} page(s)", totalEntries, page);
+        return userIds;
     }
 
     /**
@@ -126,7 +147,7 @@ public class InvoiceGenerationService {
             userId, startDate, endDate);
 
         // Generate unique invoice ID (format: INV-YYYY-MM-XXXXX)
-        String invoiceId = billingCalculator.generateInvoiceId(invoiceSequence++);
+        String invoiceId = billingCalculator.generateInvoiceId((int) sequenceGeneratorService.generateSequence("invoice_sequence"));
 
         // Call BillingService to create invoice
         // This handles:
@@ -152,39 +173,27 @@ public class InvoiceGenerationService {
      * TEST METHOD: Generate invoices for current month (for testing with recent uploads)
      * This is useful for verification before 1st of next month
      */
-    public InvoiceGenerationResult processCurrentMonthInvoiceGeneration() {
+    public InvoiceGenerationResultResponse processCurrentMonthInvoiceGeneration() {
         log.info("📊 ===== GENERATING INVOICES FOR CURRENT MONTH (TEST) =====");
 
         // Get current month boundaries
-        java.time.LocalDate today = java.time.LocalDate.now(java.time.ZoneId.of("UTC"));
-        java.time.YearMonth currentMonth = java.time.YearMonth.from(today);
+        LocalDate today = LocalDate.now(ZoneId.of("UTC"));
+        YearMonth currentMonth = YearMonth.from(today);
 
         Instant startOfCurrentMonth = currentMonth.atDay(1)
-            .atStartOfDay(java.time.ZoneId.of("UTC"))
+            .atStartOfDay(ZoneId.of("UTC"))
             .toInstant();
 
         Instant endOfCurrentMonth = currentMonth.atEndOfMonth()
-            .atStartOfDay(java.time.ZoneId.of("UTC"))
+            .atStartOfDay(ZoneId.of("UTC"))
             .plusSeconds(86400)
             .toInstant();
 
         log.info("📅 Generating invoices for CURRENT month: {} to {}",
             startOfCurrentMonth, endOfCurrentMonth);
 
-        // Query Gallery service for storage ledger entries (via REST API)
-        // This follows microservice principle: Gallery owns its data
-        List<StorageUsageLedgerDTO> ledgerEntries =
-            galleryServiceClient.getLedgerEntries(startOfCurrentMonth, endOfCurrentMonth);
-
-        log.info("📋 Found {} total ledger entries in current month", ledgerEntries.size());
-
-        // Get unique users from ledger entries
-        Set<String> userIds = new HashSet<>();
-        for (StorageUsageLedgerDTO entry : ledgerEntries) {
-            if (entry.userId() != null) {
-                userIds.add(entry.userId());
-            }
-        }
+        // Step 2: Query Gallery service for unique active users via paginated API
+        Set<String> userIds = fetchUserIdsWithStorageUsage(startOfCurrentMonth, endOfCurrentMonth);
 
         log.info("👥 Found {} unique users with storage usage in current month", userIds.size());
 
@@ -194,20 +203,9 @@ public class InvoiceGenerationService {
 
         for (String userId : userIds) {
             try {
-                String invoiceId = billingCalculator.generateInvoiceId(invoiceSequence++);
-                InvoiceDTO createdInvoice = billingService.createInvoice(userId, invoiceId, startOfCurrentMonth, endOfCurrentMonth);
+                generateInvoiceForUser(userId, startOfCurrentMonth, endOfCurrentMonth);
                 generatedCount++;
                 log.debug("✅ Invoice generated for user: {}", userId);
-
-                // ✨ NEW: Publish event for listeners (send notification email)
-                eventPublisher.publishEvent(new InvoiceCreatedEvent(
-                    this,
-                    createdInvoice.id(),
-                    userId,
-                    createdInvoice.invoiceId(),
-                    createdInvoice.charges().totalAmount()
-                ));
-                log.debug("📢 Published InvoiceCreatedEvent for invoice: {}", invoiceId);
 
             } catch (Exception e) {
                 log.error("❌ Failed to generate invoice for user: {}", userId, e);
@@ -219,13 +217,13 @@ public class InvoiceGenerationService {
         log.info("📈 Summary: Generated {} invoices, {} failures",
             generatedCount, failureCount);
 
-        return InvoiceGenerationResult.builder()
-            .generatedAt(java.time.Instant.now())
-            .generatedCount(generatedCount)
-            .failureCount(failureCount)
-            .billingPeriodStart(startOfCurrentMonth)
-            .billingPeriodEnd(endOfCurrentMonth)
-            .build();
+        return new InvoiceGenerationResultResponse(
+            Instant.now(),
+            generatedCount,
+            failureCount,
+            startOfCurrentMonth,
+            endOfCurrentMonth
+        );
     }
 
     /**
@@ -238,16 +236,4 @@ public class InvoiceGenerationService {
         // TODO: Implement retry logic for failed invoice generations
         log.info("✅ Retry check complete");
     }
-
-    /**
-     * Result DTO for invoice generation job
-     */
-    @Builder
-    public record InvoiceGenerationResult(
-        Instant generatedAt,
-        Integer generatedCount,
-        Integer failureCount,
-        Instant billingPeriodStart,
-        Instant billingPeriodEnd
-    ) {}
 }

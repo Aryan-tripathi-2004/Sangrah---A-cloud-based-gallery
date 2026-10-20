@@ -4,4 +4,5 @@ public interface IJwtService {
     String generateAccessToken(String userId, String email);
     String generateRefreshToken(String userId);
     long getRefreshTokenExpirySeconds();
+    String extractUserId(String token);
 }

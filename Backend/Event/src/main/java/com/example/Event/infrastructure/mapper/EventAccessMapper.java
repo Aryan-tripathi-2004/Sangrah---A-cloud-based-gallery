@@ -7,12 +7,10 @@ import com.example.Event.api.dto.response.AccessRequestResponse;
 import com.example.Event.api.dto.response.AccessRequestsResponse;
 import com.example.Event.api.dto.response.AccessRevocationResponse;
 import com.example.Event.api.dto.response.AccessStatusResponse;
-import com.example.Event.infrastructure.client.UserServiceClient;
 import com.example.Event.infrastructure.persistence.document.EventAccessRequestDocument;
 import com.example.Event.shared.enums.AccessStatus;
 import com.example.Event.shared.enums.ApprovalDuration;
 import com.example.Event.shared.enums.ApprovalStatus;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.mapstruct.InjectionStrategy;
 import org.mapstruct.Mapper;
 import org.mapstruct.MappingConstants;
@@ -23,16 +21,6 @@ import java.util.List;
 @Mapper(componentModel = MappingConstants.ComponentModel.SPRING,
         injectionStrategy = InjectionStrategy.CONSTRUCTOR)
 public abstract class EventAccessMapper {
-
-    protected UserServiceClient userServiceClient;
-
-    protected EventAccessMapper() {
-    }
-
-    @Autowired
-    public EventAccessMapper(UserServiceClient userServiceClient) {
-        this.userServiceClient = userServiceClient;
-    }
 
     public AccessRequestMutationResponse toMutationResponse(EventAccessRequestDocument document, String message) {
         if (document == null) {
@@ -71,23 +59,21 @@ public abstract class EventAccessMapper {
         return new AccessRevocationResponse(status, message);
     }
 
-    public AccessRequestResponse toAccessRequestResponse(EventAccessRequestDocument document) {
+    public AccessRequestResponse toAccessRequestResponse(EventAccessRequestDocument document, String resolvedDisplayName) {
         if (document == null) {
             return null;
-        }
-        String displayName;
-        try {
-            displayName = userServiceClient.getUserDisplayName(document.getRequesterUserId());
-        } catch (Exception e) {
-            displayName = document.getRequesterUserId();
         }
         return new AccessRequestResponse(
                 document.getId(),
                 document.getRequesterUserId(),
-                displayName,
+                resolvedDisplayName,
                 document.getMessage() != null ? document.getMessage() : "",
                 document.getStatus(),
                 toIso(document.getRequestedAt()));
+    }
+
+    public AccessRequestResponse toAccessRequestResponse(EventAccessRequestDocument document) {
+        return toAccessRequestResponse(document, document != null ? document.getRequesterUserId() : null);
     }
 
     public AccessStatusResponse toSimpleStatus(AccessStatus status, boolean hasAccess, boolean showRequestButton) {

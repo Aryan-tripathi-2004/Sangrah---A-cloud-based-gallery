@@ -1,0 +1,63 @@
+<div class="space-y-2">
+  <div class="flex items-center justify-between">
+    <span class="text-xs font-bold uppercase tracking-wider text-slate-400">About / Bio</span>
+    @if (!isEditing()) {
+      <button
+        type="button"
+        (click)="startEditing()"
+        class="text-xs text-blue-400 hover:text-blue-300 font-medium flex items-center gap-1 transition"
+      >
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+        </svg>
+        <span>{{ bio() ? 'Edit' : 'Add Bio' }}</span>
+      </button>
+    }
+  </div>
+
+  @if (isEditing()) {
+    <div class="space-y-2">
+      <textarea
+        [ngModel]="draftBio()"
+        (ngModelChange)="draftBio.set($event)"
+        maxlength="300"
+        rows="3"
+        placeholder="Tell people about yourself, your photography, or your events..."
+        class="w-full px-3 py-2 text-xs rounded-xl bg-slate-800/90 border border-blue-500/60 focus:outline-none focus:ring-1 focus:ring-blue-500 text-slate-100 placeholder-slate-500 resize-none transition"
+      ></textarea>
+      <div class="flex items-center justify-between text-[11px] text-slate-400">
+        <span>{{ 300 - draftBio().length }} characters left</span>
+        <div class="flex items-center gap-2">
+          <button
+            type="button"
+            (click)="cancelEditing()"
+            class="px-2.5 py-1 text-slate-400 hover:text-slate-200 transition"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            (click)="save()"
+            [disabled]="isSaving()"
+            class="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-lg shadow-sm transition disabled:opacity-50"
+          >
+            {{ isSaving() ? 'Saving...' : 'Save' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  } @else {
+    @if (bio()) {
+      <p class="text-xs text-slate-300 leading-relaxed whitespace-pre-line bg-slate-800/30 border border-slate-800/80 rounded-xl p-3">
+        {{ bio() }}
+      </p>
+    } @else {
+      <div
+        (click)="startEditing()"
+        class="text-xs text-slate-500 italic bg-slate-800/20 border border-dashed border-slate-700/60 rounded-xl p-3 cursor-pointer hover:border-slate-600 hover:text-slate-400 transition"
+      >
+        No bio added yet. Click here to introduce yourself.
+      </div>
+    }
+  }
+</div>

@@ -6,6 +6,7 @@ import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 
 import com.example.Gallery.shared.enums.MediaDomain;
 import org.springframework.data.annotation.Version;
@@ -56,7 +57,7 @@ public class StorageUsageLedgerDocument {
     // Helper method for billing calculation
     public long getDaysActive(Instant endDate) {
         Instant effectiveEndDate = endAt != null ? endAt : endDate;
-        return java.time.temporal.ChronoUnit.DAYS.between(startAt, effectiveEndDate);
+        return ChronoUnit.DAYS.between(startAt, effectiveEndDate);
     }
 }
 

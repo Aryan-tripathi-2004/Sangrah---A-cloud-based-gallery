@@ -1,5 +1,4 @@
-import { Component, inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, inject, ChangeDetectionStrategy, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators, AbstractControl, ValidationErrors } from '@angular/forms';
 import { Router, RouterLink, ActivatedRoute } from '@angular/router';
 import { AuthService } from '../../core/auth/auth.service';
@@ -8,7 +7,8 @@ import { LayoutComponent } from '../../shared/layout/layout.component';
 @Component({
   selector: 'app-signup',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, RouterLink, LayoutComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [ReactiveFormsModule, RouterLink, LayoutComponent],
   templateUrl: './signup.component.html',
 })
 export class SignupComponent {
@@ -27,9 +27,9 @@ export class SignupComponent {
     { validators: this.passwordsMatchValidator }
   );
 
-  isLoading = false;
-  errorMessage = '';
-  successMessage = '';
+  isLoading = signal(false);
+  errorMessage = signal('');
+  successMessage = signal('');
 
   passwordsMatchValidator(control: AbstractControl): ValidationErrors | null {
     const password = control.get('password')?.value;
@@ -44,24 +44,24 @@ export class SignupComponent {
   onSubmit(): void {
     if (this.form.invalid) return;
 
-    this.isLoading = true;
-    this.errorMessage = '';
-    this.successMessage = '';
+    this.isLoading.set(true);
+    this.errorMessage.set('');
+    this.successMessage.set('');
 
     const { email, password, displayName } = this.form.value;
     if (!email || !password || !displayName) return;
 
     this.authService.register(email, password, displayName).subscribe({
       next: () => {
-        this.successMessage = 'Account created successfully! Redirecting...';
+        this.successMessage.set('Account created successfully! Redirecting...');
         const returnUrl = this.route.snapshot.queryParamMap.get('returnUrl') || '/dashboard';
         setTimeout(() => {
           this.router.navigateByUrl(returnUrl);
         }, 1000);
       },
       error: (err) => {
-        this.isLoading = false;
-        this.errorMessage = err.error?.message || 'Signup failed. Please try again.';
+        this.isLoading.set(false);
+        this.errorMessage.set(err.message || err.error?.message || 'Signup failed. Please try again.');
       },
     });
   }

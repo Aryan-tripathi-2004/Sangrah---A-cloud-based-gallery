@@ -9,6 +9,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.Version;
+import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
@@ -30,6 +31,7 @@ import java.time.Instant;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@CompoundIndex(name = "status_createdAt_idx", def = "{'status': 1, 'createdAt': 1}")
 @Document(collection = "email_logs")
 public class EmailLogDocument {
 
@@ -64,6 +66,14 @@ public class EmailLogDocument {
     private Instant lastRetryAt;      // Last retry timestamp
 
     private Instant createdAt;        // When log was created
+
+    private String subject;           // Subject line for retry/reconciliation
+
+    private String htmlContent;       // Rendered HTML body for retry/reconciliation
+
+    private String attachmentFilename;// Attachment file name (if any)
+
+    private byte[] attachmentBytes;   // Attachment payload (if any)
 
     /**
      * Optimistic-locking token managed exclusively by Spring Data MongoDB.

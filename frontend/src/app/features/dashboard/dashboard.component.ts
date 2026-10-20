@@ -1,4 +1,5 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, inject, ChangeDetectionStrategy, signal, DestroyRef } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { SangrahApiService, Event } from '../../core/api/sangrah-api.service';
@@ -9,24 +10,26 @@ import { Observable } from 'rxjs';
 @Component({
   selector: 'app-dashboard',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CommonModule, RouterLink, LayoutComponent],
   templateUrl: './dashboard.component.html'
 })
 export class DashboardComponent implements OnInit {
-  private api = inject(SangrahApiService);
-  private billingService = inject(BillingService);
+  private readonly api = inject(SangrahApiService);
+  private readonly billingService = inject(BillingService);
+  private readonly destroyRef = inject(DestroyRef);
 
-  userDisplayName = 'User';
-  storageUsed = 0;
-  storagePercentage = 0;
-  storageLimit = 100; // 100 GB default limit
-  galleryCount = 0;
-  pendingCount = 0;
-  recentEvents: Event[] = [];
-  isLoading = true;
+  readonly userDisplayName = signal<string>('User');
+  readonly storageUsed = signal<number>(0);
+  readonly storagePercentage = signal<number>(0);
+  readonly storageLimit = signal<number>(100); // 100 GB default limit
+  readonly galleryCount = signal<number>(0);
+  readonly pendingCount = signal<number>(0);
+  readonly recentEvents = signal<Event[]>([]);
+  readonly isLoading = signal<boolean>(true);
 
   // Billing observables
-  costEstimate$: Observable<CostEstimateDTO | null>;
+  readonly costEstimate$: Observable<CostEstimateDTO | null>;
 
   constructor() {
     this.costEstimate$ = this.billingService.costEstimate$;
@@ -38,9 +41,11 @@ export class DashboardComponent implements OnInit {
 
   loadData(): void {
     // Load user profile for display name
-    this.api.getProfile().subscribe({
+    this.api.getProfile().pipe(
+      takeUntilDestroyed(this.destroyRef)
+    ).subscribe({
       next: (user) => {
-        this.userDisplayName = user.displayName || 'User';
+        this.userDisplayName.set(user.displayName || 'User');
       },
       error: (err) => {
         console.error('Failed to load profile:', err);
@@ -48,66 +53,72 @@ export class DashboardComponent implements OnInit {
     });
 
     // Load cost estimate
-    this.billingService.loadCostEstimate().subscribe({
+    this.billingService.loadCostEstimate().pipe(
+      takeUntilDestroyed(this.destroyRef)
+    ).subscribe({
       error: (err) => console.error('Failed to load cost estimate:', err)
     });
 
-    // Load storage usage - API returns { totalBytesUsed, fileCount, breakdown: {...}, formatted: {...} }
-    this.api.getStorageUsage().subscribe({
-      next: (data: any) => {
+    // Load storage usage
+    this.api.getStorageUsage().pipe(
+      takeUntilDestroyed(this.destroyRef)
+    ).subscribe({
+      next: (data) => {
         const usedBytes = data.totalBytesUsed || 0;
-        const limitBytes = this.storageLimit * 1024 * 1024 * 1024; // 100 GB in bytes
-        this.storageUsed = usedBytes / (1024 * 1024 * 1024);
-        this.storagePercentage = (usedBytes / limitBytes) * 100;
-        console.log('Storage loaded:', { storageUsed: this.storageUsed, percentage: this.storagePercentage });
+        const limitBytes = this.storageLimit() * 1024 * 1024 * 1024; // 100 GB in bytes
+        this.storageUsed.set(usedBytes / (1024 * 1024 * 1024));
+        this.storagePercentage.set(limitBytes > 0 ? (usedBytes / limitBytes) * 100 : 0);
       },
       error: (err) => {
         console.error('Failed to load storage usage:', err);
-        this.storageUsed = 0;
-        this.storagePercentage = 0;
+        this.storageUsed.set(0);
+        this.storagePercentage.set(0);
       }
     });
 
     // Load global events
-    this.api.getGlobalEvents().subscribe({
-      next: (events: any) => {
-        this.recentEvents = Array.isArray(events) ? events.slice(0, 5) : [];
-        this.isLoading = false;
-        console.log('Events loaded:', this.recentEvents.length);
+    this.api.getGlobalEvents().pipe(
+      takeUntilDestroyed(this.destroyRef)
+    ).subscribe({
+      next: (events) => {
+        this.recentEvents.set(Array.isArray(events) ? events.slice(0, 5) : []);
+        this.isLoading.set(false);
       },
       error: (err) => {
         console.error('Failed to load events:', err);
-        this.recentEvents = [];
-        this.isLoading = false;
+        this.recentEvents.set([]);
+        this.isLoading.set(false);
       }
     });
 
-    // Load gallery timeline - API returns { view, groups: [], totalGroups }
-    this.api.getGalleryTimeline().subscribe({
-      next: (response: any) => {
-        // Sum up all items from all timeline groups
+    // Load gallery timeline
+    this.api.getGalleryTimeline().pipe(
+      takeUntilDestroyed(this.destroyRef)
+    ).subscribe({
+      next: (response) => {
         if (response.groups && Array.isArray(response.groups)) {
-          this.galleryCount = response.groups.reduce((total: number, group: any) => {
+          const totalItems = response.groups.reduce((total: number, group: any) => {
             return total + (group.items?.length || 0);
           }, 0);
+          this.galleryCount.set(totalItems);
         }
-        console.log('Gallery loaded:', this.galleryCount);
       },
       error: (err) => {
         console.error('Failed to load gallery timeline:', err);
-        this.galleryCount = 0;
+        this.galleryCount.set(0);
       }
     });
 
     // Load pending access requests
-    this.api.getPendingAccessRequests().subscribe({
-      next: (requests: any) => {
-        this.pendingCount = Array.isArray(requests) ? requests.length : 0;
-        console.log('Pending requests loaded:', this.pendingCount);
+    this.api.getPendingAccessRequests().pipe(
+      takeUntilDestroyed(this.destroyRef)
+    ).subscribe({
+      next: (requests) => {
+        this.pendingCount.set(Array.isArray(requests) ? requests.length : 0);
       },
-      error: (err: any) => {
+      error: (err) => {
         console.error('Failed to load pending requests:', err);
-        this.pendingCount = 0;
+        this.pendingCount.set(0);
       }
     });
   }

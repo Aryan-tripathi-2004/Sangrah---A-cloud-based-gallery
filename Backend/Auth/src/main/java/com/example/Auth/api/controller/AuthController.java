@@ -3,6 +3,7 @@ package com.example.Auth.api.controller;
 import com.example.Auth.api.dto.request.LoginRequest;
 import com.example.Auth.api.dto.request.RegisterRequest;
 import com.example.Auth.api.dto.response.AuthTokenResponse;
+import com.example.Auth.api.dto.response.MessageResponse;
 import com.example.Auth.application.service.interfaces.IAuthService;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
@@ -11,9 +12,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-
-import java.time.Instant;
-import java.util.Map;
 
 @Slf4j
 @RestController
@@ -43,21 +41,12 @@ public class AuthController {
 
     @PostMapping("/logout")
     @Operation(summary = "Logout user and revoke token")
-    public ResponseEntity<com.example.Auth.api.dto.response.MessageResponse> logout(@RequestHeader("Authorization") String authHeader) {
-        if (!authHeader.startsWith("Bearer ")) {
-            throw new com.example.Auth.shared.exception.AuthenticationException("Invalid Authorization header format");
-        }
-
-        String token = authHeader.substring(7);
-        log.info("🚪 Logout request for token");
-
-        Instant expiresAt = Instant.now().plusSeconds(3600);
-        authService.logout(token, expiresAt);
-
+    public ResponseEntity<MessageResponse> logout(
+            @RequestHeader("Authorization") String authHeader,
+            @RequestHeader(value = "${security.header.user-id:X-User-Id}", required = false) String userId) {
+        log.info("🚪 Logout request received");
+        MessageResponse response = authService.logout(authHeader, userId);
         log.info("✅ Logout successful, token revoked");
-        return ResponseEntity.ok(new com.example.Auth.api.dto.response.MessageResponse(
-                "Logout successful",
-                Instant.now().toString()
-        ));
+        return ResponseEntity.ok(response);
     }
 }

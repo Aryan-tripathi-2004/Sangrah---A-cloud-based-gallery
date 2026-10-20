@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { LayoutComponent } from '../../shared/layout/layout.component';
 import { BillingService, InvoiceDTO } from './billing.service';
@@ -14,6 +14,7 @@ type Tab = 'dashboard' | 'invoices' | 'payments' | 'settings';
 @Component({
   selector: 'app-billing-page',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     CommonModule,
     LayoutComponent,
@@ -45,7 +46,10 @@ export class BillingPageComponent implements OnInit {
   loading$;
   error$;
 
-  constructor(private billingService: BillingService) {
+  constructor(
+    private billingService: BillingService,
+    private cdr: ChangeDetectorRef
+  ) {
     this.loading$ = this.billingService.loading$;
     this.error$ = this.billingService.error$;
   }
@@ -58,6 +62,7 @@ export class BillingPageComponent implements OnInit {
 
   switchTab(tabId: Tab): void {
     this.activeTab = tabId;
+    this.cdr.markForCheck();
     // Load specific data when switching tabs
     if (tabId === 'payments') {
       this.billingService.loadPaymentHistory().subscribe();
@@ -67,17 +72,20 @@ export class BillingPageComponent implements OnInit {
   openInvoiceDetail(invoice: InvoiceDTO): void {
     this.selectedInvoice = invoice;
     this.showInvoiceModal = true;
+    this.cdr.markForCheck();
   }
 
   closeInvoiceModal(): void {
     this.showInvoiceModal = false;
     this.selectedInvoice = null;
+    this.cdr.markForCheck();
   }
 
   onPayInvoice(invoiceId: string): void {
     // Show Stripe payment modal
     this.stripeInvoiceId = invoiceId;
     this.showStripeModal = true;
+    this.cdr.markForCheck();
   }
 
   onStripePaymentSuccess(): void {
@@ -86,6 +94,7 @@ export class BillingPageComponent implements OnInit {
     this.showInvoiceModal = false;
     this.stripeInvoiceId = null;
     this.selectedInvoice = null;
+    this.cdr.markForCheck();
 
     // Reload invoice list to reflect updated payment status
     this.billingService.loadInvoices().subscribe();
@@ -97,6 +106,7 @@ export class BillingPageComponent implements OnInit {
   onStripeModalClose(): void {
     this.showStripeModal = false;
     this.stripeInvoiceId = null;
+    this.cdr.markForCheck();
   }
 
   dismissError(): void {

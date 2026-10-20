@@ -23,6 +23,9 @@ public interface StorageUsageLedgerRepository extends MongoRepository<StorageUsa
     // Find ledger entry by domain reference
     List<StorageUsageLedgerDocument> findByDomainRefId(String domainRefId);
 
+    // Find ledger entries by multiple domain references
+    List<StorageUsageLedgerDocument> findByDomainRefIdIn(List<String> domainRefIds);
+
     // Find all entries for a user across all domains
     List<StorageUsageLedgerDocument> findByUserId(String userId);
 

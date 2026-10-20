@@ -1,4 +1,4 @@
-import { Component, Input, OnInit, ChangeDetectorRef, inject, Output, EventEmitter } from '@angular/core';
+import { Component, Input, OnInit, ChangeDetectorRef, inject, Output, EventEmitter, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { SangrahApiService } from '../../../core/api/sangrah-api.service';
@@ -12,6 +12,7 @@ interface Event {
 @Component({
   selector: 'app-event-access-request',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CommonModule, FormsModule],
   templateUrl: './event-access-request.component.html',
   styles: []

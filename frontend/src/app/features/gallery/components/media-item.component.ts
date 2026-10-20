@@ -1,15 +1,17 @@
-import { Component, Input, Output, EventEmitter, inject, OnInit } from '@angular/core';
+import { Component, Input, Output, EventEmitter, inject, OnInit, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MediaItem, SangrahApiService } from '../../../core/api/sangrah-api.service';
 
 @Component({
   selector: 'app-media-item',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CommonModule],
   templateUrl: './media-item.component.html',
 })
 export class MediaItemComponent implements OnInit {
   private api = inject(SangrahApiService);
+  private cdr = inject(ChangeDetectorRef);
 
   @Input() media!: MediaItem;
   @Output() preview = new EventEmitter<MediaItem>();
@@ -43,10 +45,12 @@ export class MediaItemComponent implements OnInit {
   onImageError(): void {
     console.error('Failed to load media:', this.media.id);
     this.imageLoaded = false;
+    this.cdr.markForCheck();
   }
 
   onImageLoad(): void {
     this.imageLoaded = true;
+    this.cdr.markForCheck();
   }
 
   formatSize(bytes: number): string {

@@ -1,12 +1,13 @@
-import { Component, inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, ChangeDetectionStrategy } from '@angular/core';
+
 import { RouterLink } from '@angular/router';
 import { LayoutComponent } from '../../shared/layout/layout.component';
 
 @Component({
   selector: 'app-home',
   standalone: true,
-  imports: [CommonModule, RouterLink, LayoutComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [RouterLink, LayoutComponent],
   templateUrl: './home.component.html',
 })
 export class HomeComponent {}

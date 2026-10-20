@@ -1,5 +1,7 @@
 package com.example.Billing.api.dto.response;
 
+import java.math.BigDecimal;
+
 import com.example.Billing.shared.enums.InvoiceStatus;
 import lombok.Builder;
 
@@ -26,19 +28,19 @@ public record InvoiceDTO(
 
     @Builder
     public record StorageMetricsDTO(
-        Double imageGBDays,
-        Double imageCost,
-        Double videoGBDays,
-        Double videoCost,
-        Double totalGBDays
+        BigDecimal imageGBDays,
+        BigDecimal imageCost,
+        BigDecimal videoGBDays,
+        BigDecimal videoCost,
+        BigDecimal totalGBDays
     ) {}
 
     @Builder
     public record ChargesDTO(
-        Double storageRate,
-        Double subtotal,
-        Double taxRate,
-        Double tax,
-        Double totalAmount
+        BigDecimal storageRate,
+        BigDecimal subtotal,
+        BigDecimal taxRate,
+        BigDecimal tax,
+        BigDecimal totalAmount
     ) {}
 }

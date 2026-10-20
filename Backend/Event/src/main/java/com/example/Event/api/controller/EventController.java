@@ -15,6 +15,7 @@ import com.example.Event.api.dto.response.EventUpdateResponse;
 import com.example.Event.api.dto.response.MessageResponse;
 import com.example.Event.application.service.interfaces.IEventCollaboratorService;
 import com.example.Event.application.service.interfaces.IEventService;
+import com.example.Event.shared.enums.EventScope;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +30,8 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
@@ -44,39 +47,47 @@ public class EventController {
     private final IEventService eventService;
     private final IEventCollaboratorService collaboratorService;
 
-    @PostMapping
+    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @Operation(summary = "Create event")
     public ResponseEntity<EventCreateResponse> create(
+            @Valid @RequestPart("eventDetails") EventRequest request,
+            @RequestPart(value = "coverMedia", required = false) MultipartFile coverMedia,
+            @CurrentUserId String userId) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(eventService.createEvent(request, coverMedia, userId));
+    }
+
+    @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
+    @Operation(summary = "Create event (JSON)")
+    public ResponseEntity<EventCreateResponse> createJson(
             @Valid @RequestBody EventRequest request,
             @CurrentUserId String userId) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(eventService.createEvent(request, userId));
+        return ResponseEntity.status(HttpStatus.CREATED).body(eventService.createEvent(request, null, userId));
     }
 
-    @GetMapping("/global")
-    @Operation(summary = "Get global events")
-    public ResponseEntity<List<EventSummaryResponse>> global(
-            @CurrentUserId(required = false) String userId) {
-        return ResponseEntity.ok(eventService.getGlobalEvents(userId));
-    }
+    @GetMapping
+    @Operation(summary = "Get filtered events collection")
+    public ResponseEntity<List<EventSummaryResponse>> getEvents(
+            @RequestHeader(value = "X-User-Id", required = false) String userId,
+            @RequestParam(defaultValue = "GLOBAL") EventScope scope) {
 
-    @GetMapping("/my-events")
-    @Operation(summary = "Get user's events")
-    public ResponseEntity<List<EventSummaryResponse>> myEvents(
-            @CurrentUserId String userId) {
-        return ResponseEntity.ok(eventService.getMyEvents(userId));
+        return switch (scope) {
+            case MY_EVENTS -> ResponseEntity.ok(eventService.getMyEvents(userId));
+            case PENDING_REQUESTS -> ResponseEntity.ok(eventService.getEventsWithPendingRequests(userId));
+            default -> ResponseEntity.ok(eventService.getGlobalEvents(userId));
+        };
     }
 
     @GetMapping("/{eventId}")
     @Operation(summary = "Get event")
     public ResponseEntity<EventResponse> byId(
             @PathVariable String eventId,
-            @CurrentUserId(required = false) String userId) {
+            @RequestHeader(value = "X-User-Id", required = false) String userId) {
         return ResponseEntity.ok(eventService.getEvent(eventId, userId));
     }
 
     @PutMapping(value = "/{eventId}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @Operation(summary = "Update event")
-    public ResponseEntity<EventUpdateResponse> update(
+    public ResponseEntity<EventResponse> update(
             @PathVariable String eventId,
             @Valid @RequestPart("eventDetails") EventUpdateRequest eventDetails,
             @RequestPart(value = "coverMedia", required = false) MultipartFile coverMedia,

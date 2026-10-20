@@ -1,4 +1,4 @@
-﻿import { Component, OnDestroy, OnInit, inject, ChangeDetectorRef } from '@angular/core';
+import { Component, OnDestroy, OnInit, inject, ChangeDetectorRef, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators, FormGroup } from '@angular/forms';
 import { ActivatedRoute, RouterLink, Router } from '@angular/router';
@@ -20,6 +20,7 @@ import { ErrorModalComponent } from '../../shared/components/error-modal.compone
 @Component({
   selector: 'app-event-detail',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     CommonModule,
     ReactiveFormsModule,
@@ -156,17 +157,20 @@ export class EventDetailComponent implements OnInit, OnDestroy {
               this.loadEventMedia(eventId);
             } else {
               this.isLoading = false;
+              this.cdr.markForCheck();
             }
           },
 
           error: () => {
             this.isLoading = false;
+            this.cdr.markForCheck();
           },
         });
       },
 
       error: () => {
         this.isLoading = false;
+        this.cdr.markForCheck();
       },
     });
   }

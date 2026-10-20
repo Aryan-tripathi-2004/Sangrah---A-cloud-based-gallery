@@ -1,23 +1,24 @@
 package com.example.Email.application.service.impl;
 
 import com.example.Email.api.dto.EmailSendResponse;
+import com.example.Email.api.dto.response.EmailServiceInfoResponse;
 import com.example.Email.application.service.interfaces.IEmailService;
 import com.example.Email.infrastructure.persistence.document.EmailLogDocument;
 import com.example.Email.infrastructure.persistence.repository.EmailLogRepository;
 import com.example.Email.shared.enums.EmailStatus;
 import com.example.Email.shared.enums.EmailType;
+import com.example.Email.shared.exception.EmailProcessingException;
+import jakarta.mail.internet.MimeMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.thymeleaf.TemplateEngine;
 import org.thymeleaf.context.Context;
 
-import jakarta.mail.MessagingException;
-import jakarta.mail.internet.MimeMessage;
-import java.io.UnsupportedEncodingException;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
@@ -48,12 +49,19 @@ public class EmailServiceImpl implements IEmailService {
     private final JavaMailSender mailSender;
     private final TemplateEngine templateEngine;
     private final EmailLogRepository emailLogRepository;
+    private final AsyncEmailSender asyncEmailSender;
 
-    @Value("${app.email.from:noreply@sangrah.com}")
+    @Value("${app.email.from}")
     private String emailFrom;
 
-    @Value("${app.email.from.name:Sangrah Cloud Storage}")
+    @Value("${app.email.from.name}")
     private String emailFromName;
+
+    @Value("${app.frontend.url}")
+    private String frontendUrl;
+
+    @Value("${app.email.support}")
+    private String supportEmail;
 
     // ─────────────────────────────────────────────────────────────────────────
     // Public API – implements IEmailService
@@ -72,7 +80,7 @@ public class EmailServiceImpl implements IEmailService {
             String userEmail,
             Double amount,
             byte[] pdfContent
-    ) throws MessagingException {
+    ) {
 
         log.info("📧 ═══════════════════════════════════════════════════════════════");
         log.info("📧 [EMAIL SERVICE] Preparing invoice-paid email");
@@ -88,32 +96,30 @@ public class EmailServiceImpl implements IEmailService {
             variables.put("invoiceId", invoiceId);
             variables.put("amount", String.format("$%.2f", amount));
             variables.put("paidDate", Instant.now().toString());
-            variables.put("downloadLink", "https://app.sangrah.com/invoices/" + invoiceId + "/download");
+            variables.put("downloadLink", frontendUrl + "/invoices/" + invoiceId + "/download");
 
             log.info("📝 [EMAIL SERVICE] Rendering payment-success template…");
             String htmlContent = renderTemplate("payment-success", variables);
             log.info("✅ [EMAIL SERVICE] Template rendered successfully");
 
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-            helper.setFrom(emailFrom, emailFromName);
-            helper.setTo(userEmail);
-            helper.setSubject("Payment Confirmation - Invoice " + invoiceId);
-            helper.setText(htmlContent, true);
-
-            if (pdfContent != null && pdfContent.length > 0) {
-                helper.addAttachment("invoice_" + invoiceId + ".pdf",
-                        () -> new java.io.ByteArrayInputStream(pdfContent));
-                log.info("📎 [EMAIL SERVICE] PDF attachment added: {} bytes", pdfContent.length);
-            }
-
-            log.info("🚀 [EMAIL SERVICE] Sending email via SMTP…");
-            mailSender.send(message);
-            log.info("✅ [EMAIL SERVICE] EMAIL SENT SUCCESSFULLY!");
-
             String emailLogId = UUID.randomUUID().toString();
-            logEmailDelivery(emailLogId, userEmail, EmailType.INVOICE_PAID, EmailStatus.SENT, invoiceId);
-            log.info("✅ [EMAIL SERVICE] Email logged: {}", emailLogId);
+            String subject = "Payment Confirmation - Invoice " + invoiceId;
+            String attachmentFilename = "invoice_" + invoiceId + ".pdf";
+            logEmailDelivery(emailLogId, userEmail, EmailType.INVOICE_PAID, EmailStatus.PENDING, invoiceId,
+                    subject, htmlContent, attachmentFilename, pdfContent);
+
+            asyncEmailSender.sendEmailWithAttachmentAsync(
+                    emailLogId,
+                    emailFrom,
+                    emailFromName,
+                    userEmail,
+                    subject,
+                    htmlContent,
+                    attachmentFilename,
+                    pdfContent
+            );
+
+            log.info("✅ [EMAIL SERVICE] Payment confirmation email offloaded for background delivery: {}", emailLogId);
 
             return new EmailSendResponse(
                     EmailStatus.SENT,
@@ -123,10 +129,8 @@ public class EmailServiceImpl implements IEmailService {
                     null
             );
 
-        } catch (UnsupportedEncodingException e) {
-            // Wrap checked UnsupportedEncodingException as MessagingException so the
-            // single exception type propagates cleanly to the GlobalExceptionHandler.
-            throw new MessagingException("Unsupported encoding while building invoice-paid email", e);
+        } catch (Exception e) {
+            throw new EmailProcessingException("Failed to send invoice-paid email", e);
         }
     }
 
@@ -142,7 +146,7 @@ public class EmailServiceImpl implements IEmailService {
             String userEmail,
             Double amount,
             String dueDate
-    ) throws MessagingException {
+    ) {
 
         log.info("📧 [EMAIL SERVICE] Sending invoice-created email to: {}", userEmail);
 
@@ -151,14 +155,24 @@ public class EmailServiceImpl implements IEmailService {
             variables.put("invoiceId", invoiceId);
             variables.put("amount", String.format("$%.2f", amount));
             variables.put("dueDate", dueDate);
-            variables.put("payLink", "https://app.sangrah.com/invoices/" + invoiceId + "/pay");
+            variables.put("payLink", frontendUrl + "/invoices/" + invoiceId + "/pay");
 
             String htmlContent = renderTemplate("invoice-created", variables);
-            sendHtmlEmail(userEmail, "Invoice " + invoiceId + " - Payment Due", htmlContent);
-
             String emailLogId = UUID.randomUUID().toString();
-            log.info("✅ [EMAIL SERVICE] Invoice-created email sent: {}", emailLogId);
-            logEmailDelivery(emailLogId, userEmail, EmailType.INVOICE_CREATED, EmailStatus.SENT, invoiceId);
+            String subject = "Invoice " + invoiceId + " - Payment Due";
+            logEmailDelivery(emailLogId, userEmail, EmailType.INVOICE_CREATED, EmailStatus.PENDING, invoiceId,
+                    subject, htmlContent, null, null);
+
+            asyncEmailSender.sendHtmlEmailAsync(
+                    emailLogId,
+                    emailFrom,
+                    emailFromName,
+                    userEmail,
+                    subject,
+                    htmlContent
+            );
+
+            log.info("✅ [EMAIL SERVICE] Invoice-created email offloaded for background delivery: {}", emailLogId);
 
             return new EmailSendResponse(
                     EmailStatus.SENT,
@@ -168,8 +182,8 @@ public class EmailServiceImpl implements IEmailService {
                     null
             );
 
-        } catch (UnsupportedEncodingException e) {
-            throw new MessagingException("Unsupported encoding while building invoice-created email", e);
+        } catch (Exception e) {
+            throw new EmailProcessingException("Failed to send invoice-created email", e);
         }
     }
 
@@ -184,7 +198,7 @@ public class EmailServiceImpl implements IEmailService {
             String userId,
             String userEmail,
             String failureReason
-    ) throws MessagingException {
+    ) {
 
         log.info("📧 [EMAIL SERVICE] Sending payment-failed email to: {}", userEmail);
 
@@ -192,15 +206,25 @@ public class EmailServiceImpl implements IEmailService {
             Map<String, Object> variables = new HashMap<>();
             variables.put("invoiceId", invoiceId);
             variables.put("failureReason", failureReason);
-            variables.put("retryLink", "https://app.sangrah.com/invoices/" + invoiceId + "/retry-payment");
-            variables.put("supportEmail", "support@sangrah.com");
+            variables.put("retryLink", frontendUrl + "/invoices/" + invoiceId + "/retry-payment");
+            variables.put("supportEmail", supportEmail);
 
             String htmlContent = renderTemplate("payment-failed", variables);
-            sendHtmlEmail(userEmail, "Payment Failed - Invoice " + invoiceId, htmlContent);
-
             String emailLogId = UUID.randomUUID().toString();
-            log.info("✅ [EMAIL SERVICE] Payment-failed email sent: {}", emailLogId);
-            logEmailDelivery(emailLogId, userEmail, EmailType.PAYMENT_FAILED, EmailStatus.SENT, invoiceId);
+            String subject = "Payment Failed - Invoice " + invoiceId;
+            logEmailDelivery(emailLogId, userEmail, EmailType.PAYMENT_FAILED, EmailStatus.PENDING, invoiceId,
+                    subject, htmlContent, null, null);
+
+            asyncEmailSender.sendHtmlEmailAsync(
+                    emailLogId,
+                    emailFrom,
+                    emailFromName,
+                    userEmail,
+                    subject,
+                    htmlContent
+            );
+
+            log.info("✅ [EMAIL SERVICE] Payment-failed email offloaded for background delivery: {}", emailLogId);
 
             return new EmailSendResponse(
                     EmailStatus.SENT,
@@ -210,8 +234,8 @@ public class EmailServiceImpl implements IEmailService {
                     null
             );
 
-        } catch (UnsupportedEncodingException e) {
-            throw new MessagingException("Unsupported encoding while building payment-failed email", e);
+        } catch (Exception e) {
+            throw new EmailProcessingException("Failed to send payment-failed email", e);
         }
     }
 
@@ -226,44 +250,33 @@ public class EmailServiceImpl implements IEmailService {
     @Override
     public EmailSendResponse sendNotificationEmail(
             String userEmail,
-            String notificationType,
+            EmailType notificationType,
             String subject,
             String messageBody
-    ) throws MessagingException {
-
-        log.info("📧 [EMAIL SERVICE] Sending notification email to: {} | type: {}", userEmail, notificationType);
+    ) {
+        log.info("📧 [EMAIL SERVICE] Sending notification email to: {} | type: {}", userEmail, notificationType.name());
 
         try {
             String emailLogId = UUID.randomUUID().toString();
 
-            MimeMessage mimeMessage = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, true, "UTF-8");
-            helper.setFrom(emailFrom, emailFromName);
-            helper.setTo(userEmail);
-            helper.setSubject(subject);
+            Map<String, Object> variables = new HashMap<>();
+            variables.put("subject", subject);
+            variables.put("messageBody", messageBody);
 
-            String htmlBody = String.format(
-                    "<html><body style='font-family: Arial, sans-serif; line-height: 1.6; color: #333;'>"
-                    + "<div style='max-width: 600px; margin: 0 auto; padding: 20px;'>"
-                    + "<h2 style='color: #007bff;'>%s</h2>"
-                    + "<p>%s</p>"
-                    + "<p style='margin-top: 30px; font-size: 12px; color: #666;'>"
-                    + "This is an automated notification from Sangrah Cloud Storage. "
-                    + "Please do not reply to this email."
-                    + "</p>"
-                    + "</div>"
-                    + "</body></html>",
+            String htmlContent = renderTemplate("generic-notification", variables);
+            logEmailDelivery(emailLogId, userEmail, notificationType, EmailStatus.PENDING, null,
+                    subject, htmlContent, null, null);
+
+            asyncEmailSender.sendHtmlEmailAsync(
+                    emailLogId,
+                    emailFrom,
+                    emailFromName,
+                    userEmail,
                     subject,
-                    messageBody
+                    htmlContent
             );
 
-            helper.setText(htmlBody, true);
-            mailSender.send(mimeMessage);
-            log.info("✅ [EMAIL SERVICE] Notification email sent to: {}", userEmail);
-
-            // Resolve string to enum; fall back gracefully for unknown event types.
-            EmailType resolvedType = resolveEmailType(notificationType);
-            logEmailDelivery(emailLogId, userEmail, resolvedType, EmailStatus.SENT, null);
+            log.info("✅ [EMAIL SERVICE] Notification email offloaded for background delivery: {}", userEmail);
 
             return new EmailSendResponse(
                     EmailStatus.SENT,
@@ -273,8 +286,27 @@ public class EmailServiceImpl implements IEmailService {
                     null
             );
 
-        } catch (UnsupportedEncodingException e) {
-            throw new MessagingException("Unsupported encoding while building notification email", e);
+        } catch (Exception e) {
+            throw new EmailProcessingException("Failed to send notification email", e);
+        }
+    }
+
+    /**
+     * Offloads execution to a dedicated background thread pool.
+     */
+    @Override
+    @Async("emailTaskExecutor")
+    public void sendHtmlEmailAsync(String toEmail, String subject, String htmlContent) {
+        try {
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+            helper.setFrom(emailFrom, emailFromName);
+            helper.setTo(toEmail);
+            helper.setSubject(subject);
+            helper.setText(htmlContent, true);
+            mailSender.send(message);
+        } catch (Exception e) {
+            log.error("Asynchronous email dispatch failed for {}: {}", toEmail, e.getMessage());
         }
     }
 
@@ -283,18 +315,10 @@ public class EmailServiceImpl implements IEmailService {
     // ─────────────────────────────────────────────────────────────────────────
 
     /**
-     * Send a pre-rendered HTML email without an attachment.
+     * Send a pre-rendered HTML email without an attachment (delegates asynchronously).
      */
-    private void sendHtmlEmail(String toEmail, String subject, String htmlContent)
-            throws MessagingException, UnsupportedEncodingException {
-
-        MimeMessage message = mailSender.createMimeMessage();
-        MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-        helper.setFrom(emailFrom, emailFromName);
-        helper.setTo(toEmail);
-        helper.setSubject(subject);
-        helper.setText(htmlContent, true);
-        mailSender.send(message);
+    private void sendHtmlEmail(String toEmail, String subject, String htmlContent) {
+        asyncEmailSender.sendHtmlEmailAsync(null, emailFrom, emailFromName, toEmail, subject, htmlContent);
     }
 
     /**
@@ -324,6 +348,20 @@ public class EmailServiceImpl implements IEmailService {
             EmailStatus status,
             String invoiceId
     ) {
+        logEmailDelivery(emailId, toEmail, emailType, status, invoiceId, null, null, null, null);
+    }
+
+    private void logEmailDelivery(
+            String emailId,
+            String toEmail,
+            EmailType emailType,
+            EmailStatus status,
+            String invoiceId,
+            String subject,
+            String htmlContent,
+            String attachmentFilename,
+            byte[] attachmentBytes
+    ) {
         try {
             EmailLogDocument emailLog = EmailLogDocument.builder()
                     .emailId(emailId)
@@ -332,7 +370,12 @@ public class EmailServiceImpl implements IEmailService {
                     .emailType(emailType)
                     .invoiceId(invoiceId)
                     .status(status)
-                    .sentAt(Instant.now())
+                    .subject(subject)
+                    .htmlContent(htmlContent)
+                    .attachmentFilename(attachmentFilename)
+                    .attachmentBytes(attachmentBytes)
+                    .retryCount(0)
+                    .sentAt(status == EmailStatus.SENT ? Instant.now() : null)
                     .createdAt(Instant.now())
                     .build();
 
@@ -344,27 +387,13 @@ public class EmailServiceImpl implements IEmailService {
         }
     }
 
-    /**
-     * Resolve a notification-type string (coming from external Event Service)
-     * to a strongly-typed {@link EmailType} enum constant.
-     *
-     * <p>The comparison is case-insensitive and underscore/hyphen agnostic.
-     * If no match is found, {@link EmailType#NOTIFICATION} is returned as the
-     * safe default so that the log entry is never {@code null}.
-     *
-     * @param notificationType raw string from the caller
-     * @return the best-matching {@link EmailType} constant
-     */
-    private EmailType resolveEmailType(String notificationType) {
-        if (notificationType == null || notificationType.isBlank()) {
-            return EmailType.NOTIFICATION;
-        }
-        String normalised = notificationType.toUpperCase().replace("-", "_");
-        try {
-            return EmailType.valueOf(normalised);
-        } catch (IllegalArgumentException ex) {
-            log.warn("⚠️ [EMAIL SERVICE] Unknown email type '{}'; defaulting to NOTIFICATION", notificationType);
-            return EmailType.NOTIFICATION;
-        }
+    @Override
+    public EmailServiceInfoResponse getServiceInfo() {
+        return EmailServiceInfoResponse.defaults();
+    }
+
+    @Override
+    public String getHealth() {
+        return "Email service is running";
     }
 }

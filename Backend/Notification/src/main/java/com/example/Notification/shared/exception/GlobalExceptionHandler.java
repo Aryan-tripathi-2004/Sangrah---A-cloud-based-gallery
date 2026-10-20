@@ -1,9 +1,12 @@
 package com.example.Notification.shared.exception;
 
+import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingRequestHeaderException;
@@ -22,6 +25,13 @@ import java.util.Map;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    @Value("${sangrah.api.error-type-base-url}")
+    private String errorTypeBaseUrl;
+
+    private URI createErrorTypeUri(String errorSlug) {
+        return URI.create(errorTypeBaseUrl + "/" + errorSlug);
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ProblemDetail handleValidationExceptions(MethodArgumentNotValidException ex, WebRequest request) {
         log.warn("Validation error in Notification service: {}", ex.getBindingResult().getErrorCount());
@@ -35,10 +45,39 @@ public class GlobalExceptionHandler {
 
         ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Validation failed");
         problemDetail.setTitle("Bad Request");
-        problemDetail.setType(URI.create("https://api.sangrah.com/errors/validation-failed"));
+        problemDetail.setType(createErrorTypeUri("validation-failed"));
         problemDetail.setProperty("errors", errors);
         problemDetail.setProperty("path", request.getDescription(false).replace("uri=", ""));
 
+        return problemDetail;
+    }
+
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ProblemDetail handleConstraintViolationException(ConstraintViolationException ex, WebRequest request) {
+        log.warn("Constraint violation in Notification service: {}", ex.getMessage());
+        Map<String, String> errors = new HashMap<>();
+        for (var violation : ex.getConstraintViolations()) {
+            errors.put(violation.getPropertyPath().toString(), violation.getMessage());
+        }
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Validation failed");
+        problemDetail.setTitle("Constraint Violation");
+        problemDetail.setType(createErrorTypeUri("constraint-violation"));
+        problemDetail.setProperty("errors", errors);
+        problemDetail.setProperty("path", request.getDescription(false).replace("uri=", ""));
+        return problemDetail;
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ProblemDetail handleHttpMessageNotReadable(HttpMessageNotReadableException ex, WebRequest request) {
+        log.warn("Unreadable request body in Notification service: {}", ex.getMessage());
+        Throwable rootCause = ex.getMostSpecificCause();
+        String detail = (rootCause != null && rootCause.getMessage() != null)
+                ? rootCause.getMessage()
+                : "Malformed or invalid request body";
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, detail);
+        problemDetail.setTitle("Invalid Request Body");
+        problemDetail.setType(createErrorTypeUri("invalid-body"));
+        problemDetail.setProperty("path", request.getDescription(false).replace("uri=", ""));
         return problemDetail;
     }
 
@@ -48,7 +87,7 @@ public class GlobalExceptionHandler {
 
         ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, ex.getMessage());
         problemDetail.setTitle("Unauthorized");
-        problemDetail.setType(URI.create("https://api.sangrah.com/errors/missing-header"));
+        problemDetail.setType(createErrorTypeUri("missing-header"));
         problemDetail.setProperty("path", request.getDescription(false).replace("uri=", ""));
 
         return problemDetail;
@@ -60,7 +99,7 @@ public class GlobalExceptionHandler {
 
         ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
         problemDetail.setTitle("Not Found");
-        problemDetail.setType(URI.create("https://api.sangrah.com/errors/resource-not-found"));
+        problemDetail.setType(createErrorTypeUri("resource-not-found"));
         problemDetail.setProperty("path", request.getDescription(false).replace("uri=", ""));
 
         return problemDetail;
@@ -72,7 +111,7 @@ public class GlobalExceptionHandler {
 
         ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "The resource was updated by another request. Please try again.");
         problemDetail.setTitle("Conflict");
-        problemDetail.setType(URI.create("https://api.sangrah.com/errors/conflict"));
+        problemDetail.setType(createErrorTypeUri("conflict"));
         problemDetail.setProperty("path", request.getDescription(false).replace("uri=", ""));
 
         return problemDetail;
@@ -84,9 +123,18 @@ public class GlobalExceptionHandler {
 
         ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
         problemDetail.setTitle("Bad Request");
-        problemDetail.setType(URI.create("https://api.sangrah.com/errors/invalid-argument"));
+        problemDetail.setType(createErrorTypeUri("invalid-argument"));
         problemDetail.setProperty("path", request.getDescription(false).replace("uri=", ""));
 
+        return problemDetail;
+    }
+
+    @ExceptionHandler(PermissionDeniedException.class)
+    public ProblemDetail handlePermissionDeniedException(PermissionDeniedException ex) {
+        log.warn("Permission denied: {}", ex.getMessage());
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, ex.getMessage());
+        problemDetail.setTitle("Permission Denied");
+        problemDetail.setType(createErrorTypeUri("forbidden"));
         return problemDetail;
     }
 
@@ -96,7 +144,7 @@ public class GlobalExceptionHandler {
 
         ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred");
         problemDetail.setTitle("Internal Server Error");
-        problemDetail.setType(URI.create("https://api.sangrah.com/errors/internal-server-error"));
+        problemDetail.setType(createErrorTypeUri("internal-server-error"));
         problemDetail.setProperty("path", request.getDescription(false).replace("uri=", ""));
 
         return problemDetail;

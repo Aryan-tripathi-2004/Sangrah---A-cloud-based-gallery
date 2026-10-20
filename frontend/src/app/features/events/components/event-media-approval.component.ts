@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter, inject, OnInit } from '@angular/core';
+import { Component, Input, Output, EventEmitter, inject, OnInit, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { EventService, EventMediaStatus } from '../event.service';
@@ -17,6 +17,7 @@ interface UploaderGroup {
 @Component({
   selector: 'app-event-media-approval',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CommonModule, FormsModule, MediaPreviewModalComponent],
   templateUrl: './event-media-approval.component.html',
 })
@@ -27,6 +28,7 @@ export class EventMediaApprovalComponent implements OnInit {
 
   private eventService = inject(EventService);
   private api = inject(SangrahApiService);
+  private cdr = inject(ChangeDetectorRef);
 
   selectedUploader: UploaderGroup | null = null;
   filterStatus: 'all' | 'PENDING' | 'APPROVED' | 'REJECTED' = 'PENDING';
@@ -77,11 +79,13 @@ export class EventMediaApprovalComponent implements OnInit {
             this.selectedUploader = updated;
           }
         }
+        this.cdr.markForCheck();
       },
       error: (error) => {
         console.error('Failed to refresh media:', error);
         // Still try to refresh UI with cached data
         this.groupMediaByUploader();
+        this.cdr.markForCheck();
       },
     });
   }
@@ -146,14 +150,30 @@ export class EventMediaApprovalComponent implements OnInit {
     return this.uploaderGroups.reduce((sum, group) => sum + group.pendingCount, 0);
   }
 
-  isImageFile(media: EventMediaStatus): boolean {
-    const mimeType = media.mimeType || '';
-    return mimeType.startsWith('image/');
+  failedMediaIds = new Set<string>();
+
+  onMediaLoadError(mediaId: string): void {
+    this.failedMediaIds.add(mediaId);
+  }
+
+  isMediaFailed(mediaId: string): boolean {
+    return this.failedMediaIds.has(mediaId);
   }
 
   isVideoFile(media: EventMediaStatus): boolean {
-    const mimeType = media.mimeType || '';
-    return mimeType.startsWith('video/');
+    const mimeType = (media.mimeType || '').toLowerCase();
+    if (mimeType.startsWith('video/')) return true;
+    const fileName = (media.fileName || '').toLowerCase();
+    return /\.(mp4|webm|mov|ogg|m4v|mkv)$/i.test(fileName);
+  }
+
+  isImageFile(media: EventMediaStatus): boolean {
+    const mimeType = (media.mimeType || '').toLowerCase();
+    if (mimeType.startsWith('image/')) return true;
+    const fileName = (media.fileName || '').toLowerCase();
+    if (/\.(jpg|jpeg|png|gif|webp|svg|bmp|ico|avif)$/i.test(fileName)) return true;
+    // Default: if not identified as video and not a non-media document, treat as image
+    return !this.isVideoFile(media) && !/\.(pdf|doc|docx|txt|zip|tar|gz)$/i.test(fileName);
   }
 
   getMediaUrl(media: EventMediaStatus): string {
@@ -162,42 +182,20 @@ export class EventMediaApprovalComponent implements OnInit {
   }
 
   openPreview(media: EventMediaStatus): void {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    const item: MediaItem = {
+      id: media.mediaId,
+      originalFileName: media.fileName || media.mediaId,
+      mimeType: media.mimeType as string | undefined,
+      sizeBytes: 0,
+      type: this.isVideoFile(media) ? 'VIDEO' : 'IMAGE',
+      checksumSha256: '',
+      metadata: {},
+      uploadedAt: media.uploadedAt,
+    } as MediaItem;
 
-    const proceed = () => {
-      // Create a MediaItem-like object from EventMediaStatus for the preview modal
-      const item: MediaItem = {
-        id: media.mediaId,
-        originalFileName: media.fileName || media.mediaId,
-        mimeType: media.mimeType as string | undefined,
-        sizeBytes: 0,
-        type: this.isVideoFile(media) ? 'VIDEO' : 'IMAGE',
-        checksumSha256: '',
-        metadata: {},
-        uploadedAt: media.uploadedAt,
-      } as MediaItem;
-
-      this.previewMedia = item;
-      this.previewFileUrl = this.getMediaUrl(media);
-      this.previewOpen = true;
-    };
-
-    // If there's a token and it's near expiry, attempt refresh first
-    if (token) {
-      const expiresAt = this.getTokenExpiryMillis(token);
-      const now = Date.now();
-      if (expiresAt !== null && expiresAt - now < 120000) {
-        // Try refresh; whether it succeeds or fails, proceed to open (fallback token may still be used)
-        this.api.refreshAccessToken().subscribe({
-          next: () => proceed(),
-          error: () => proceed(),
-        });
-        return;
-      }
-    }
-
-    // No refresh required
-    proceed();
+    this.previewMedia = item;
+    this.previewFileUrl = this.getMediaUrl(media);
+    this.previewOpen = true;
   }
 
   closePreview(): void {
@@ -218,14 +216,14 @@ export class EventMediaApprovalComponent implements OnInit {
 
   onApprove(mediaId: string): void {
     this.processingId = mediaId;
-    this.eventService.approveEventMedia(this.eventId, mediaId).subscribe({
+    this.eventService.updateEventMediaStatus(this.eventId, mediaId, 'APPROVED').subscribe({
       next: () => {
         this.processingId = null;
         // Refresh media from API to ensure UI updates correctly
         this.refreshMediaAndUI();
         this.mediaUpdated.emit();
       },
-      error: (error) => {
+      error: (error: any) => {
         console.error('Approval failed:', error);
         this.processingId = null;
       },
@@ -236,7 +234,7 @@ export class EventMediaApprovalComponent implements OnInit {
     if (!this.rejectionReason.trim()) return;
 
     this.processingId = mediaId;
-    this.eventService.rejectEventMedia(this.eventId, mediaId, this.rejectionReason).subscribe({
+    this.eventService.updateEventMediaStatus(this.eventId, mediaId, 'REJECTED', this.rejectionReason).subscribe({
       next: () => {
         this.processingId = null;
         this.rejectFormId = null;
@@ -245,7 +243,7 @@ export class EventMediaApprovalComponent implements OnInit {
         this.refreshMediaAndUI();
         this.mediaUpdated.emit();
       },
-      error: (error) => {
+      error: (error: any) => {
         console.error('Rejection failed:', error);
         this.processingId = null;
       },

@@ -1,7 +1,11 @@
 package com.example.Billing.application.service;
 
+import java.math.BigDecimal;
+
 import com.example.Billing.infrastructure.persistence.document.InvoiceDocument;
 import com.example.Billing.infrastructure.persistence.repository.InvoiceRepository;
+import com.example.Billing.shared.exception.BillingProcessingException;
+import com.example.Billing.shared.exception.ResourceNotFoundException;
 import com.itextpdf.kernel.font.PdfFont;
 import com.itextpdf.kernel.font.PdfFontFactory;
 import com.itextpdf.kernel.pdf.PdfDocument;
@@ -17,6 +21,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayOutputStream;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 
 @Service
@@ -33,7 +38,7 @@ public class PDFGenerationService {
 
             // Fetch invoice from database
             InvoiceDocument invoice = invoiceRepository.findByInvoiceId(invoiceId)
-                    .orElseThrow(() -> new RuntimeException("Invoice not found: " + invoiceId));
+                    .orElseThrow(() -> new ResourceNotFoundException("Invoice not found: " + invoiceId));
 
             // Generate PDF in memory
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
@@ -64,9 +69,11 @@ public class PDFGenerationService {
 
             return pdfContent;
 
+        } catch (ResourceNotFoundException e) {
+            throw e;
         } catch (Exception e) {
             log.error("❌ PDF generation failed for invoice {}: {}", invoiceId, e.getMessage(), e);
-            throw new RuntimeException("PDF generation failed: " + e.getMessage(), e);
+            throw new BillingProcessingException("Unable to generate PDF invoice at this time due to an internal rendering error.");
         }
     }
 
@@ -106,10 +113,10 @@ public class PDFGenerationService {
         leftCell.add(new Paragraph(invoice.getInvoiceId()).setFont(font).setFontSize(9));
         leftCell.add(new Paragraph(""));
         leftCell.add(new Paragraph("Invoice Date:").setFont(boldFont).setFontSize(10));
-        leftCell.add(new Paragraph(invoice.getIssuedDate().atZone(java.time.ZoneId.systemDefault()).toLocalDate().format(DATE_FORMATTER)).setFont(font).setFontSize(9));
+        leftCell.add(new Paragraph(invoice.getIssuedDate().atZone(ZoneId.systemDefault()).toLocalDate().format(DATE_FORMATTER)).setFont(font).setFontSize(9));
         leftCell.add(new Paragraph(""));
         leftCell.add(new Paragraph("Due Date:").setFont(boldFont).setFontSize(10));
-        leftCell.add(new Paragraph(invoice.getDueDate().atZone(java.time.ZoneId.systemDefault()).toLocalDate().format(DATE_FORMATTER)).setFont(font).setFontSize(9));
+        leftCell.add(new Paragraph(invoice.getDueDate().atZone(ZoneId.systemDefault()).toLocalDate().format(DATE_FORMATTER)).setFont(font).setFontSize(9));
 
         // Right column
         Cell rightCell = new Cell();
@@ -118,9 +125,9 @@ public class PDFGenerationService {
         rightCell.add(new Paragraph(""));
         rightCell.add(new Paragraph("Billing Period:").setFont(boldFont).setFontSize(10));
         rightCell.add(new Paragraph(
-                invoice.getBillingPeriod().getStartDate().atZone(java.time.ZoneId.systemDefault()).toLocalDate().format(DATE_FORMATTER) +
+                invoice.getBillingPeriod().getStartDate().atZone(ZoneId.systemDefault()).toLocalDate().format(DATE_FORMATTER) +
                         " to " +
-                        invoice.getBillingPeriod().getEndDate().atZone(java.time.ZoneId.systemDefault()).toLocalDate().format(DATE_FORMATTER)
+                        invoice.getBillingPeriod().getEndDate().atZone(ZoneId.systemDefault()).toLocalDate().format(DATE_FORMATTER)
         ).setFont(font).setFontSize(9));
 
         detailsTable.addCell(leftCell);
@@ -173,7 +180,7 @@ public class PDFGenerationService {
         summaryTable.addCell(new Cell().add(new Paragraph("Subtotal:").setFont(boldFont)));
         summaryTable.addCell(new Cell().add(new Paragraph(String.format("$%.2f", invoice.getCharges().getSubtotal())).setFont(font)));
 
-        summaryTable.addCell(new Cell().add(new Paragraph("Tax (" + String.format("%.0f%%", invoice.getCharges().getTaxRate() * 100) + "):").setFont(boldFont)));
+        summaryTable.addCell(new Cell().add(new Paragraph("Tax (" + String.format("%.0f%%", invoice.getCharges().getTaxRate().multiply(BigDecimal.valueOf(100))) + "):").setFont(boldFont)));
         summaryTable.addCell(new Cell().add(new Paragraph(String.format("$%.2f", invoice.getCharges().getTax())).setFont(font)));
 
         Cell totalAmountCell = new Cell().add(new Paragraph("Total Amount:").setFont(boldFont));
@@ -190,7 +197,7 @@ public class PDFGenerationService {
 
         // Payment status
         String status = "PAID".equals(invoice.getStatus().name()) ?
-                "✓ PAID on " + invoice.getPaidDate().atZone(java.time.ZoneId.systemDefault()).toLocalDate().format(DATE_FORMATTER) :
+                "✓ PAID on " + invoice.getPaidDate().atZone(ZoneId.systemDefault()).toLocalDate().format(DATE_FORMATTER) :
                 invoice.getStatus().name();
 
         Paragraph footerStatus = new Paragraph("Status: " + status)

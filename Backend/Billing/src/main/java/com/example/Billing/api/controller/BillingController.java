@@ -1,27 +1,27 @@
 package com.example.Billing.api.controller;
 
 import com.example.Billing.api.dto.response.CostEstimateDTO;
+import com.example.Billing.api.dto.response.HealthResponse;
 import com.example.Billing.api.dto.response.InvoiceDTO;
+import com.example.Billing.api.dto.response.PaymentDTO;
+import com.example.Billing.api.dto.response.StripeConfigResponse;
 import com.example.Billing.api.resolver.CurrentUserId;
 import com.example.Billing.application.service.interfaces.IBillingService;
 import com.example.Billing.application.service.interfaces.ICostEstimationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 
 
 @Slf4j
@@ -34,9 +34,6 @@ public class BillingController {
     private final IBillingService billingService;
     private final ICostEstimationService costEstimationService;
 
-    @Value("${stripe.publishable.key:}")
-    private String stripePublishableKey;
-
     /**
      * Get list of invoices for current user
      */
@@ -47,7 +44,6 @@ public class BillingController {
         Pageable pageable
     ) {
         log.info("📋 Getting invoices for user: {}", userId);
-
         return ResponseEntity.ok(billingService.getInvoiceHistory(userId, pageable));
     }
 
@@ -61,7 +57,6 @@ public class BillingController {
         @CurrentUserId String userId
     ) {
         log.info("📄 Getting invoice {} for user: {}", invoiceId, userId);
-
         return ResponseEntity.ok(billingService.getInvoice(userId, invoiceId));
     }
 
@@ -76,34 +71,14 @@ public class BillingController {
     ) {
         log.info("📥 Downloading PDF for invoice {} for user: {}", invoiceId, userId);
 
-        try {
-            // Verify invoice ownership
-            InvoiceDTO invoice = billingService.getInvoice(userId, invoiceId);
+        byte[] pdfContent = billingService.getInvoicePDF(userId, invoiceId);
 
-            // Get PDF content (would be stored in invoice document)
-            // For now, we'll need to modify BillingService to return the PDF
-            byte[] pdfContent = billingService.getInvoicePDF(userId, invoiceId);
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_PDF);
+        headers.setContentLength(pdfContent.length);
+        headers.setContentDispositionFormData("attachment", "invoice_" + invoiceId + ".pdf");
 
-            if (pdfContent == null || pdfContent.length == 0) {
-                log.warn("⚠️ PDF not found for invoice: {}", invoiceId);
-                return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                        .body(null);
-            }
-
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_PDF);
-            headers.setContentLength(pdfContent.length);
-            headers.setContentDispositionFormData("attachment", "invoice_" + invoiceId + ".pdf");
-
-            return ResponseEntity.ok()
-                    .headers(headers)
-                    .body(pdfContent);
-
-        } catch (Exception e) {
-            log.error("❌ Error downloading PDF for invoice {}: {}", invoiceId, e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(null);
-        }
+        return ResponseEntity.ok().headers(headers).body(pdfContent);
     }
 
     /**
@@ -113,7 +88,6 @@ public class BillingController {
     @Operation(summary = "Get cost estimate", description = "Get estimated cost for current month")
     public ResponseEntity<CostEstimateDTO> getCostEstimate(@CurrentUserId String userId) {
         log.info("💰 Getting cost estimate for user: {}", userId);
-
         return ResponseEntity.ok(costEstimationService.estimateCurrentMonthCost(userId));
     }
 
@@ -122,33 +96,11 @@ public class BillingController {
      */
     @GetMapping("/dashboard")
     @Operation(summary = "Get dashboard metrics", description = "Get all dashboard metrics for billing")
-    public ResponseEntity<?> getDashboard(@CurrentUserId String userId) {
+    public ResponseEntity<CostEstimateDTO> getDashboard(@CurrentUserId String userId) {
         log.info("📊 Getting dashboard for user: {}", userId);
-
         // Return cost estimate as dashboard data for now
-        CostEstimateDTO estimate = costEstimationService.estimateCurrentMonthCost(userId);
-
         // TODO: Add more metrics (total paid, outstanding balance, etc.)
-        return ResponseEntity.ok(estimate);
-    }
-
-    /**
-     * Initiate payment for an invoice (Stripe checkout)
-     */
-    @PostMapping("/invoices/{invoiceId}/pay")
-    @Operation(summary = "Pay invoice", description = "Initiate payment for an invoice via Stripe")
-    public ResponseEntity<?> payInvoice(
-        @PathVariable String invoiceId,
-        @CurrentUserId String userId
-    ) {
-        log.info("💳 Initiating payment for invoice {} for user: {}", invoiceId, userId);
-
-        // Get invoice to verify ownership
-        InvoiceDTO invoice = billingService.getInvoice(userId, invoiceId);
-
-        // TODO: Create Stripe Checkout session
-        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED)
-            .body(new ErrorResponse("Stripe integration coming soon"));
+        return ResponseEntity.ok(costEstimationService.estimateCurrentMonthCost(userId));
     }
 
     /**
@@ -156,8 +108,8 @@ public class BillingController {
      */
     @GetMapping("/health")
     @Operation(summary = "Health check", description = "Check if Billing service is healthy")
-    public ResponseEntity<?> health() {
-        return ResponseEntity.ok(new HealthResponse("Billing service is running"));
+    public ResponseEntity<HealthResponse> health() {
+        return ResponseEntity.ok(billingService.getHealth());
     }
 
     /**
@@ -167,14 +119,7 @@ public class BillingController {
     @Operation(summary = "Get billing config", description = "Get Stripe publishable key and other config")
     public ResponseEntity<StripeConfigResponse> getStripeConfig() {
         log.info("📋 Getting Stripe configuration");
-
-        boolean stripeConfigured = stripePublishableKey != null && !stripePublishableKey.isEmpty();
-
-        return ResponseEntity.ok(StripeConfigResponse.builder()
-            .stripePublishableKey(stripeConfigured ? stripePublishableKey : null)
-            .stripeConfigured(stripeConfigured)
-            .message(stripeConfigured ? "Stripe is configured" : "Stripe not configured - add STRIPE_PUBLISHABLE_KEY")
-            .build());
+        return ResponseEntity.ok(billingService.getStripeConfig());
     }
 
     /**
@@ -182,33 +127,12 @@ public class BillingController {
      */
     @GetMapping("/payments")
     @Operation(summary = "Get payment history", description = "Get all payments for the current user")
-    public ResponseEntity<?> getPaymentHistory(
+    public ResponseEntity<List<PaymentDTO>> getPaymentHistory(
         @CurrentUserId String userId,
         @RequestParam(defaultValue = "0") int page,
         @RequestParam(defaultValue = "10") int size
     ) {
         log.info("💳 Getting payment history for user: {}", userId);
-
-        try {
-            var payments = billingService.getPaymentHistory(userId, page, size);
-            return ResponseEntity.ok(payments);
-        } catch (Exception e) {
-            log.error("❌ Error getting payment history", e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(new ErrorResponse("Failed to load payment history: " + e.getMessage()));
-        }
+        return ResponseEntity.ok(billingService.getPaymentHistory(userId, page, size));
     }
-
-    // Helper classes
-    record ErrorResponse(String error) {}
-
-    record HealthResponse(String status) {}
-
-    @Builder
-    record StripeConfigResponse(
-        String stripePublishableKey,
-        Boolean stripeConfigured,
-        String message
-    ) {}
 }
-

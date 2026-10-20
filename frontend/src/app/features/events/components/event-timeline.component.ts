@@ -1,5 +1,5 @@
-import { Component, Input, OnInit, inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, Input, OnInit, inject, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
+
 import { EventService, EventMediaStatus } from '../event.service';
 import { SangrahApiService, MediaItem } from '../../../core/api/sangrah-api.service';
 import { MediaPreviewModalComponent } from '../../gallery/components/media-preview-modal.component';
@@ -7,7 +7,8 @@ import { MediaPreviewModalComponent } from '../../gallery/components/media-previ
 @Component({
   selector: 'app-event-timeline',
   standalone: true,
-  imports: [CommonModule, MediaPreviewModalComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [MediaPreviewModalComponent],
   templateUrl: './event-timeline.component.html',
 })
 export class EventTimelineComponent implements OnInit {
@@ -15,6 +16,7 @@ export class EventTimelineComponent implements OnInit {
 
   private eventService = inject(EventService);
   private api = inject(SangrahApiService);
+  private cdr = inject(ChangeDetectorRef);
 
   sortBy: 'newest' | 'oldest' = 'newest';
   tokenReady = false;
@@ -25,7 +27,8 @@ export class EventTimelineComponent implements OnInit {
   previewFileUrl: string | null = null;
 
   ngOnInit(): void {
-    this.ensureValidMediaToken();
+    this.tokenReady = true;
+    this.cdr.markForCheck();
   }
 
   isVideo(media: EventMediaStatus): boolean {
@@ -35,58 +38,6 @@ export class EventTimelineComponent implements OnInit {
     return /\.(mp4|webm|mov|ogg)$/i.test(name);
   }
 
-  private ensureValidMediaToken(): void {
-    if (typeof window === 'undefined') {
-      this.tokenReady = true;
-      return;
-    }
-
-    const token = localStorage.getItem('token');
-    if (!token) {
-      this.tokenReady = true;
-      return;
-    }
-
-    const expiresAt = this.getTokenExpiryMillis(token);
-    const now = Date.now();
-
-    // Refresh if expired or close to expiry so image/video URL requests do not 401.
-    if (expiresAt !== null && expiresAt - now < 120000) {
-      // Do not block rendering — show media immediately using current token, and refresh in background.
-      this.tokenReady = true;
-      this.api.refreshAccessToken().subscribe({
-        next: () => {
-          // token refreshed; let Angular re-evaluate bindings so URLs update from localStorage
-        },
-        error: () => {
-          // ignore refresh errors — keep showing current media
-        },
-      });
-      return;
-    }
-
-    this.tokenReady = true;
-  }
-
-  private getTokenExpiryMillis(token: string): number | null {
-    try {
-      const payload = token.split('.')[1];
-      if (!payload) return null;
-
-      const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
-      const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
-      const decoded = JSON.parse(atob(padded));
-
-      if (typeof decoded.exp !== 'number') {
-        return null;
-      }
-
-      return decoded.exp * 1000;
-    } catch {
-      return null;
-    }
-  }
-
   getMediaUrl(mediaId: string): string {
     return this.api.getEventMediaFile(this.eventId, mediaId);
   }
@@ -94,17 +45,14 @@ export class EventTimelineComponent implements OnInit {
   onImageError(event: Event): void {
     const img = event.target as HTMLImageElement;
     console.warn('Failed to load image:', img.src);
-    // Image will show placeholder on error due to CSS
   }
 
   onMediaError(event: Event): void {
     const el = event.target as HTMLVideoElement;
     console.warn('Failed to load media:', el?.currentSrc || el?.src);
-    // Let the UI show the placeholder block
   }
 
   onTileClick(event: MouseEvent, media: EventMediaStatus): void {
-    // If user clicked on a native control (video controls, button, etc.) do not open modal
     const target = event.target as HTMLElement | null;
     if (!target) return;
 
@@ -112,7 +60,6 @@ export class EventTimelineComponent implements OnInit {
       return;
     }
 
-    // Prepare a MediaItem-like object for the preview modal
     const item: MediaItem = {
       id: media.mediaId,
       originalFileName: media.fileName || media.mediaId,
@@ -127,12 +74,14 @@ export class EventTimelineComponent implements OnInit {
     this.previewMedia = item;
     this.previewFileUrl = this.getMediaUrl(media.mediaId);
     this.previewOpen = true;
+    this.cdr.markForCheck();
   }
 
   closePreview(): void {
     this.previewOpen = false;
     this.previewMedia = null;
     this.previewFileUrl = null;
+    this.cdr.markForCheck();
   }
 
   getApprovedMedia(): EventMediaStatus[] {
@@ -171,19 +120,20 @@ export class EventTimelineComponent implements OnInit {
 
     this.api.deleteEventMedia(this.eventId, mediaId).subscribe({
       next: () => {
-        // Reload media after deletion
         this.eventService.loadEventMedia(this.eventId).subscribe({
           next: () => {
-            // Refresh UI
+            this.cdr.markForCheck();
           },
           error: (error) => {
             console.error('Failed to reload media:', error);
+            this.cdr.markForCheck();
           },
         });
       },
       error: (error) => {
         console.error('Delete failed:', error);
         alert('Failed to delete media: ' + (error.error?.error || error.message));
+        this.cdr.markForCheck();
       },
     });
   }

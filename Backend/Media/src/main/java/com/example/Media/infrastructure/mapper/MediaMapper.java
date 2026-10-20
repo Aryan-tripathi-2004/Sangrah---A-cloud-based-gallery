@@ -1,7 +1,9 @@
 package com.example.Media.infrastructure.mapper;
 
 import com.example.Media.api.dto.response.MediaResponse;
+import com.example.Media.api.dto.response.StorageUsageLedgerResponse;
 import com.example.Media.infrastructure.persistence.document.MediaDocument;
+import com.example.Media.infrastructure.persistence.document.StorageUsageLedgerDocument;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 
@@ -46,4 +48,14 @@ public interface MediaMapper {
         expression = "java(document.isActive() ? \"ACTIVE\" : \"DELETED\")"
     )
     MediaResponse toResponse(MediaDocument document);
+
+    /**
+     * Maps a {@link StorageUsageLedgerDocument} to a {@link StorageUsageLedgerResponse}.
+     * Explicit field mappings handle the naming differences between the persistence model
+     * and the API DTO.
+     */
+    @Mapping(target = "mediaId", source = "domainRefId")
+    @Mapping(target = "recordedAt", source = "startAt")
+    @Mapping(target = "deletedAt", source = "endAt")
+    StorageUsageLedgerResponse toLedgerResponse(StorageUsageLedgerDocument ledgerDocument);
 }

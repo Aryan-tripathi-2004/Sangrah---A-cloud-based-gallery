@@ -1,5 +1,5 @@
-import { Component, OnInit, inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, OnInit, inject, ChangeDetectionStrategy, signal, computed } from '@angular/core';
+
 import { LayoutComponent } from '../../shared/layout/layout.component';
 import { MediaUploadComponent } from './components/media-upload.component';
 import { TimelineViewComponent } from './components/timeline-view.component';
@@ -10,27 +10,35 @@ import { MediaItem, StorageUsage } from '../../core/api/sangrah-api.service';
 @Component({
   selector: 'app-gallery-page',
   standalone: true,
-  imports: [CommonModule, LayoutComponent, MediaUploadComponent, TimelineViewComponent, MediaPreviewModalComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [LayoutComponent, MediaUploadComponent, TimelineViewComponent, MediaPreviewModalComponent],
   templateUrl: './gallery-page.component.html',
 })
 export class GalleryPageComponent implements OnInit {
   private gallery = inject(GalleryService);
 
-  activeTab: 'timeline' | 'upload' | 'stats' = 'timeline';
-  storageUsage: StorageUsage | null = null;
+  // Modern Angular Signals for local state
+  activeTab = signal<'timeline' | 'upload' | 'stats'>('timeline');
+  storageUsage = signal<StorageUsage | null>(null);
+  isPreviewOpen = signal<boolean>(false);
+  selectedMedia = signal<MediaItem | null>(null);
 
-  // Preview modal state
-  isPreviewOpen = false;
-  selectedMedia: MediaItem | null = null;
+  // Computed helper
+  averageFileSize = computed(() => {
+    const usage = this.storageUsage();
+    if (!usage || usage.fileCount === 0) return '—';
+    const avgBytes = usage.totalBytesUsed / usage.fileCount;
+    return this.formatBytes(Math.round(avgBytes));
+  });
 
   ngOnInit(): void {
     this.loadStorageUsage();
   }
 
-  private loadStorageUsage(): void {
+  loadStorageUsage(): void {
     this.gallery.loadStorageUsage().subscribe({
       next: (usage) => {
-        this.storageUsage = usage;
+        this.storageUsage.set(usage);
       },
       error: (error) => {
         console.error('Failed to load storage usage:', error);
@@ -40,44 +48,33 @@ export class GalleryPageComponent implements OnInit {
 
   onUploadComplete(items: MediaItem[]): void {
     console.log('Upload complete:', items);
-    // Reload storage usage after upload
     this.loadStorageUsage();
-    // Switch to timeline to show new media
     setTimeout(() => {
-      this.activeTab = 'timeline';
+      this.activeTab.set('timeline');
     }, 500);
   }
 
   onMediaPreview(media: MediaItem): void {
-    this.selectedMedia = media;
-    this.isPreviewOpen = true;
+    this.selectedMedia.set(media);
+    this.isPreviewOpen.set(true);
 
-    // Handle ESC key press
     const handleEscKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         this.closePreview();
+        document.removeEventListener('keydown', handleEscKey);
       }
     };
     document.addEventListener('keydown', handleEscKey);
   }
 
   closePreview(): void {
-    this.isPreviewOpen = false;
-    this.selectedMedia = null;
+    this.isPreviewOpen.set(false);
+    this.selectedMedia.set(null);
   }
 
   onMediaDelete(mediaId: string): void {
     console.log('Delete complete:', mediaId);
-    // Reload storage usage after deletion
     this.loadStorageUsage();
-  }
-
-  getAverageFileSize(): string {
-    if (!this.storageUsage || this.storageUsage.fileCount === 0) {
-      return '—';
-    }
-    const avgBytes = this.storageUsage.totalBytesUsed / this.storageUsage.fileCount;
-    return this.formatBytes(Math.round(avgBytes));
   }
 
   private formatBytes(bytes: number): string {

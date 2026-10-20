@@ -1,5 +1,7 @@
 package com.example.Billing.infrastructure.persistence.document;
 
+import java.math.BigDecimal;
+
 import com.example.Billing.shared.enums.PaymentStatus;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -35,7 +37,7 @@ public class PaymentDocument {
 
     private PaymentMethod paymentMethod;
 
-    private Double amount;
+    private BigDecimal amount;
     private String stripePaymentIntentId;
     private String stripeChargeId;
 

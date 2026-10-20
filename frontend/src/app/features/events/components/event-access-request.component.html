@@ -1,7 +1,9 @@
 <!-- Shows if event is PROTECTED and user is not owner and doesn't have access -->
-  <div *ngIf="shouldShowComponent && !isModalMode" class="space-y-4">
-      <!-- Status States -->
-      <div *ngIf="requestStatus === 'none' && showRequestButton && !hideButton" class="text-center">
+@if (shouldShowComponent && !isModalMode) {
+  <div class="space-y-4">
+    <!-- Status States -->
+    @if (requestStatus === 'none' && showRequestButton && !hideButton) {
+      <div class="text-center">
         <button
           (click)="openRequestForm()"
           class="px-6 py-3 bg-orange-600 hover:bg-orange-700 rounded-lg font-semibold">
@@ -9,11 +11,14 @@
         </button>
         <p class="text-slate-400 mt-2">This event is protected. Contact owner for access.</p>
       </div>
-
-      <div *ngIf="requestStatus === 'pending'" class="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4">
+    }
+    @if (requestStatus === 'pending') {
+      <div class="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4">
         <p class="text-yellow-400 font-semibold">⏳ Pending Approval</p>
         <p class="text-sm text-slate-400">Waiting for owner to review your request</p>
-        <p class="text-xs text-slate-500 mt-2" *ngIf="requestCreatedAt">Requested: {{ requestCreatedAt | date:'short' }}</p>
+        @if (requestCreatedAt) {
+          <p class="text-xs text-slate-500 mt-2">Requested: {{ requestCreatedAt | date:'short' }}</p>
+        }
         <button
           (click)="withdrawRequest()"
           [disabled]="isSubmitting"
@@ -21,20 +26,26 @@
           {{ isSubmitting ? '⏳ Withdrawing...' : '✕ Withdraw Request' }}
         </button>
       </div>
-
-      <div *ngIf="requestStatus === 'approved'" class="bg-green-500/10 border border-green-500/30 rounded-lg p-4">
+    }
+    @if (requestStatus === 'approved') {
+      <div class="bg-green-500/10 border border-green-500/30 rounded-lg p-4">
         <p class="text-green-400 font-semibold">✅ Access Approved</p>
         <p class="text-sm text-slate-400">You can now view and upload media to this event</p>
-        <p class="text-xs text-slate-500 mt-2" *ngIf="expiresAt && expiresAt !== 'FOREVER'">
-          Expires: {{ expiresAt | date:'short' }}
-        </p>
-        <p class="text-xs text-slate-500 mt-2" *ngIf="expiresAt === 'FOREVER'">
-          Permanent access (no expiration)
-        </p>
+        @if (expiresAt && expiresAt !== 'FOREVER') {
+          <p class="text-xs text-slate-500 mt-2">
+            Expires: {{ expiresAt | date:'short' }}
+          </p>
+        }
+        @if (expiresAt === 'FOREVER') {
+          <p class="text-xs text-slate-500 mt-2">
+            Permanent access (no expiration)
+          </p>
+        }
       </div>
-
-      <!-- Retry access for expired/rejected/revoked states -->
-      <div *ngIf="requestStatus === 'expired' || requestStatus === 'rejected' || requestStatus === 'revoked'" class="text-center">
+    }
+    <!-- Retry access for expired/rejected/revoked states -->
+    @if (requestStatus === 'expired' || requestStatus === 'rejected' || requestStatus === 'revoked') {
+      <div class="text-center">
         <button
           (click)="showReRequestForm = true"
           class="px-6 py-3 bg-orange-600 hover:bg-orange-700 rounded-lg font-semibold">
@@ -42,18 +53,17 @@
         </button>
         <p class="text-slate-400 mt-2">You can request access to this event again.</p>
       </div>
-
-      <!-- Request Form Modal -->
-      <div *ngIf="showRequestForm" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    }
+    <!-- Request Form Modal -->
+    @if (showRequestForm) {
+      <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
         <div class="bg-slate-800 rounded-lg p-6 max-w-md w-full mx-4">
           <h3 class="text-xl font-bold mb-4">Request Access</h3>
           <p class="text-slate-400 mb-4">Send a message with your request (optional):</p>
-
           <textarea
             [(ngModel)]="requestMessage"
             placeholder="Hey Owner..!! I want to access your event."
-            class="w-full bg-slate-700 rounded p-3 text-white mb-4 h-24 border border-slate-600 focus:border-blue-500 outline-none resize-none"></textarea>
-
+          class="w-full bg-slate-700 rounded p-3 text-white mb-4 h-24 border border-slate-600 focus:border-blue-500 outline-none resize-none"></textarea>
           <div class="flex gap-3">
             <button
               (click)="submitRequest()"
@@ -69,18 +79,17 @@
           </div>
         </div>
       </div>
-
-      <!-- Request Form Modal (used for initial request and retry states) -->
-      <div *ngIf="showReRequestForm" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    }
+    <!-- Request Form Modal (used for initial request and retry states) -->
+    @if (showReRequestForm) {
+      <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
         <div class="bg-slate-800 rounded-lg p-6 max-w-md w-full mx-4">
           <h3 class="text-xl font-bold mb-4">Request Access</h3>
           <p class="text-slate-400 mb-4">Send a message with your request (optional):</p>
-
           <textarea
             [(ngModel)]="reRequestMessage"
             placeholder="Why would you like access again?"
-            class="w-full bg-slate-700 rounded p-3 text-white mb-4 h-24 border border-slate-600 focus:border-blue-500 outline-none resize-none"></textarea>
-
+          class="w-full bg-slate-700 rounded p-3 text-white mb-4 h-24 border border-slate-600 focus:border-blue-500 outline-none resize-none"></textarea>
           <div class="flex gap-3">
             <button
               (click)="submitReRequest()"
@@ -96,30 +105,32 @@
           </div>
         </div>
       </div>
-    </div>
+    }
+  </div>
+}
 
-    <div *ngIf="shouldShowComponent && isModalMode" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div class="bg-slate-800 rounded-lg p-6 max-w-md w-full mx-4">
-        <h3 class="text-xl font-bold mb-4">Request Access</h3>
-        <p class="text-slate-400 mb-4">Send a message with your request (optional):</p>
-
-        <textarea
-          [(ngModel)]="requestMessage"
-          placeholder="Hey Owner..!! I want to access your event."
-          class="w-full bg-slate-700 rounded p-3 text-white mb-4 h-24 border border-slate-600 focus:border-blue-500 outline-none resize-none"></textarea>
-
-        <div class="flex gap-3">
-          <button
-            (click)="submitRequest()"
-            [disabled]="isSubmitting"
-            class="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-600 py-2 rounded font-semibold">
-            {{ isSubmitting ? '⏳ Requesting...' : '📤 Send Request' }}
-          </button>
-          <button
-            (click)="closeForm()"
-            class="flex-1 bg-slate-700 hover:bg-slate-600 py-2 rounded font-semibold">
-            Cancel
-          </button>
-        </div>
+@if (shouldShowComponent && isModalMode) {
+  <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div class="bg-slate-800 rounded-lg p-6 max-w-md w-full mx-4">
+      <h3 class="text-xl font-bold mb-4">Request Access</h3>
+      <p class="text-slate-400 mb-4">Send a message with your request (optional):</p>
+      <textarea
+        [(ngModel)]="requestMessage"
+        placeholder="Hey Owner..!! I want to access your event."
+      class="w-full bg-slate-700 rounded p-3 text-white mb-4 h-24 border border-slate-600 focus:border-blue-500 outline-none resize-none"></textarea>
+      <div class="flex gap-3">
+        <button
+          (click)="submitRequest()"
+          [disabled]="isSubmitting"
+          class="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-600 py-2 rounded font-semibold">
+          {{ isSubmitting ? '⏳ Requesting...' : '📤 Send Request' }}
+        </button>
+        <button
+          (click)="closeForm()"
+          class="flex-1 bg-slate-700 hover:bg-slate-600 py-2 rounded font-semibold">
+          Cancel
+        </button>
       </div>
     </div>
+  </div>
+}

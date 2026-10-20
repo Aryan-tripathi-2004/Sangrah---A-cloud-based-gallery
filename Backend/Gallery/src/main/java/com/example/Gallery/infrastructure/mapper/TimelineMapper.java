@@ -14,6 +14,6 @@ import java.util.List;
 public interface TimelineMapper {
     
     default TimelineGroupResponse toTimelineGroupResponse(TimelineGroupType type, String label, List<MediaItemResponse> items) {
-        return new TimelineGroupResponse(type, label, items.size(), items);
+        return new TimelineGroupResponse(type.name(), type, label, items.size(), items);
     }
 }

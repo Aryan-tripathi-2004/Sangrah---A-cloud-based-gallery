@@ -1,6 +1,7 @@
 package com.example.Auth.application.service.impl;
 
 import com.example.Auth.application.service.interfaces.IJwtService;
+import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
@@ -17,13 +18,16 @@ public class JwtServiceImpl implements IJwtService {
     private final SecretKey secretKey;
     private final long accessTokenExpirySeconds;
     private final long refreshTokenExpirySeconds;
+    private final String defaultRole;
 
     public JwtServiceImpl(@Value("${jwt.secret}") String secret,
-                      @Value("${jwt.access-token-expiration-seconds}") long accessTokenExpirySeconds,
-                      @Value("${jwt.refresh-token-expiration-seconds}") long refreshTokenExpirySeconds) {
+                          @Value("${jwt.access-token-expiration-seconds}") long accessTokenExpirySeconds,
+                          @Value("${jwt.refresh-token-expiration-seconds}") long refreshTokenExpirySeconds,
+                          @Value("${jwt.default-role}") String defaultRole) {
         this.secretKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
         this.accessTokenExpirySeconds = accessTokenExpirySeconds;
         this.refreshTokenExpirySeconds = refreshTokenExpirySeconds;
+        this.defaultRole = defaultRole;
     }
 
     @Override
@@ -32,7 +36,7 @@ public class JwtServiceImpl implements IJwtService {
         return Jwts.builder()
                 .subject(userId)
                 .claim("email", email)
-                .claim("role", "USER")
+                .claim("role", defaultRole)
                 .claim("type", "ACCESS")
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plusSeconds(accessTokenExpirySeconds)))
@@ -56,5 +60,19 @@ public class JwtServiceImpl implements IJwtService {
     @Override
     public long getRefreshTokenExpirySeconds() {
         return refreshTokenExpirySeconds;
+    }
+
+    @Override
+    public String extractUserId(String token) {
+        try {
+            return Jwts.parser()
+                    .verifyWith(secretKey)
+                    .build()
+                    .parseSignedClaims(token)
+                    .getPayload()
+                    .getSubject();
+        } catch (ExpiredJwtException e) {
+            return e.getClaims() != null ? e.getClaims().getSubject() : null;
+        }
     }
 }

@@ -1,11 +1,12 @@
 package com.example.Media.api.controller;
 
 import com.example.Media.api.annotation.CurrentUserId;
+import com.example.Media.api.dto.response.HealthResponse;
+import com.example.Media.api.dto.response.MediaDeleteResponse;
 import com.example.Media.api.dto.response.MediaResponse;
+import com.example.Media.api.dto.response.StorageUsageLedgerResponse;
+import com.example.Media.api.dto.response.StorageUsageResponse;
 import com.example.Media.application.service.interfaces.IMediaService;
-import com.example.Media.infrastructure.mapper.MediaMapper;
-import com.example.Media.infrastructure.persistence.document.MediaDocument;
-import com.example.Media.infrastructure.persistence.document.StorageUsageLedgerDocument;
 import com.example.Media.shared.enums.MediaDomain;
 import io.swagger.v3.oas.annotations.Operation;
 import lombok.RequiredArgsConstructor;
@@ -13,6 +14,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -52,7 +54,6 @@ import java.util.Map;
 public class MediaController {
 
     private final IMediaService mediaService;
-    private final MediaMapper mediaMapper;
 
     /**
      * Upload a new media file
@@ -67,61 +68,54 @@ public class MediaController {
 
         log.info("📤 [POST /upload] Received file: {} | domain: {}", file.getOriginalFilename(), domain);
 
-        MediaDocument mediaDoc = mediaService.uploadMedia(userId, domain, entityRefId, file);
-        MediaResponse response = mediaMapper.toResponse(mediaDoc);
-
-        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+        return ResponseEntity.status(HttpStatus.CREATED).body(
+                mediaService.uploadMedia(userId, domain, entityRefId, file));
     }
 
-    /**
-     * Get media file (download/stream)
-     */
-    @GetMapping("/{mediaId}/file")
-    @Operation(summary = "Download media file")
-    public ResponseEntity<Resource> getMediaFile(
-            @PathVariable String mediaId) {
+    @GetMapping(value = "/{mediaId}", produces = {MediaType.APPLICATION_JSON_VALUE, MediaType.APPLICATION_OCTET_STREAM_VALUE, "image/*", "video/*"})
+    @Operation(summary = "Get media details or download file stream")
+    public ResponseEntity<?> getMedia(
+            @PathVariable String mediaId,
+            @RequestHeader(value = HttpHeaders.ACCEPT, defaultValue = MediaType.APPLICATION_JSON_VALUE) String acceptHeader) {
+            
+        log.info("📋 [GET /{}] Fetching media (Accept: {})", mediaId, acceptHeader);
+        
+        boolean wantsBinary = acceptHeader != null && (
+                acceptHeader.contains("image/")
+                || acceptHeader.contains("video/")
+                || acceptHeader.contains(MediaType.APPLICATION_OCTET_STREAM_VALUE)
+        );
 
-        log.info("📥 [GET /{}/file] Fetching file", mediaId);
+        if (!wantsBinary || (acceptHeader != null && acceptHeader.contains(MediaType.APPLICATION_JSON_VALUE))) {
+            return ResponseEntity.ok(mediaService.getMediaDetails(mediaId));
+        }
 
-        MediaDocument mediaDoc = mediaService.getMediaDetails(mediaId);
         Resource resource = mediaService.getMediaFile(mediaId);
-
+        MediaResponse details = mediaService.getMediaDetails(mediaId);
+        
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + mediaDoc.getOriginalFileName() + "\"")
-                .header(HttpHeaders.CONTENT_TYPE, mediaDoc.getMimeType())
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + details.originalFileName() + "\"")
+                .contentType(MediaType.parseMediaType(details.mimeType()))
                 .body(resource);
     }
 
-    /**
-     * Get media details by ID
-     */
-    @GetMapping("/{mediaId}")
-    @Operation(summary = "Get media details")
-    public ResponseEntity<MediaResponse> getMediaDetails(
-            @PathVariable String mediaId) {
-
-        log.info("📋 [GET /{}] Fetching media details", mediaId);
-
-        MediaDocument mediaDoc = mediaService.getMediaDetails(mediaId);
-        MediaResponse response = mediaMapper.toResponse(mediaDoc);
-
-        return ResponseEntity.ok(response);
-    }
-
-    /**
-     * Delete a media file (soft delete)
-     */
     @DeleteMapping("/{mediaId}")
     @Operation(summary = "Delete media file (soft delete)")
-    public ResponseEntity<Map<String, String>> deleteMedia(
+    public ResponseEntity<MediaDeleteResponse> deleteMedia(
             @CurrentUserId String userId,
             @PathVariable String mediaId) {
 
         log.info("🗑️  [DELETE /{}] Deleting media | user: {}", mediaId, userId);
+        return ResponseEntity.ok(mediaService.deleteMedia(mediaId));
+    }
 
-        mediaService.deleteMedia(mediaId);
-
-        return ResponseEntity.ok(Map.of("status", "success", "message", "Media deleted"));
+    @DeleteMapping("/bulk")
+    @Operation(summary = "Bulk delete media files (soft delete)")
+    public ResponseEntity<MediaDeleteResponse> deleteMediaBulk(
+            @CurrentUserId String userId,
+            @RequestBody List<String> mediaIds) {
+        log.info("🗑️  [DELETE /bulk] Bulk deleting media files | count: {} | user: {}", mediaIds != null ? mediaIds.size() : 0, userId);
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(mediaService.deleteMediaBulk(mediaIds));
     }
 
     /**
@@ -135,38 +129,21 @@ public class MediaController {
 
         log.info("📋 [GET /user/{}] Listing media | domain: {}", userId, domain);
 
-        List<MediaDocument> mediaList;
+        List<MediaResponse> responses;
         if (domain != null) {
-            mediaList = mediaService.listMediaByUserAndDomain(userId, domain);
+            responses = mediaService.listMediaByUserAndDomain(userId, domain);
         } else {
-            mediaList = mediaService.listMediaByUser(userId);
+            responses = mediaService.listMediaByUser(userId);
         }
-
-        List<MediaResponse> responses = mediaList.stream()
-                .map(mediaMapper::toResponse)
-                .toList();
 
         return ResponseEntity.ok(responses);
     }
 
-    /**
-     * Get storage usage stats
-     */
-    @GetMapping("/usage/{userId}")
-    @Operation(summary = "Get storage usage for user")
-    public ResponseEntity<Map<String, Object>> getStorageUsage(@PathVariable String userId) {
-
-        log.info("📊 [GET /usage/{}] Fetching storage usage", userId);
-
-        long usedBytes = mediaService.getStorageUsageBytes(userId);
-        long limitBytes = 5_368_709_120L;  // 5GB
-
-        return ResponseEntity.ok(Map.of(
-                "userId", userId,
-                "usedBytes", usedBytes,
-                "limitBytes", limitBytes,
-                "percentageUsed", (usedBytes * 100.0) / limitBytes
-        ));
+    @GetMapping("/usage")
+    @Operation(summary = "Get storage usage for a specific user")
+    public ResponseEntity<StorageUsageResponse> getStorageUsage(@RequestParam String userId) {
+        log.info("  [GET /usage] Fetching storage usage for user: {}", userId);
+        return ResponseEntity.ok(mediaService.getStorageUsage(userId));
     }
 
     /**
@@ -174,19 +151,13 @@ public class MediaController {
      */
     @GetMapping("/ledger")
     @Operation(summary = "Get storage ledger for billing")
-    public ResponseEntity<List<StorageUsageLedgerDocument>> getStorageLedger(
+    public ResponseEntity<List<StorageUsageLedgerResponse>> getStorageLedger(
             @RequestParam String userId,
-            @RequestParam String startDate,
-            @RequestParam String endDate) {
+            @RequestParam Instant startDate,
+            @RequestParam Instant endDate) {
 
         log.info("📊 [GET /ledger] Billing query | user: {} | period: {} to {}", userId, startDate, endDate);
-
-        Instant start = Instant.parse(startDate);
-        Instant end = Instant.parse(endDate);
-
-        List<StorageUsageLedgerDocument> ledgerEntries = mediaService.getStorageLedger(userId, start, end);
-
-        return ResponseEntity.ok(ledgerEntries);
+        return ResponseEntity.ok(mediaService.getStorageLedger(userId, startDate, endDate));
     }
 
     /**
@@ -194,7 +165,7 @@ public class MediaController {
      */
     @GetMapping("/health")
     @Operation(summary = "Health check")
-    public ResponseEntity<Map<String, String>> health() {
-        return ResponseEntity.ok(Map.of("status", "UP"));
+    public ResponseEntity<HealthResponse> health() {
+        return ResponseEntity.ok(mediaService.getHealth());
     }
 }

@@ -1,4 +1,4 @@
-import { Component, Input, OnInit, ChangeDetectorRef, inject } from '@angular/core';
+import { Component, Input, OnInit, ChangeDetectorRef, inject, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { SangrahApiService } from '../../../core/api/sangrah-api.service';
@@ -15,6 +15,7 @@ interface AccessRequest {
 @Component({
   selector: 'app-event-access-requests',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CommonModule, FormsModule],
   templateUrl: './event-access-requests.component.html',
   styles: []
@@ -115,7 +116,7 @@ export class EventAccessRequestsComponent implements OnInit {
       payload.accessExpiresAt = endOfDay.toISOString();
     }
 
-    this.api.approveAccessRequest(this.eventId, requestId, payload).subscribe({
+    this.api.updateAccessRequestStatus(this.eventId, requestId, 'APPROVED', payload).subscribe({
       next: () => {
         console.log('✅ Request approved');
         this.approveFormId = null;
@@ -141,7 +142,7 @@ export class EventAccessRequestsComponent implements OnInit {
       reason: this.rejectionReason || 'Request denied'
     };
 
-    this.api.rejectAccessRequest(this.eventId, requestId, payload).subscribe({
+    this.api.updateAccessRequestStatus(this.eventId, requestId, 'REJECTED', payload).subscribe({
       next: () => {
         console.log('✅ Request rejected');
         this.rejectFormId = null;
@@ -160,7 +161,7 @@ export class EventAccessRequestsComponent implements OnInit {
   openRevoke(requestId: string) {
     if (!confirm('Are you sure you want to revoke access for this user?')) return;
     this.processingId = requestId;
-    this.api.revokeAccessRequest(this.eventId, requestId).subscribe({
+    this.api.updateAccessRequestStatus(this.eventId, requestId, 'REVOKED').subscribe({
       next: () => {
         this.updateRequestStatus(requestId, 'REVOKED');
         this.processingId = null;

@@ -1,11 +1,16 @@
 package com.example.Billing.application.service.impl;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+
 import com.stripe.Stripe;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Customer;
 import com.stripe.model.PaymentIntent;
 import com.stripe.param.CustomerCreateParams;
 import com.stripe.param.PaymentIntentCreateParams;
+import com.example.Billing.api.dto.response.CheckoutSessionResponse;
+import com.example.Billing.api.dto.response.PaymentStatusResponse;
 import com.example.Billing.application.service.interfaces.IStripePaymentService;
 import com.example.Billing.infrastructure.persistence.document.InvoiceDocument;
 import com.example.Billing.infrastructure.persistence.document.PaymentDocument;
@@ -17,17 +22,22 @@ import com.example.Billing.infrastructure.event.InvoicePaidEvent;
 import com.example.Billing.infrastructure.event.PaymentFailedEvent;
 import com.example.Billing.shared.enums.InvoiceStatus;
 import com.example.Billing.shared.enums.PaymentStatus;
+import com.example.Billing.shared.exception.BillingProcessingException;
+import com.example.Billing.shared.exception.ForbiddenOperationException;
+import com.example.Billing.shared.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import jakarta.annotation.PostConstruct;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -48,8 +58,26 @@ public class StripePaymentServiceImpl implements IStripePaymentService {
     private final UserBillingSettingsRepository settingsRepository;
     private final ApplicationEventPublisher eventPublisher;
 
-    @Value("${stripe.api.key:}")
+    @Value("${stripe.api.key}")
     private String stripeApiKey;
+
+    @Value("${billing.currency}")
+    private String billingCurrency;
+
+    @Value("${billing.customer.default.country}")
+    private String defaultCustomerCountry;
+
+    @Value("${billing.customer.default.postal-code}")
+    private String defaultCustomerPostalCode;
+
+    @Value("${billing.payment.retry.max-attempts}")
+    private int maxPaymentRetries;
+
+    @Value("${billing.payment.retry.interval-hours}")
+    private long paymentRetryIntervalHours;
+
+    @Value("${billing.default.cost-alert-threshold}")
+    private double defaultCostAlertThreshold;
 
     /**
      * Initialize Stripe API key on startup
@@ -71,7 +99,7 @@ public class StripePaymentServiceImpl implements IStripePaymentService {
      * @param amount Amount in dollars
      * @return Client secret for Stripe payment submission
      */
-    public String createPaymentIntent(String userId, String invoiceId, Double amount)
+    public String createPaymentIntent(String userId, String invoiceId, BigDecimal amount)
             throws StripeException {
         log.info("💳 Creating payment intent for invoice: {}, amount: ${}", invoiceId, amount);
 
@@ -89,8 +117,8 @@ public class StripePaymentServiceImpl implements IStripePaymentService {
         // Create payment intent with automatic payment methods
         // Billing details will be collected by frontend payment element (required for India compliance)
         PaymentIntentCreateParams params = PaymentIntentCreateParams.builder()
-            .setAmount((long)(amount * 100))  // Convert to cents
-            .setCurrency("usd")
+            .setAmount(amount.multiply(BigDecimal.valueOf(100)).longValue())  // Convert to cents
+            .setCurrency(billingCurrency)
             .setCustomer(settings.getStripeCustomerId())
             .setDescription("Invoice " + invoiceId)
             .setAutomaticPaymentMethods(
@@ -120,6 +148,8 @@ public class StripePaymentServiceImpl implements IStripePaymentService {
     /**
      * Handle successful payment from Stripe webhook
      */
+    @Override
+    @Transactional
     public void handlePaymentSuccess(String paymentIntentId) {
         log.info("💳 Processing successful payment: {}", paymentIntentId);
 
@@ -144,8 +174,8 @@ public class StripePaymentServiceImpl implements IStripePaymentService {
 
             // Create payment record
             // Get amount from PaymentIntent (stored in cents, convert to dollars)
-            Double amount = (intent.getAmount() != null) ? intent.getAmount() / 100.0 :
-                           (invoice.getCharges() != null ? invoice.getCharges().getTotalAmount() : 0.0);
+            BigDecimal amount = (intent.getAmount() != null) ? BigDecimal.valueOf(intent.getAmount()).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP) :
+                           (invoice.getCharges() != null ? invoice.getCharges().getTotalAmount() : BigDecimal.ZERO);
 
             PaymentDocument payment = PaymentDocument.builder()
                 .userId(invoice.getUserId())
@@ -171,7 +201,8 @@ public class StripePaymentServiceImpl implements IStripePaymentService {
             log.debug("📢 Published InvoicePaidEvent for invoice: {}", invoice.getInvoiceId());
 
         } catch (StripeException e) {
-            log.error("❌ Error processing payment success", e);
+            log.error("❌ Error processing payment success", e); 
+            throw new BillingProcessingException("Stripe communication failed during payment success sync.", e);
         }
     }
 
@@ -196,8 +227,8 @@ public class StripePaymentServiceImpl implements IStripePaymentService {
 
             // Create payment failure record
             // Get amount from invoice or calculate from payment intent
-            Double amount = (invoice.getCharges() != null) ? invoice.getCharges().getTotalAmount() :
-                           (intent.getAmount() != null ? intent.getAmount() / 100.0 : 0.0);
+            BigDecimal amount = (invoice.getCharges() != null) ? invoice.getCharges().getTotalAmount() :
+                           (intent.getAmount() != null ? BigDecimal.valueOf(intent.getAmount()).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP) : BigDecimal.ZERO);
 
             PaymentDocument payment = PaymentDocument.builder()
                 .userId(invoice.getUserId())
@@ -207,7 +238,7 @@ public class StripePaymentServiceImpl implements IStripePaymentService {
                 .stripePaymentIntentId(paymentIntentId)
                 .failureReason(failureReason)
                 .retryCount(0)
-                .nextRetryDate(Instant.now().plus(Duration.ofHours(24)))
+                .nextRetryDate(Instant.now().plus(Duration.ofHours(paymentRetryIntervalHours)))
                 .transactionDate(Instant.now())
                 .createdAt(Instant.now())
                 .build();
@@ -226,7 +257,8 @@ public class StripePaymentServiceImpl implements IStripePaymentService {
             log.debug("📢 Published PaymentFailedEvent for invoice: {}", invoice.getInvoiceId());
 
         } catch (StripeException e) {
-            log.error("❌ Error processing payment failure", e);
+            log.error("❌ Error processing payment failure", e); 
+            throw new BillingProcessingException("Stripe communication failed during payment failure sync.", e);
         }
     }
 
@@ -234,7 +266,7 @@ public class StripePaymentServiceImpl implements IStripePaymentService {
      * Auto-retry failed payments
      * Runs every hour to check for payments due for retry
      */
-    @Scheduled(fixedRate = 3600000)  // Every hour (3600000 ms)
+    @Scheduled(fixedRateString = "${billing.payment.retry.check-interval-ms:3600000}")  // Default: every hour
     public void retryFailedPayments() {
         log.info("🔄 Checking for failed payments to retry...");
 
@@ -245,8 +277,8 @@ public class StripePaymentServiceImpl implements IStripePaymentService {
             log.info("📊 Found {} payments due for retry", failedPayments.size());
 
             for (PaymentDocument payment : failedPayments) {
-                if (payment.getRetryCount() >= 3) {
-                    log.warn("⚠️ Payment {} exceeded max retries (3)", payment.getId());
+                if (payment.getRetryCount() >= maxPaymentRetries) {
+                    log.warn("⚠️ Payment {} exceeded max retries ({})", payment.getId(), maxPaymentRetries);
                     continue;
                 }
 
@@ -269,7 +301,7 @@ public class StripePaymentServiceImpl implements IStripePaymentService {
 
                             // Update retry metadata
                             payment.setRetryCount(payment.getRetryCount() + 1);
-                            payment.setNextRetryDate(Instant.now().plus(Duration.ofHours(24)));
+                            payment.setNextRetryDate(Instant.now().plus(Duration.ofHours(paymentRetryIntervalHours)));
                             paymentRepository.save(payment);
 
                             log.info("✅ Queued retry #{} for payment: {}", payment.getRetryCount(), payment.getId());
@@ -290,6 +322,8 @@ public class StripePaymentServiceImpl implements IStripePaymentService {
      * Directly queries Stripe to get actual payment intent status
      * This is the fallback when webhook delivery is not available
      */
+    @Override
+    @Transactional
     public void syncPaymentStatusWithStripe(String invoiceId, String paymentIntentId) {
         log.info("🔄 Syncing payment status from Stripe for payment intent: {}", paymentIntentId);
 
@@ -317,8 +351,8 @@ public class StripePaymentServiceImpl implements IStripePaymentService {
                 invoiceRepository.save(invoice);
 
                 // Create payment record
-                Double amount = (intent.getAmount() != null) ? intent.getAmount() / 100.0 :
-                               (invoice.getCharges() != null ? invoice.getCharges().getTotalAmount() : 0.0);
+                BigDecimal amount = (intent.getAmount() != null) ? BigDecimal.valueOf(intent.getAmount()).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP) :
+                               (invoice.getCharges() != null ? invoice.getCharges().getTotalAmount() : BigDecimal.ZERO);
 
                 // Check if payment record already exists
                 Optional<PaymentDocument> existingPayment = paymentRepository.findByStripePaymentIntentId(paymentIntentId);
@@ -365,9 +399,32 @@ public class StripePaymentServiceImpl implements IStripePaymentService {
 
         } catch (StripeException e) {
             log.error("❌ Error syncing payment status from Stripe: {}", e.getMessage(), e);
+            throw new BillingProcessingException("Stripe communication failed during payment status sync.", e);
         } catch (Exception e) {
             log.error("❌ Unexpected error syncing payment status: {}", e.getMessage(), e);
+            throw new BillingProcessingException("Failed to sync payment status due to an internal error.", e);
         }
+    }
+
+    @Override
+    @Transactional
+    public PaymentStatusResponse syncPaymentStatus(String invoiceId, String userId) {
+        log.info("🔄 Syncing payment status for invoice: {} user: {}", invoiceId, userId);
+        InvoiceDocument invoice = invoiceRepository.findByInvoiceId(invoiceId)
+            .orElseThrow(() -> new ResourceNotFoundException("Invoice not found: " + invoiceId));
+
+        if (!invoice.getUserId().equals(userId)) {
+            log.warn("⚠️ Unauthorized sync attempt by user {} for invoice {}", userId, invoiceId);
+            throw new ForbiddenOperationException("Unauthorized access to invoice");
+        }
+
+        if (invoice.getPaymentIntentId() == null || invoice.getPaymentIntentId().isEmpty()) {
+            log.warn("⚠️ No payment intent ID for invoice: {}", invoiceId);
+            return getPaymentStatus(userId, invoiceId);
+        }
+
+        syncPaymentStatusWithStripe(invoiceId, invoice.getPaymentIntentId());
+        return getPaymentStatus(userId, invoiceId);
     }
 
     /**
@@ -381,11 +438,11 @@ public class StripePaymentServiceImpl implements IStripePaymentService {
             .setName("Sangrah User")  // Default name for India compliance
             .setAddress(
                 CustomerCreateParams.Address.builder()
-                    .setCountry("IN")  // India
-                    .setPostalCode("000000")  // Placeholder
+                    .setCountry(defaultCustomerCountry)
+                    .setPostalCode(defaultCustomerPostalCode)  // Placeholder
                     .build()
             )
-            .setMetadata(java.util.Map.of("userId", userId))
+            .setMetadata(Map.of("userId", userId))
             .build();
 
         Customer customer = Customer.create(params);
@@ -402,8 +459,8 @@ public class StripePaymentServiceImpl implements IStripePaymentService {
         return UserBillingSettingsDocument.builder()
             .userId(userId)
             .stripeCustomerId(null)
-            .totalPaidAllTime(0.0)
-            .outstandingBalance(0.0)
+            .totalPaidAllTime(BigDecimal.ZERO)
+            .outstandingBalance(BigDecimal.ZERO)
             .billing(UserBillingSettingsDocument.BillingAddress.builder()
                 .email(null)
                 .address(null)
@@ -415,10 +472,62 @@ public class StripePaymentServiceImpl implements IStripePaymentService {
             .preferences(UserBillingSettingsDocument.BillingPreferences.builder()
                 .autoPayEnabled(true)
                 .invoiceEmail(true)
-                .costAlertThreshold(100.0)
+                .costAlertThreshold(BigDecimal.valueOf(defaultCostAlertThreshold))
                 .build())
             .createdAt(Instant.now())
             .updatedAt(Instant.now())
             .build();
     }
+
+    /**
+     * Creates a Stripe checkout session for an invoice.
+     * Fetches the invoice amount internally and delegates to createPaymentIntent.
+     */
+    @Override
+    public CheckoutSessionResponse createCheckoutSession(String userId, String invoiceId) throws StripeException {
+        log.info("💳 [createCheckoutSession] Fetching invoice {} for user {}", invoiceId, userId);
+        InvoiceDocument invoice = invoiceRepository.findByInvoiceId(invoiceId)
+                .orElseThrow(() -> new ResourceNotFoundException("Invoice not found: " + invoiceId));
+
+        // Strictly enforce ownership perimeter before processing
+        if (!invoice.getUserId().equals(userId)) {
+            log.warn("⚠️ Unauthorized checkout attempt by user {} for invoice {}", userId, invoiceId);
+            throw new ForbiddenOperationException("Unauthorized access to invoice");
+        }
+
+        BigDecimal amount = invoice.getCharges() != null ? invoice.getCharges().getTotalAmount() : BigDecimal.ZERO;
+        String clientSecret = createPaymentIntent(userId, invoiceId, amount);
+
+        log.info("✅ [createCheckoutSession] Checkout session created for invoice: {}", invoiceId);
+        return CheckoutSessionResponse.builder()
+                .invoiceId(invoiceId)
+                .clientSecret(clientSecret)
+                .amount(amount)
+                .currency(billingCurrency)
+                .build();
+    }
+
+    /**
+     * Returns the current payment status of an invoice.
+     */
+    @Override
+    public PaymentStatusResponse getPaymentStatus(String userId, String invoiceId) {
+        log.info("📊 [getPaymentStatus] Fetching invoice {} for user {}", invoiceId, userId);
+        InvoiceDocument invoice = invoiceRepository.findByInvoiceId(invoiceId)
+                .orElseThrow(() -> new ResourceNotFoundException("Invoice not found: " + invoiceId));
+
+        if (!invoice.getUserId().equals(userId)) {
+            log.warn("⚠️ Unauthorized payment status attempt by user {} for invoice {}", userId, invoiceId);
+            throw new ForbiddenOperationException("Unauthorized access to invoice");
+        }
+
+        return PaymentStatusResponse.builder()
+                .invoiceId(invoiceId)
+                .status(invoice.getStatus() != null ? invoice.getStatus().name() : "UNKNOWN")
+                .paidDate(invoice.getPaidDate())
+                .build();
+    }
 }
+
+
+

@@ -1,5 +1,7 @@
 package com.example.Billing.application.service.interfaces;
 
+import java.math.BigDecimal;
+
 import com.example.Billing.api.dto.response.CostEstimateDTO;
 import lombok.Builder;
 
@@ -11,12 +13,12 @@ public interface ICostEstimationService {
 
     @Builder
     record BillingCostDetails(
-        Double imageGBDays,
-        Double imageCost,
-        Double videoGBDays,
-        Double videoCost,
-        Double totalGBDays,
-        Double totalCost,
+        BigDecimal imageGBDays,
+        BigDecimal imageCost,
+        BigDecimal videoGBDays,
+        BigDecimal videoCost,
+        BigDecimal totalGBDays,
+        BigDecimal totalCost,
         Integer fileCount
     ) {}
 }

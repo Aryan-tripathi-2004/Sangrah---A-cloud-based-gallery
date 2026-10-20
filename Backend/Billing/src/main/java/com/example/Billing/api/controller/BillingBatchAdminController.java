@@ -1,14 +1,14 @@
 package com.example.Billing.api.controller;
 
-import com.example.Billing.application.service.InvoiceGenerationService;
+import com.example.Billing.api.dto.response.InvoiceGenerationResultResponse;
+import com.example.Billing.api.dto.response.JobStatusResponse;
+import com.example.Billing.application.service.interfaces.IInvoiceGenerationService;
+import com.example.Billing.application.service.interfaces.IInvoiceJobService;
 import io.swagger.v3.oas.annotations.Operation;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import java.time.Instant;
-import java.util.HashMap;
-import java.util.Map;
 
 @Slf4j
 @RestController
@@ -16,31 +16,35 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class BillingBatchAdminController {
 
-    private final InvoiceGenerationService invoiceGenerationService;
+    private final IInvoiceGenerationService invoiceGenerationService;
+    private final IInvoiceJobService invoiceJobService;
 
-    @PostMapping("/monthly/run")
+    /**
+     * Manually trigger the monthly billing invoice generation job
+     */
+    @PostMapping("/monthly-invoices")
     @Operation(summary = "Run monthly billing job")
-    public ResponseEntity<InvoiceGenerationService.InvoiceGenerationResult> run() {
+    public ResponseEntity<InvoiceGenerationResultResponse> runMonthly() {
         log.info("  Manual trigger: Monthly billing job");
-        InvoiceGenerationService.InvoiceGenerationResult result = invoiceGenerationService.processMonthlyInvoiceGeneration();
-        return ResponseEntity.ok(result);
+        return ResponseEntity.ok(invoiceGenerationService.processMonthlyInvoiceGeneration());
     }
 
-    @PostMapping("/monthly/run/current")
+    /**
+     * Manually trigger the current month billing invoice generation job (TEST only)
+     */
+    @PostMapping("/monthly-invoices/current")
     @Operation(summary = "Run current month billing job (TEST)")
-    public ResponseEntity<InvoiceGenerationService.InvoiceGenerationResult> runCurrentMonth() {
+    public ResponseEntity<InvoiceGenerationResultResponse> runCurrentMonth() {
         log.info("  Manual trigger: Current month billing job (TEST)");
-        InvoiceGenerationService.InvoiceGenerationResult result = invoiceGenerationService.processCurrentMonthInvoiceGeneration();
-        return ResponseEntity.ok(result);
+        return ResponseEntity.ok(invoiceGenerationService.processCurrentMonthInvoiceGeneration());
     }
 
+    /**
+     * Get billing job execution status by execution ID
+     */
     @GetMapping("/{executionId}")
     @Operation(summary = "Get billing job execution status")
-    public ResponseEntity<Map<String, Object>> status(@PathVariable String executionId) {
-        Map<String, Object> response = new HashMap<>();
-        response.put("executionId", executionId);
-        response.put("status", "COMPLETED");
-        response.put("createdTime", Instant.now());
-        return ResponseEntity.ok(response);
+    public ResponseEntity<JobStatusResponse> status(@PathVariable String executionId) {
+        return ResponseEntity.ok(invoiceJobService.getJobStatus(executionId));
     }
 }

@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter, OnInit, inject } from '@angular/core';
+import { Component, Input, Output, EventEmitter, OnInit, inject, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MediaItemComponent } from './media-item.component';
 import { GalleryService } from '../gallery.service';
@@ -7,6 +7,7 @@ import { TimelineResponse, MediaItem } from '../../../core/api/sangrah-api.servi
 @Component({
   selector: 'app-timeline-view',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CommonModule, MediaItemComponent],
   templateUrl: './timeline-view.component.html',
 })

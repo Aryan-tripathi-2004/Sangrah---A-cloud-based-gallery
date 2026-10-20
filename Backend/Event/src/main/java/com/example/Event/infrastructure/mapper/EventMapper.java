@@ -130,11 +130,10 @@ public interface EventMapper {
             return null;
         }
         return EventDocument.builder()
-                .title(request.title())
-                .description(request.description())
+                .title(request.title() != null ? request.title().trim() : null)
+                .description(request.description() != null ? request.description().trim() : null)
                 .visibility(request.resolvedVisibility())
                 .moderationEnabled(request.moderationEnabledOrDefault())
-                .coverImageId(request.coverImageId())
                 .build();
     }
 

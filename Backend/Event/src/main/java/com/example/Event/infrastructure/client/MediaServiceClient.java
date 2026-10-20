@@ -2,6 +2,9 @@ package com.example.Event.infrastructure.client;
 
 import com.example.Event.infrastructure.client.dto.MediaDeleteResponse;
 import com.example.Event.infrastructure.client.dto.MediaServiceResponse;
+import com.example.Event.shared.enums.MediaDomain;
+import java.time.Instant;
+import java.util.List;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
@@ -16,7 +19,7 @@ public interface MediaServiceClient {
     @PostMapping(value = "/api/v1/media/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     MediaServiceResponse uploadMedia(
             @RequestPart("file") MultipartFile file,
-            @RequestParam("domain") String domain,
+            @RequestParam("domain") MediaDomain domain,
             @RequestParam(value = "entityRefId", required = false) String entityRefId,
             @RequestHeader("X-User-Id") String userId
     );
@@ -24,7 +27,7 @@ public interface MediaServiceClient {
     /**
      * Get media details
      */
-    @GetMapping("/api/v1/media/{mediaId}")
+    @GetMapping(value = "/api/v1/media/{mediaId}", headers = "Accept=application/json")
     MediaServiceResponse getMediaDetails(@PathVariable("mediaId") String mediaId);
 
     /**
@@ -37,19 +40,28 @@ public interface MediaServiceClient {
     );
 
     /**
+     * Bulk delete media files
+     */
+    @DeleteMapping("/api/v1/media/bulk")
+    MediaDeleteResponse deleteMediaBulk(
+            @RequestBody List<String> mediaIds,
+            @RequestHeader("X-User-Id") String userId
+    );
+
+    /**
      * Get storage ledger for billing
      */
     @GetMapping("/api/v1/media/ledger")
     Object getStorageLedger(
             @RequestParam("userId") String userId,
-            @RequestParam("startDate") String startDate,
-            @RequestParam("endDate") String endDate
+            @RequestParam("startDate") Instant startDate,
+            @RequestParam("endDate") Instant endDate
     );
 
     /**
      * Get media file from Media Service
      */
-    @GetMapping("/api/v1/media/{mediaId}/file")
+    @GetMapping(value = "/api/v1/media/{mediaId}", headers = "Accept=application/octet-stream")
     byte[] getMediaFile(
             @PathVariable("mediaId") String mediaId,
             @RequestHeader("X-User-Id") String userId

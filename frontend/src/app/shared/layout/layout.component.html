@@ -17,48 +17,76 @@
 
         <!-- Desktop Navigation -->
         <div class="hidden md:flex items-center gap-1">
-          <a *ngIf="!(isAuthenticated$ | async)" routerLink="/login" routerLinkActive="bg-slate-700"
+          @if (!(isAuthenticated$ | async)) {
+            <a routerLink="/login" routerLinkActive="bg-slate-700"
             class="px-3 py-2 rounded-lg text-sm font-medium transition hover:bg-slate-800">Login</a>
-          <a *ngIf="!(isAuthenticated$ | async)" routerLink="/signup" routerLinkActive="bg-slate-700"
+          }
+          @if (!(isAuthenticated$ | async)) {
+            <a routerLink="/signup" routerLinkActive="bg-slate-700"
             class="px-3 py-2 rounded-lg text-sm font-medium transition hover:bg-slate-800">Sign Up</a>
+          }
 
-          <a *ngIf="isAuthenticated$ | async" routerLink="/dashboard" routerLinkActive="bg-slate-700"
+          @if (isAuthenticated$ | async) {
+            <a routerLink="/dashboard" routerLinkActive="bg-slate-700"
             class="px-3 py-2 rounded-lg text-sm font-medium transition hover:bg-slate-800">Dashboard</a>
-          <a *ngIf="isAuthenticated$ | async" routerLink="/event" routerLinkActive="bg-slate-700"
+          }
+          @if (isAuthenticated$ | async) {
+            <a routerLink="/event" routerLinkActive="bg-slate-700"
             class="px-3 py-2 rounded-lg text-sm font-medium transition hover:bg-slate-800">Events</a>
-          <a *ngIf="isAuthenticated$ | async" routerLink="/gallery" routerLinkActive="bg-slate-700"
+          }
+          @if (isAuthenticated$ | async) {
+            <a routerLink="/gallery" routerLinkActive="bg-slate-700"
             class="px-3 py-2 rounded-lg text-sm font-medium transition hover:bg-slate-800">Gallery</a>
-          <a *ngIf="isAuthenticated$ | async" routerLink="/billing" routerLinkActive="bg-slate-700"
+          }
+          @if (isAuthenticated$ | async) {
+            <a routerLink="/billing" routerLinkActive="bg-slate-700"
             class="px-3 py-2 rounded-lg text-sm font-medium transition hover:bg-slate-800">Billing</a>
-          <a *ngIf="isAuthenticated$ | async" routerLink="/pending-requests" routerLinkActive="bg-slate-700"
+          }
+          @if (isAuthenticated$ | async) {
+            <a routerLink="/pending-requests" routerLinkActive="bg-slate-700"
             class="px-3 py-2 rounded-lg text-sm font-medium transition hover:bg-slate-800">Requests</a>
-          <a *ngIf="isAuthenticated$ | async" routerLink="/profile" routerLinkActive="bg-slate-700"
+          }
+          @if (isAuthenticated$ | async) {
+            <a routerLink="/profile" routerLinkActive="bg-slate-700"
             class="px-3 py-2 rounded-lg text-sm font-medium transition hover:bg-slate-800">Profile</a>
-          <a *ngIf="isAuthenticated$ | async" routerLink="/about" routerLinkActive="bg-slate-700"
+          }
+          @if (isAuthenticated$ | async) {
+            <a routerLink="/about" routerLinkActive="bg-slate-700"
             class="px-3 py-2 rounded-lg text-sm font-medium transition hover:bg-slate-800">About</a>
+          }
 
           <!-- Notification Bell Icon -->
-          <button *ngIf="isAuthenticated$ | async" (click)="toggleNotifications()"
-            class="relative ml-2 p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition"
-            title="Notifications">
-            🔔
-            <span *ngIf="notificationUnreadCount > 0"
-              class="absolute top-0 right-0 w-5 h-5 bg-red-600 rounded-full text-xs text-white flex items-center justify-center font-bold leading-none">
-              {{ notificationUnreadCount > 99 ? '99+' : notificationUnreadCount }}
-            </span>
-          </button>
+          @if (isAuthenticated$ | async) {
+            <button (click)="toggleNotifications()"
+              class="relative ml-2 p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition"
+              title="Notifications">
+              🔔
+              @if ((unreadCount$ | async); as count) {
+                @if (count > 0) {
+                  <span
+                    class="absolute top-0 right-0 w-5 h-5 bg-red-600 rounded-full text-xs text-white flex items-center justify-center font-bold leading-none">
+                    {{ count > 99 ? '99+' : count }}
+                  </span>
+                }
+              }
+            </button>
+          }
 
-          <button *ngIf="isAuthenticated$ | async" (click)="logout()"
+          @if (isAuthenticated$ | async) {
+            <button (click)="logout()"
             class="ml-4 px-4 py-2 rounded-lg bg-red-600/20 hover:bg-red-600/30 text-red-400 text-sm font-medium transition">Logout</button>
+          }
         </div>
       </div>
     </nav>
   </header>
 
   <!-- Notification Panel (overlay) -->
-  <app-notification-panel *ngIf="showNotifications && (isAuthenticated$ | async)"
-    (closeRequested)="toggleNotifications()">
-  </app-notification-panel>
+  @if (showNotifications && (isAuthenticated$ | async)) {
+    <app-notification-panel
+      (closeRequested)="toggleNotifications()">
+    </app-notification-panel>
+  }
 
   <!-- Main Content -->
   <main class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">

@@ -7,69 +7,84 @@
     </div>
 
     <!-- Error Message -->
-    <div *ngIf="(error$ | async) as error" class="mb-6 bg-red-500/10 border border-red-500/30 text-red-400 p-4 rounded-lg flex justify-between items-center">
-      <span>{{ error }}</span>
-      <button (click)="dismissError()" class="text-red-400 hover:text-red-300 text-xl">✕</button>
-    </div>
+    @if ((error$ | async); as error) {
+      <div class="mb-6 bg-red-500/10 border border-red-500/30 text-red-400 p-4 rounded-lg flex justify-between items-center">
+        <span>{{ error }}</span>
+        <button (click)="dismissError()" class="text-red-400 hover:text-red-300 text-xl">✕</button>
+      </div>
+    }
 
     <!-- Loading State -->
-    <div *ngIf="(loading$ | async)" class="text-center py-12">
-      <div class="text-slate-400">Loading...</div>
-    </div>
+    @if ((loading$ | async)) {
+      <div class="text-center py-12">
+        <div class="text-slate-400">Loading...</div>
+      </div>
+    }
 
     <!-- Tab Navigation -->
     <div class="mb-8 border-b border-slate-700">
       <div class="flex gap-4 overflow-x-auto">
-        <button
-          *ngFor="let tab of tabs"
+        @for (tab of tabs; track tab) {
+          <button
           [ngClass]="{
             'text-blue-400 border-b-2 border-blue-500': activeTab === tab.id,
             'text-slate-400 hover:text-slate-300': activeTab !== tab.id
           }"
-          class="px-4 py-3 font-semibold whitespace-nowrap transition-colors"
-          (click)="switchTab(tab.id)">
-          {{ tab.label }}
-        </button>
+            class="px-4 py-3 font-semibold whitespace-nowrap transition-colors"
+            (click)="switchTab(tab.id)">
+            {{ tab.label }}
+          </button>
+        }
       </div>
     </div>
 
     <!-- Tab Content -->
     <div class="space-y-6">
       <!-- Dashboard Tab -->
-      <div *ngIf="activeTab === 'dashboard'">
-        <app-billing-summary />
-      </div>
+      @if (activeTab === 'dashboard') {
+        <div>
+          <app-billing-summary />
+        </div>
+      }
 
       <!-- Invoices Tab -->
-      <div *ngIf="activeTab === 'invoices'">
-        <app-invoice-list
-          (invoiceSelected)="openInvoiceDetail($event)"
+      @if (activeTab === 'invoices') {
+        <div>
+          <app-invoice-list
+            (invoiceSelected)="openInvoiceDetail($event)"
+            (payInvoice)="onPayInvoice($event)" />
+          </div>
+        }
+
+        <!-- Payments Tab -->
+        @if (activeTab === 'payments') {
+          <div>
+            <app-payment-history />
+          </div>
+        }
+
+        <!-- Settings Tab -->
+        @if (activeTab === 'settings') {
+          <div>
+            <app-billing-settings />
+          </div>
+        }
+      </div>
+
+      <!-- Invoice Detail Modal -->
+      @if (showInvoiceModal && selectedInvoice) {
+        <app-invoice-detail-modal
+          [invoice]="selectedInvoice"
+          (closeModal)="closeInvoiceModal()"
           (payInvoice)="onPayInvoice($event)" />
-      </div>
+      }
 
-      <!-- Payments Tab -->
-      <div *ngIf="activeTab === 'payments'">
-        <app-payment-history />
-      </div>
-
-      <!-- Settings Tab -->
-      <div *ngIf="activeTab === 'settings'">
-        <app-billing-settings />
-      </div>
+      <!-- Stripe Payment Modal -->
+      @if (showStripeModal && stripeInvoiceId) {
+        <app-stripe-payment-modal
+          [invoiceId]="stripeInvoiceId"
+          (closeModal)="onStripeModalClose()"
+          (paymentSuccess)="onStripePaymentSuccess()" />
+      }
     </div>
-
-    <!-- Invoice Detail Modal -->
-    <app-invoice-detail-modal
-      *ngIf="showInvoiceModal && selectedInvoice"
-      [invoice]="selectedInvoice"
-      (closeModal)="closeInvoiceModal()"
-      (payInvoice)="onPayInvoice($event)" />
-
-    <!-- Stripe Payment Modal -->
-    <app-stripe-payment-modal
-      *ngIf="showStripeModal && stripeInvoiceId"
-      [invoiceId]="stripeInvoiceId"
-      (closeModal)="onStripeModalClose()"
-      (paymentSuccess)="onStripePaymentSuccess()" />
-  </div>
-</app-layout>
+  </app-layout>

@@ -83,10 +83,14 @@ public class GlobalExceptionHandler {
             HttpMessageNotReadableException ex,
             WebRequest request) {
         log.warn("Unreadable request body: {}", ex.getMessage());
+        Throwable rootCause = ex.getMostSpecificCause();
+        String detail = (rootCause != null && rootCause.getMessage() != null)
+                ? rootCause.getMessage()
+                : "Request body contains an invalid or unsupported value.";
         return problemResponse(
                 HttpStatus.BAD_REQUEST,
                 "Malformed request",
-                "Request body contains an invalid or unsupported value.",
+                detail,
                 request);
     }
 

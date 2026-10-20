@@ -1,7 +1,8 @@
-import { Injectable, inject } from '@angular/core';
-import { BehaviorSubject, Observable, throwError } from 'rxjs';
-import { tap, catchError, switchMap } from 'rxjs/operators';
-import { SangrahApiService, MediaItem } from '../../core/api/sangrah-api.service';
+import { Injectable, inject, signal, computed } from '@angular/core';
+import { toObservable } from '@angular/core/rxjs-interop';
+import { Observable, throwError } from 'rxjs';
+import { tap, catchError } from 'rxjs/operators';
+import { SangrahApiService } from '../../core/api/sangrah-api.service';
 
 export interface EventMediaStatus {
   mediaId: string;
@@ -25,21 +26,27 @@ export interface UploadProgress {
 export class EventService {
   private api = inject(SangrahApiService);
 
-  // State management
-  private eventMediaSubject = new BehaviorSubject<EventMediaStatus[]>([]);
-  public eventMedia$ = this.eventMediaSubject.asObservable();
+  // Modern Angular Signals state
+  public readonly eventMedia = signal<EventMediaStatus[]>([]);
+  public readonly uploadProgress = signal<UploadProgress[]>([]);
+  public readonly loading = signal<boolean>(false);
 
-  private uploadProgressSubject = new BehaviorSubject<UploadProgress[]>([]);
-  public uploadProgress$ = this.uploadProgressSubject.asObservable();
+  // Derived computed state
+  public readonly hasMedia = computed(() => this.eventMedia().length > 0);
+  public readonly pendingCount = computed(() => this.eventMedia().filter(m => m.status === 'PENDING').length);
+  public readonly approvedCount = computed(() => this.eventMedia().filter(m => m.status === 'APPROVED').length);
+  public readonly rejectedCount = computed(() => this.eventMedia().filter(m => m.status === 'REJECTED').length);
 
-  private loadingSubject = new BehaviorSubject<boolean>(false);
-  public loading$ = this.loadingSubject.asObservable();
+  // Backwards-compatible RxJS observables via interop
+  public readonly eventMedia$: Observable<EventMediaStatus[]> = toObservable(this.eventMedia);
+  public readonly uploadProgress$: Observable<UploadProgress[]> = toObservable(this.uploadProgress);
+  public readonly loading$: Observable<boolean> = toObservable(this.loading);
 
   /**
    * Load all media for an event
    */
   loadEventMedia(eventId: string): Observable<EventMediaStatus[]> {
-    this.loadingSubject.next(true);
+    this.loading.set(true);
     return this.api.getEventMedia(eventId).pipe(
       tap((response: any) => {
         // Handle response format: either direct array or { media: [...] }
@@ -47,21 +54,13 @@ export class EventService {
 
         const statusList: EventMediaStatus[] = mediaList.map((m: any) => {
           const uploaderId = m.uploaderUserId || m.uploaderId;
-          // Only use uploaderName if it's actually provided and not just the ID
           const uploaderName = m.uploaderName && m.uploaderName !== uploaderId 
             ? m.uploaderName 
             : undefined;
           
-          console.debug('📸 Media item:', {
-            mediaId: m.id || m.mediaId,
-            uploaderId,
-            uploaderName,
-            hasUploaderNameInResponse: !!m.uploaderName,
-          });
-          
           return {
             mediaId: m.id || m.mediaId,
-            fileName: m.originalFileName || m.fileName || m.originalFileName || m.id || m.mediaId,
+            fileName: m.originalFileName || m.fileName || m.id || m.mediaId,
             mimeType: m.mimeType || m.mime_type || null,
             status: m.status || 'PENDING',
             uploadedAt: m.uploadedAt,
@@ -69,13 +68,12 @@ export class EventService {
             uploaderName: uploaderName,
           };
         });
-        console.debug('✅ Loaded event media:', statusList);
-        this.eventMediaSubject.next(statusList);
-        this.loadingSubject.next(false);
+        this.eventMedia.set(statusList);
+        this.loading.set(false);
       }),
       catchError((error) => {
         console.error('Failed to load event media:', error);
-        this.loadingSubject.next(false);
+        this.loading.set(false);
         return throwError(() => error);
       })
     );
@@ -92,23 +90,23 @@ export class EventService {
     };
 
     // Add to progress list
-    const currentProgress = this.uploadProgressSubject.value;
-    this.uploadProgressSubject.next([...currentProgress, progress]);
+    this.uploadProgress.update(current => [...current, progress]);
 
     return this.api.uploadEventMedia(eventId, file).pipe(
-      tap((response) => {
+      tap(() => {
         // Update progress to success
-        const updated = this.uploadProgressSubject.value.map((p) =>
-          p.fileName === file.name
-            ? { ...p, progress: 100, status: 'success' as const, message: 'Upload complete' }
-            : p
+        this.uploadProgress.update(current =>
+          current.map((p) =>
+            p.fileName === file.name
+              ? { ...p, progress: 100, status: 'success' as const, message: 'Upload complete' }
+              : p
+          )
         );
-        this.uploadProgressSubject.next(updated);
 
         // Auto remove after 2 seconds
         setTimeout(() => {
-          this.uploadProgressSubject.next(
-            this.uploadProgressSubject.value.filter((p) => p.fileName !== file.name)
+          this.uploadProgress.update(current =>
+            current.filter((p) => p.fileName !== file.name)
           );
         }, 2000);
 
@@ -117,18 +115,39 @@ export class EventService {
       }),
       catchError((error) => {
         // Update progress to error
-        const updated = this.uploadProgressSubject.value.map((p) =>
-          p.fileName === file.name
-            ? {
-                ...p,
-                progress: 0,
-                status: 'error' as const,
-                message: error?.error?.error || 'Upload failed',
-              }
-            : p
+        this.uploadProgress.update(current =>
+          current.map((p) =>
+            p.fileName === file.name
+              ? {
+                  ...p,
+                  progress: 0,
+                  status: 'error' as const,
+                  message: error?.message || error?.error?.error || 'Upload failed',
+                }
+              : p
+          )
         );
-        this.uploadProgressSubject.next(updated);
 
+        return throwError(() => error);
+      })
+    );
+  }
+
+  /**
+   * Update event media status (APPROVED or REJECTED)
+   */
+  updateEventMediaStatus(eventId: string, mediaId: string, status: 'APPROVED' | 'REJECTED', reason?: string): Observable<any> {
+    return this.api.updateEventMediaStatus(eventId, mediaId, status, reason).pipe(
+      tap(() => {
+        // Update local state
+        this.eventMedia.update(current =>
+          current.map((m) =>
+            m.mediaId === mediaId ? { ...m, status, ...(reason ? { reason } : {}) } : m
+          )
+        );
+      }),
+      catchError((error) => {
+        console.error(`Failed to update media status to ${status}:`, error);
         return throwError(() => error);
       })
     );
@@ -138,40 +157,14 @@ export class EventService {
    * Approve media for event
    */
   approveEventMedia(eventId: string, mediaId: string): Observable<any> {
-    return this.api.approveEventMedia(eventId, mediaId).pipe(
-      tap(() => {
-        // Update local state
-        const current = this.eventMediaSubject.value;
-        const updated = current.map((m) =>
-          m.mediaId === mediaId ? { ...m, status: 'APPROVED' as const } : m
-        );
-        this.eventMediaSubject.next(updated);
-      }),
-      catchError((error) => {
-        console.error('Failed to approve media:', error);
-        return throwError(() => error);
-      })
-    );
+    return this.updateEventMediaStatus(eventId, mediaId, 'APPROVED');
   }
 
   /**
    * Reject media for event
    */
   rejectEventMedia(eventId: string, mediaId: string, reason: string): Observable<any> {
-    return this.api.rejectEventMedia(eventId, mediaId, reason).pipe(
-      tap(() => {
-        // Update local state
-        const current = this.eventMediaSubject.value;
-        const updated = current.map((m) =>
-          m.mediaId === mediaId ? { ...m, status: 'REJECTED' as const, reason } : m
-        );
-        this.eventMediaSubject.next(updated);
-      }),
-      catchError((error) => {
-        console.error('Failed to reject media:', error);
-        return throwError(() => error);
-      })
-    );
+    return this.updateEventMediaStatus(eventId, mediaId, 'REJECTED', reason);
   }
 
   /**
@@ -181,8 +174,7 @@ export class EventService {
     return this.api.deleteEventMedia(eventId, mediaId).pipe(
       tap(() => {
         // Remove from local state
-        const current = this.eventMediaSubject.value;
-        this.eventMediaSubject.next(current.filter((m) => m.mediaId !== mediaId));
+        this.eventMedia.update(current => current.filter((m) => m.mediaId !== mediaId));
       }),
       catchError((error) => {
         console.error('Failed to delete media:', error);
@@ -195,19 +187,37 @@ export class EventService {
    * Get current state values
    */
   getEventMediaValue(): EventMediaStatus[] {
-    return this.eventMediaSubject.value;
+    return this.eventMedia();
   }
 
   getUploadProgressValue(): UploadProgress[] {
-    return this.uploadProgressSubject.value;
+    return this.uploadProgress();
+  }
+
+  /**
+   * Create an event with optional cover media via a single multipart request
+   */
+  createEvent(eventData: any, coverMediaFile?: File): Observable<any> {
+    if (eventData instanceof FormData) {
+      return this.api.createEvent(eventData);
+    }
+    const formData = new FormData();
+    formData.append(
+      'eventDetails',
+      new Blob([JSON.stringify(eventData)], { type: 'application/json' })
+    );
+    if (coverMediaFile) {
+      formData.append('coverMedia', coverMediaFile);
+    }
+    return this.api.createEvent(formData);
   }
 
   /**
    * Clear all data
    */
   clear(): void {
-    this.eventMediaSubject.next([]);
-    this.uploadProgressSubject.next([]);
-    this.loadingSubject.next(false);
+    this.eventMedia.set([]);
+    this.uploadProgress.set([]);
+    this.loading.set(false);
   }
 }

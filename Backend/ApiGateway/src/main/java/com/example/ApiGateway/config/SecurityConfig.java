@@ -53,34 +53,22 @@ public class SecurityConfig {
         config.setAllowedOrigins(securityProperties.getAllowedOrigins());
 
         // Allowed HTTP methods
-        config.setAllowedMethods(List.of(
-                "GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"
-        ));
+        config.setAllowedMethods(securityProperties.getAllowedMethods());
 
         // Allowed request headers
-        config.setAllowedHeaders(List.of(
-                "Origin",
-                "X-Requested-With",
-                "Content-Type",
-                "Accept",
-                "Authorization",
-                "X-CSRF-TOKEN"
-        ));
+        config.setAllowedHeaders(securityProperties.getAllowedHeaders());
 
         // Exposed response headers
-        config.setExposedHeaders(List.of(
-                "Authorization",
-                "Content-Type"
-        ));
+        config.setExposedHeaders(securityProperties.getExposedHeaders());
 
         // Allow credentials (cookies, Authorization header)
-        config.setAllowCredentials(true);
+        config.setAllowCredentials(securityProperties.isAllowCredentials());
 
         // Preflight response cache duration in seconds
-        config.setMaxAge(3600L);
+        config.setMaxAge(securityProperties.getMaxAge());
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/**", config);
+        source.registerCorsConfiguration(securityProperties.getCorsPathPattern(), config);
 
         return new CorsWebFilter(source);
     }

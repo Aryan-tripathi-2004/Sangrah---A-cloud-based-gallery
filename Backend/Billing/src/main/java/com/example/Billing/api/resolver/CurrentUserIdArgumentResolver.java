@@ -3,6 +3,7 @@ package com.example.Billing.api.resolver;
 import org.springframework.core.MethodParameter;
 import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Component;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.support.WebDataBinderFactory;
 import org.springframework.web.context.request.NativeWebRequest;
 import org.springframework.web.method.support.HandlerMethodArgumentResolver;
@@ -23,11 +24,11 @@ public class CurrentUserIdArgumentResolver implements HandlerMethodArgumentResol
     public Object resolveArgument(@NonNull MethodParameter parameter,
                                   ModelAndViewContainer mavContainer,
                                   @NonNull NativeWebRequest webRequest,
-                                  WebDataBinderFactory binderFactory) {
+                                  WebDataBinderFactory binderFactory) throws Exception {
         String userId = webRequest.getHeader(X_USER_ID_HEADER);
 
         if (userId == null || userId.trim().isEmpty()) {
-            throw new IllegalArgumentException("Missing or empty " + X_USER_ID_HEADER + " header");
+            throw new MissingRequestHeaderException(X_USER_ID_HEADER, parameter);
         }
 
         return userId;

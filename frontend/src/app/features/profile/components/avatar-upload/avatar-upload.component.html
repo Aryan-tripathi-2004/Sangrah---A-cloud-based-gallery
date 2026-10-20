@@ -1,0 +1,46 @@
+<div class="relative group mx-auto w-28 h-28 sm:w-32 sm:h-32">
+  <!-- Gradient Outer Ring (Instagram-style border glow) -->
+  <div class="absolute -inset-1 rounded-full bg-gradient-to-tr from-pink-500 via-purple-500 to-indigo-500 opacity-80 blur-[2px] group-hover:opacity-100 transition duration-300"></div>
+
+  <!-- Avatar Container -->
+  <div class="relative w-full h-full rounded-full p-[3px] bg-slate-900 overflow-hidden cursor-pointer shadow-2xl" (click)="fileInput.click()">
+    @if (avatarUrl() && !hasLoadError()) {
+      <img
+        [src]="avatarUrl()"
+        alt=""
+        (error)="onImageError()"
+        (load)="onImageLoad()"
+        class="w-full h-full object-cover rounded-full transition duration-300 group-hover:scale-105"
+      />
+    } @else {
+      <div class="w-full h-full rounded-full bg-gradient-to-br from-slate-800 via-indigo-950 to-slate-900 flex items-center justify-center text-slate-300 text-4xl sm:text-5xl select-none">
+        👤
+      </div>
+    }
+
+    <!-- Hover Camera Overlay -->
+    <div class="absolute inset-0 rounded-full bg-black/60 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center text-white transition duration-200">
+      <svg class="w-6 h-6 mb-1 text-slate-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+      </svg>
+      <span class="text-[10px] font-semibold tracking-wide uppercase">Update</span>
+    </div>
+
+    <!-- Upload Spinner Overlay -->
+    @if (isUploading()) {
+      <div class="absolute inset-0 rounded-full bg-slate-950/80 backdrop-blur-sm flex items-center justify-center">
+        <div class="w-7 h-7 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    }
+  </div>
+
+  <!-- Hidden File Input -->
+  <input
+    #fileInput
+    type="file"
+    accept="image/png,image/jpeg,image/webp,image/gif"
+    class="hidden"
+    (change)="onFileChange($event)"
+  />
+</div>

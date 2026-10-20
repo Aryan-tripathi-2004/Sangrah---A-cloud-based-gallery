@@ -1,9 +1,12 @@
 package com.example.Billing.shared.exception;
 
+import com.stripe.exception.SignatureVerificationException;
+import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -57,6 +60,73 @@ public class GlobalExceptionHandler {
         problemDetail.setTitle("Bad Request");
         problemDetail.setType(URI.create("https://api.sangrah.com/errors/missing-header"));
 
+        return problemDetail;
+    }
+
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ProblemDetail handleResourceNotFoundException(ResourceNotFoundException ex) {
+        log.warn("Resource not found: {}", ex.getMessage());
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+        problemDetail.setTitle("Not Found");
+        problemDetail.setType(URI.create("https://api.sangrah.com/errors/not-found"));
+        return problemDetail;
+    }
+
+    @ExceptionHandler(ForbiddenOperationException.class)
+    public ProblemDetail handleForbiddenOperationException(ForbiddenOperationException ex) {
+        log.warn("Forbidden operation: {}", ex.getMessage());
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, ex.getMessage());
+        problemDetail.setTitle("Forbidden");
+        problemDetail.setType(URI.create("https://api.sangrah.com/errors/forbidden"));
+        return problemDetail;
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ProblemDetail handleIllegalArgumentException(IllegalArgumentException ex) {
+        log.warn("Illegal argument: {}", ex.getMessage());
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
+        problemDetail.setTitle("Bad Request");
+        problemDetail.setType(URI.create("https://api.sangrah.com/errors/bad-request"));
+        return problemDetail;
+    }
+
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ProblemDetail handleConstraintViolationException(ConstraintViolationException ex) {
+        log.warn("Constraint violation: {}", ex.getMessage());
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Validation failed");
+        problemDetail.setTitle("Bad Request");
+        problemDetail.setType(URI.create("https://api.sangrah.com/errors/validation-failed"));
+        return problemDetail;
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ProblemDetail handleHttpMessageNotReadable(HttpMessageNotReadableException ex) {
+        log.warn("Unreadable or invalid message: {}", ex.getMessage());
+        Throwable rootCause = ex.getMostSpecificCause();
+        String detail = (rootCause != null && rootCause.getMessage() != null)
+                ? rootCause.getMessage()
+                : "Malformed or invalid request payload";
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, detail);
+        problemDetail.setTitle("Invalid Request Body");
+        problemDetail.setType(URI.create("https://api.sangrah.com/errors/invalid-body"));
+        return problemDetail;
+    }
+
+    @ExceptionHandler(BillingProcessingException.class)
+    public ProblemDetail handleBillingProcessingException(BillingProcessingException ex) {
+        log.error("Billing processing error: {}", ex.getMessage());
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.INTERNAL_SERVER_ERROR, ex.getMessage());
+        problemDetail.setTitle("Billing Processing Error");
+        problemDetail.setType(URI.create("https://api.sangrah.com/errors/billing-error"));
+        return problemDetail;
+    }
+
+    @ExceptionHandler(SignatureVerificationException.class)
+    public ProblemDetail handleSignatureVerificationException(SignatureVerificationException ex) {
+        log.error("❌ Webhook signature validation failed", ex);
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, "Invalid webhook signature");
+        problemDetail.setTitle("Forbidden");
+        problemDetail.setType(URI.create("https://api.sangrah.com/errors/forbidden"));
         return problemDetail;
     }
 

@@ -1,11 +1,9 @@
 package com.example.Gallery.application.service.interfaces;
 
-import com.example.Gallery.api.dto.response.TimelineGroupResponse;
-
-import java.util.List;
+import com.example.Gallery.api.dto.response.TimelineResponse;
 
 public interface ITimelineService {
-    List<TimelineGroupResponse> getDailyTimeline(String userId);
-    List<TimelineGroupResponse> getMonthlyTimeline(String userId);
-    List<TimelineGroupResponse> getYearlyTimeline(String userId);
+    TimelineResponse getDailyTimeline(String userId);
+    TimelineResponse getMonthlyTimeline(String userId);
+    TimelineResponse getYearlyTimeline(String userId);
 }

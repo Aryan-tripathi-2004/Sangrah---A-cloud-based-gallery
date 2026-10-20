@@ -40,4 +40,9 @@ public interface EventAccessRequestRepository extends MongoRepository<EventAcces
             String eventId,
             String requesterUserId,
             ApprovalStatus status);
+
+    /**
+     * Find access requests across multiple events by status
+     */
+    List<EventAccessRequestDocument> findByEventIdInAndStatus(List<String> eventIds, ApprovalStatus status);
 }

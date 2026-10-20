@@ -18,6 +18,9 @@ public enum MediaDomain {
 
     /** Media attached to event-related content (cover photos, attachments, etc.). */
     EVENTS,
+    
+    /** Media used as a cover photo for an event. */
+    EVENT_COVER,
 
     /** Media used as a user's profile avatar. */
     PROFILE_AVATAR,

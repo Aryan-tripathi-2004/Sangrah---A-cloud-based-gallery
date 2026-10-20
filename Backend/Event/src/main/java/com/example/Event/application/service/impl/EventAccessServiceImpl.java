@@ -3,7 +3,9 @@ package com.example.Event.application.service.impl;
 import com.example.Event.api.dto.request.AccessApprovalRequest;
 import com.example.Event.api.dto.request.AccessMessageRequest;
 import com.example.Event.api.dto.request.AccessRejectionRequest;
+import com.example.Event.api.dto.request.AccessStatusUpdateRequest;
 import com.example.Event.api.dto.response.AccessApprovalResponse;
+import com.example.Event.api.dto.response.AccessStatusUpdateResponse;
 import com.example.Event.api.dto.response.AccessRejectionResponse;
 import com.example.Event.api.dto.response.AccessRequestMutationResponse;
 import com.example.Event.api.dto.response.AccessRequestResponse;
@@ -12,13 +14,13 @@ import com.example.Event.api.dto.response.AccessRevocationResponse;
 import com.example.Event.api.dto.response.AccessStatusResponse;
 import com.example.Event.application.service.interfaces.IEventAccessService;
 import com.example.Event.application.service.interfaces.IEventCollaboratorService;
-import com.example.Event.application.service.interfaces.IEventService;
+import com.example.Event.application.service.interfaces.IEventInternalService;
 import com.example.Event.infrastructure.client.EmailServiceClient;
-import com.example.Event.infrastructure.client.NotificationServiceClient;
-import com.example.Event.infrastructure.client.UserServiceClient;
+import com.example.Event.infrastructure.client.NotificationIntegrationService;
+import com.example.Event.infrastructure.client.UserIntegrationService;
 import com.example.Event.infrastructure.mapper.EventAccessMapper;
 import com.example.Event.infrastructure.persistence.document.EventAccessRequestDocument;
-import com.example.Event.infrastructure.persistence.document.EventDocument;
+import com.example.Event.api.dto.response.EventInternalDTO;
 import com.example.Event.infrastructure.persistence.repository.EventAccessRequestRepository;
 import com.example.Event.shared.enums.AccessStatus;
 import com.example.Event.shared.enums.ApprovalDuration;
@@ -47,11 +49,11 @@ public class EventAccessServiceImpl implements IEventAccessService {
     private static final ApprovalStatus STATUS_REVOKED = ApprovalStatus.REVOKED;
 
     private final EventAccessRequestRepository accessRequestRepository;
-    private final NotificationServiceClient notificationServiceClient;
+    private final NotificationIntegrationService notificationIntegrationService;
     private final EmailServiceClient emailServiceClient;
-    private final IEventService eventService;
+    private final IEventInternalService eventService;
     private final IEventCollaboratorService collaboratorService;
-    private final UserServiceClient userServiceClient;
+    private final UserIntegrationService userIntegrationService;
     private final EventAccessMapper accessMapper;
 
     @Override
@@ -59,13 +61,13 @@ public class EventAccessServiceImpl implements IEventAccessService {
             String eventId,
             AccessMessageRequest request,
             String userId) {
-        EventDocument event = eventService.getEventById(eventId);
+        EventInternalDTO event = eventService.getEventById(eventId);
 
-        if (userId.equals(event.getOwnerUserId())) {
+        if (userId.equals(event.ownerUserId())) {
             throw new ForbiddenOperationException("You are the event owner. No need to request access.");
         }
 
-        if (EventVisibility.PROTECTED != event.getVisibility()) {
+        if (EventVisibility.PROTECTED != event.visibility()) {
             throw new DomainValidationException("Access requests only allowed for PROTECTED events.");
         }
 
@@ -85,14 +87,14 @@ public class EventAccessServiceImpl implements IEventAccessService {
 
     @Override
     public AccessRequestsResponse listAccessRequests(String eventId, String userId) {
-        EventDocument event = eventService.getEventById(eventId);
+        EventInternalDTO event = eventService.getEventById(eventId);
         requireAccessRequestReviewer(event, userId, "Only event owner and authorized collaborators can view access requests");
 
         List<AccessRequestResponse> requests = accessRequestRepository.findByEventIdAndStatusInOrderByRequestedAtDesc(
                         eventId,
                         List.of(STATUS_PENDING, STATUS_APPROVED))
                 .stream()
-                .map(accessMapper::toAccessRequestResponse)
+                .map(this::enrichAccessRequest)
                 .toList();
 
         return accessMapper.toRequestsResponse(eventId, requests);
@@ -104,7 +106,7 @@ public class EventAccessServiceImpl implements IEventAccessService {
             String requestId,
             AccessApprovalRequest request,
             String userId) {
-        EventDocument event = eventService.getEventById(eventId);
+        EventInternalDTO event = eventService.getEventById(eventId);
         requireAccessRequestReviewer(event, userId, "You don't have permission to approve access requests");
 
         ApprovalDuration approvalDuration = request != null ? request.resolvedApprovalDuration() : ApprovalDuration.FOREVER;
@@ -126,7 +128,7 @@ public class EventAccessServiceImpl implements IEventAccessService {
             String requestId,
             AccessRejectionRequest request,
             String userId) {
-        EventDocument event = eventService.getEventById(eventId);
+        EventInternalDTO event = eventService.getEventById(eventId);
         requireAccessRequestReviewer(event, userId, "You don't have permission to reject access requests");
 
         String reason = request != null ? request.resolvedReason() : "Request denied";
@@ -137,7 +139,7 @@ public class EventAccessServiceImpl implements IEventAccessService {
 
     @Override
     public AccessRevocationResponse revokeRequest(String eventId, String requestId, String userId) {
-        EventDocument event = eventService.getEventById(eventId);
+        EventInternalDTO event = eventService.getEventById(eventId);
         requireAccessRequestReviewer(event, userId, "You don't have permission to revoke access");
 
         EventAccessRequestDocument accessRequest = findAccessRequest(requestId);
@@ -153,13 +155,47 @@ public class EventAccessServiceImpl implements IEventAccessService {
     }
 
     @Override
+    public AccessStatusUpdateResponse updateAccessStatus(
+            String eventId,
+            String requestId,
+            AccessStatusUpdateRequest request,
+            String userId) {
+        if (request == null || request.status() == null) {
+            throw new DomainValidationException("Status is required");
+        }
+
+        return switch (request.status()) {
+            case APPROVED -> {
+                AccessApprovalResponse r = approveRequest(
+                        eventId, requestId, request.toApprovalRequest(), userId);
+                yield new AccessStatusUpdateResponse(
+                        r.status(), r.message(),
+                        r.approvalDuration() != null ? r.approvalDuration().name() : null,
+                        r.accessExpiresAt(), null);
+            }
+            case REJECTED -> {
+                AccessRejectionResponse r = rejectRequest(
+                        eventId, requestId, request.toRejectionRequest(), userId);
+                yield new AccessStatusUpdateResponse(
+                        r.status(), r.message(), null, null, r.reason());
+            }
+            case REVOKED -> {
+                AccessRevocationResponse r = revokeRequest(eventId, requestId, userId);
+                yield new AccessStatusUpdateResponse(
+                        r.status(), r.message(), null, null, null);
+            }
+            default -> throw new DomainValidationException("Invalid status transition requested. Allowed: APPROVED, REJECTED, REVOKED");
+        };
+    }
+
+    @Override
     public AccessRequestMutationResponse reRequestAccess(
             String eventId,
             AccessMessageRequest request,
             String userId) {
-        EventDocument event = eventService.getEventById(eventId);
+        EventInternalDTO event = eventService.getEventById(eventId);
 
-        if (EventVisibility.PROTECTED != event.getVisibility()) {
+        if (EventVisibility.PROTECTED != event.visibility()) {
             throw new DomainValidationException("Re-requests only allowed for PROTECTED events");
         }
 
@@ -186,9 +222,9 @@ public class EventAccessServiceImpl implements IEventAccessService {
 
     @Override
     public AccessStatusResponse getAccessStatus(String eventId, String userId) {
-        EventDocument event = eventService.getEventById(eventId);
+        EventInternalDTO event = eventService.getEventById(eventId);
 
-        if (userId.equals(event.getOwnerUserId())) {
+        if (userId.equals(event.ownerUserId())) {
             return accessMapper.toSimpleStatus(AccessStatus.OWNER, true, false);
         }
 
@@ -198,7 +234,7 @@ public class EventAccessServiceImpl implements IEventAccessService {
 
         Optional<EventAccessRequestDocument> request = accessRequestRepository.findByEventIdAndRequesterUserId(eventId, userId);
         if (request.isEmpty()) {
-            return accessMapper.toSimpleStatus(AccessStatus.NONE, false, EventVisibility.PROTECTED == event.getVisibility());
+            return accessMapper.toSimpleStatus(AccessStatus.NONE, false, EventVisibility.PROTECTED == event.visibility());
         }
 
         EventAccessRequestDocument accessRequest = request.get();
@@ -229,9 +265,9 @@ public class EventAccessServiceImpl implements IEventAccessService {
         }
     }
 
-    private EventAccessRequestDocument createAccessRequestDocument(EventDocument event, String requesterUserId, String message) {
+    private EventAccessRequestDocument createAccessRequestDocument(EventInternalDTO event, String requesterUserId, String message) {
         Optional<EventAccessRequestDocument> existing =
-                accessRequestRepository.findByEventIdAndRequesterUserId(event.getId(), requesterUserId);
+                accessRequestRepository.findByEventIdAndRequesterUserId(event.id(), requesterUserId);
 
         if (existing.isPresent()) {
             if (STATUS_PENDING == existing.get().getStatus()) {
@@ -243,7 +279,7 @@ public class EventAccessServiceImpl implements IEventAccessService {
         }
 
         EventAccessRequestDocument request = EventAccessRequestDocument.builder()
-                .eventId(event.getId())
+                .eventId(event.id())
                 .requesterUserId(requesterUserId)
                 .message(message)
                 .status(STATUS_PENDING)
@@ -274,7 +310,7 @@ public class EventAccessServiceImpl implements IEventAccessService {
         request.setUpdatedAt(Instant.now());
 
         EventAccessRequestDocument updated = accessRequestRepository.save(request);
-        EventDocument event = eventService.getEventById(eventId);
+        EventInternalDTO event = eventService.getEventById(eventId);
         sendAccessApprovedNotifications(event, request.getRequesterUserId());
         return updated;
     }
@@ -296,13 +332,13 @@ public class EventAccessServiceImpl implements IEventAccessService {
         request.setUpdatedAt(Instant.now());
 
         EventAccessRequestDocument updated = accessRequestRepository.save(request);
-        EventDocument event = eventService.getEventById(eventId);
+        EventInternalDTO event = eventService.getEventById(eventId);
         sendAccessRejectedNotifications(event, request.getRequesterUserId(), rejectionReason);
         return updated;
     }
 
-    private void revokeAccess(EventDocument event, String requesterUserId, String revokerUserId) {
-        EventAccessRequestDocument request = accessRequestRepository.findByEventIdAndRequesterUserId(event.getId(), requesterUserId)
+    private void revokeAccess(EventInternalDTO event, String requesterUserId, String revokerUserId) {
+        EventAccessRequestDocument request = accessRequestRepository.findByEventIdAndRequesterUserId(event.id(), requesterUserId)
                 .orElseThrow(() -> new ResourceNotFoundException("Request not found for user: " + requesterUserId));
 
         Instant now = Instant.now();
@@ -317,7 +353,7 @@ public class EventAccessServiceImpl implements IEventAccessService {
     }
 
     private EventAccessRequestDocument createReRequestDocument(
-            EventDocument event,
+            EventInternalDTO event,
             EventAccessRequestDocument request,
             String requesterUserId,
             String message) {
@@ -352,11 +388,11 @@ public class EventAccessServiceImpl implements IEventAccessService {
         return request.getAccessExpiresAt() == null || Instant.now().isBefore(request.getAccessExpiresAt());
     }
 
-    private void requireAccessRequestReviewer(EventDocument event, String userId, String message) {
-        if (userId.equals(event.getOwnerUserId())) {
+    private void requireAccessRequestReviewer(EventInternalDTO event, String userId, String message) {
+        if (userId.equals(event.ownerUserId())) {
             return;
         }
-        if (!collaboratorService.hasPermission(event.getId(), userId, "canReviewAccessRequests")) {
+        if (!collaboratorService.hasPermission(event.id(), userId, "canReviewAccessRequests")) {
             throw new ForbiddenOperationException(message);
         }
     }
@@ -379,70 +415,80 @@ public class EventAccessServiceImpl implements IEventAccessService {
                 .orElseThrow(() -> new ResourceNotFoundException("Request not found: " + requestId));
     }
 
-    private void sendAccessRequestNotifications(EventDocument event, String requesterUserId) {
+    private void sendAccessRequestNotifications(EventInternalDTO event, String requesterUserId) {
         try {
-            String requesterEmail = userServiceClient.getUserEmail(requesterUserId);
-            notificationServiceClient.notifyAccessRequestReceived(
-                    event.getOwnerUserId(),
-                    event.getId(),
-                    event.getTitle(),
+            String requesterEmail = userIntegrationService.getUserEmail(requesterUserId);
+            notificationIntegrationService.notifyAccessRequestReceived(
+                    event.ownerUserId(),
+                    event.id(),
+                    event.title(),
                     requesterEmail);
         } catch (Exception e) {
             log.warn("Failed to send access request notification: {}", e.getMessage());
         }
 
         try {
-            String ownerEmail = userServiceClient.getUserEmail(event.getOwnerUserId());
-            String requesterEmail = userServiceClient.getUserEmail(requesterUserId);
-            emailServiceClient.sendAccessRequestEmail(ownerEmail, event.getTitle(), requesterEmail);
+            String ownerEmail = userIntegrationService.getUserEmail(event.ownerUserId());
+            String requesterEmail = userIntegrationService.getUserEmail(requesterUserId);
+            emailServiceClient.sendAccessRequestEmail(ownerEmail, event.title(), requesterEmail);
         } catch (Exception e) {
             log.warn("Failed to send access request email: {}", e.getMessage());
         }
     }
 
-    private void sendAccessApprovedNotifications(EventDocument event, String requesterUserId) {
+    private void sendAccessApprovedNotifications(EventInternalDTO event, String requesterUserId) {
         try {
-            notificationServiceClient.notifyAccessApproved(requesterUserId, event.getId(), event.getTitle());
+            notificationIntegrationService.notifyAccessApproved(requesterUserId, event.id(), event.title());
         } catch (Exception e) {
             log.warn("Failed to send access approval notification: {}", e.getMessage());
         }
 
         try {
-            String requesterEmail = userServiceClient.getUserEmail(requesterUserId);
-            emailServiceClient.sendAccessApprovedEmail(requesterEmail, event.getTitle());
+            String requesterEmail = userIntegrationService.getUserEmail(requesterUserId);
+            emailServiceClient.sendAccessApprovedEmail(requesterEmail, event.title());
         } catch (Exception e) {
             log.warn("Failed to send access approval email: {}", e.getMessage());
         }
     }
 
-    private void sendAccessRejectedNotifications(EventDocument event, String requesterUserId, String rejectionReason) {
+    private void sendAccessRejectedNotifications(EventInternalDTO event, String requesterUserId, String rejectionReason) {
         try {
-            notificationServiceClient.notifyAccessRejected(requesterUserId, event.getId(), event.getTitle(), rejectionReason);
+            notificationIntegrationService.notifyAccessRejected(requesterUserId, event.id(), event.title(), rejectionReason);
         } catch (Exception e) {
             log.warn("Failed to send access rejection notification: {}", e.getMessage());
         }
 
         try {
-            String requesterEmail = userServiceClient.getUserEmail(requesterUserId);
-            emailServiceClient.sendAccessRejectedEmail(requesterEmail, event.getTitle(), rejectionReason);
+            String requesterEmail = userIntegrationService.getUserEmail(requesterUserId);
+            emailServiceClient.sendAccessRejectedEmail(requesterEmail, event.title(), rejectionReason);
         } catch (Exception e) {
             log.warn("Failed to send access rejection email: {}", e.getMessage());
         }
     }
 
-    private void sendAccessRevokedNotifications(EventDocument event, String requesterUserId) {
+    private void sendAccessRevokedNotifications(EventInternalDTO event, String requesterUserId) {
         try {
-            notificationServiceClient.notifyAccessRevoked(requesterUserId, event.getId(), event.getTitle());
+            notificationIntegrationService.notifyAccessRevoked(requesterUserId, event.id(), event.title());
         } catch (Exception e) {
             log.warn("Failed to send access revocation notification: {}", e.getMessage());
         }
 
         try {
-            String userEmail = userServiceClient.getUserEmail(requesterUserId);
-            emailServiceClient.sendAccessRevokedEmail(userEmail, event.getTitle());
+            String userEmail = userIntegrationService.getUserEmail(requesterUserId);
+            emailServiceClient.sendAccessRevokedEmail(userEmail, event.title());
         } catch (Exception e) {
             log.warn("Failed to send access revocation email: {}", e.getMessage());
         }
     }
 
+    private AccessRequestResponse enrichAccessRequest(EventAccessRequestDocument accessRequest) {
+        String displayName;
+        try {
+            displayName = userIntegrationService.getUserDisplayName(accessRequest.getRequesterUserId());
+        } catch (Exception e) {
+            log.warn("Could not fetch displayName for {}: {}", accessRequest.getRequesterUserId(), e.getMessage());
+            displayName = accessRequest.getRequesterUserId();
+        }
+        return accessMapper.toAccessRequestResponse(accessRequest, displayName);
+    }
 }

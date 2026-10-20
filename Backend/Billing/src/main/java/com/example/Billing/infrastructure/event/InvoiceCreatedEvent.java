@@ -1,5 +1,7 @@
 package com.example.Billing.infrastructure.event;
 
+import java.math.BigDecimal;
+
 import lombok.Getter;
 import org.springframework.context.ApplicationEvent;
 
@@ -21,11 +23,11 @@ public class InvoiceCreatedEvent extends ApplicationEvent {
     private final String invoiceId;
     private final String userId;
     private final String invoiceNumber;
-    private final Double totalAmount;
+    private final BigDecimal totalAmount;
     private final Instant createdAt;
 
     public InvoiceCreatedEvent(Object source, String invoiceId, String userId,
-                               String invoiceNumber, Double totalAmount) {
+                               String invoiceNumber, BigDecimal totalAmount) {
         super(source);
         this.invoiceId = invoiceId;
         this.userId = userId;

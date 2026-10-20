@@ -5,14 +5,17 @@ import com.example.Event.api.dto.request.EventSettingsRequest;
 import com.example.Event.api.dto.request.EventUpdateRequest;
 import com.example.Event.api.dto.response.EventCreateResponse;
 import com.example.Event.api.dto.response.EventDeleteResponse;
+import com.example.Event.api.dto.response.EventInternalDTO;
 import com.example.Event.api.dto.response.EventResponse;
 import com.example.Event.api.dto.response.EventSettingsResponse;
 import com.example.Event.api.dto.response.EventSummaryResponse;
 import com.example.Event.api.dto.response.EventUpdateResponse;
 import com.example.Event.application.service.interfaces.IEventCollaboratorService;
+import com.example.Event.application.service.interfaces.IEventInternalService;
 import com.example.Event.application.service.interfaces.IEventService;
 import com.example.Event.infrastructure.client.MediaServiceClient;
 import com.example.Event.infrastructure.client.dto.MediaServiceResponse;
+import com.example.Event.infrastructure.mapper.EventInternalMapper;
 import com.example.Event.infrastructure.mapper.EventMapper;
 import com.example.Event.infrastructure.persistence.document.EventAccessRequestDocument;
 import com.example.Event.infrastructure.persistence.document.EventDocument;
@@ -33,6 +36,7 @@ import com.example.Event.shared.exception.ForbiddenOperationException;
 import com.example.Event.shared.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import com.example.Event.shared.enums.MediaDomain;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -49,7 +53,7 @@ import java.util.stream.Collectors;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class EventServiceImpl implements IEventService {
+public class EventServiceImpl implements IEventService, IEventInternalService {
 
     private final EventRepository eventRepository;
     private final EventMediaRepository eventMediaRepository;
@@ -59,39 +63,78 @@ public class EventServiceImpl implements IEventService {
     private final IEventCollaboratorService collaboratorService;
     private final OrphanedMediaLogRepository orphanedMediaLogRepository;
     private final EventMapper eventMapper;
+    private final EventInternalMapper eventInternalMapper;
 
     @Override
-    public EventCreateResponse createEvent(EventRequest request, String userId) {
+    public EventCreateResponse createEvent(EventRequest request, MultipartFile coverMedia, String userId) {
         validateCreatePayload(request);
 
-        String title = request.title().trim();
-        Instant now = Instant.now();
-        EventDocument event = EventDocument.builder()
-                .ownerUserId(userId)
-                .title(title)
-                .description(request.description().trim())
-                .eventDate(parseEventDate(request.eventDate(), true))
-                .visibility(request.resolvedVisibility())
-                .moderationEnabled(request.moderationEnabledOrDefault())
-                .status(EventStatus.ACTIVE)
-                .coverImageId(normalizeBlankToNull(request.coverImageId()))
-                .createdAt(now)
-                .updatedAt(now)
-                .build();
+        String coverMediaId = null;
 
-        EventDocument savedEvent = eventRepository.save(event);
-        log.info("Event created successfully: {} with ID: {}", title, savedEvent.getId());
+        // Step 1: Perform network I/O OUTSIDE any database transaction
+        if (coverMedia != null && !coverMedia.isEmpty()) {
+            MediaServiceResponse uploadResponse = mediaServiceClient.uploadMedia(
+                    coverMedia,
+                    MediaDomain.EVENT_COVER,
+                    null,
+                    userId);
+            coverMediaId = extractMediaId(uploadResponse);
+        }
+
+        // Delegate translation strictly to the Mapper layer
+        EventDocument event = eventMapper.toDocument(request);
+
+        // Assign internally generated service-level defaults post-mapping
+        event.setOwnerUserId(userId);
+        event.setEventDate(parseEventDate(request.eventDate(), true));
+        event.setStatus(EventStatus.ACTIVE);
+        event.setCoverImageId(coverMediaId);
+        Instant now = Instant.now();
+        event.setCreatedAt(now);
+        event.setUpdatedAt(now);
+
+        // Step 2: Delegate database operations with compensation rollback
+        EventDocument savedEvent;
+        try {
+            savedEvent = eventRepository.save(event);
+            log.info("Event created successfully: {} with ID: {}", savedEvent.getTitle(), savedEvent.getId());
+        } catch (Exception ex) {
+            // Compensation: If database transaction fails, clean up the newly uploaded remote binary
+            if (coverMediaId != null) {
+                try {
+                    mediaServiceClient.deleteMedia(coverMediaId, userId);
+                    log.warn("🧹 Cleaned up newly uploaded cover media {} after event creation failure", coverMediaId);
+                } catch (Exception cleanupError) {
+                    log.error("Failed to clean up newly uploaded cover media {}: {}", coverMediaId, cleanupError.getMessage(), cleanupError);
+                    try {
+                        orphanedMediaLogRepository.save(OrphanedMediaLogDocument.builder()
+                                .oldMediaId(coverMediaId)
+                                .errorMessage(cleanupError.getMessage())
+                                .createdAt(Instant.now())
+                                .build());
+                    } catch (Exception orphanLogError) {
+                        log.error("Failed to persist orphaned media log for {}: {}", coverMediaId, orphanLogError.getMessage(), orphanLogError);
+                    }
+                }
+            }
+            throw ex;
+        }
 
         return eventMapper.toCreateResponse(savedEvent, "Event created successfully");
     }
 
     @Override
+    public EventCreateResponse createEvent(EventRequest request, String userId) {
+        return createEvent(request, null, userId);
+    }
+
+    @Override
     public List<EventSummaryResponse> getGlobalEvents(String userId) {
-        List<EventDocument> allEvents = new ArrayList<>(getPublicEvents());
-        allEvents.addAll(getProtectedEvents());
+        List<EventDocument> allEvents = new ArrayList<>(eventRepository.findByVisibility(EventVisibility.PUBLIC));
+        allEvents.addAll(eventRepository.findByVisibility(EventVisibility.PROTECTED));
 
         if (hasText(userId)) {
-            List<EventDocument> userEvents = getEventsByOwner(userId);
+            List<EventDocument> userEvents = eventRepository.findByOwnerUserId(userId);
             Set<String> visibleEventIds = allEvents.stream()
                     .map(EventDocument::getId)
                     .collect(Collectors.toSet());
@@ -110,14 +153,14 @@ public class EventServiceImpl implements IEventService {
 
     @Override
     public List<EventSummaryResponse> getMyEvents(String userId) {
-        return getEventsByOwner(userId).stream()
+        return eventRepository.findByOwnerUserId(userId).stream()
                 .map(eventMapper::toOwnerSummary)
                 .toList();
     }
 
     @Override
     public EventResponse getEvent(String eventId, String userId) {
-        EventDocument event = getEventById(eventId);
+        EventDocument event = findEventEntity(eventId);
 
         if (EventVisibility.PRIVATE == event.getVisibility() && !isOwner(event, userId) && !isDocumentCollaborator(event, userId)) {
             throw new ForbiddenOperationException("You don't have permission to view this event");
@@ -140,31 +183,73 @@ public class EventServiceImpl implements IEventService {
     }
 
     @Override
-    public EventUpdateResponse updateEvent(
+    public EventResponse updateEvent(
             String eventId,
             EventUpdateRequest eventDetails,
             MultipartFile coverMedia,
             String userId) {
-        EventDocument updated = updateEventDocument(eventId, userId, eventDetails, coverMedia);
+        EventDocument existingEvent = findEventEntity(eventId);
 
-        return eventMapper.toUpdateResponse(updated, "success", "Event updated successfully");
+        if (!collaboratorService.hasPermission(eventId, userId, "canEditEventDetails")) {
+            throw new ForbiddenOperationException("You don't have permission to edit this event");
+        }
+
+        validateUpdatePayload(eventDetails);
+
+        String oldMediaId = existingEvent.getCoverImageId();
+        String newMediaId = null;
+
+        // Step 1: Perform network I/O OUTSIDE any database transaction
+        if (coverMedia != null && !coverMedia.isEmpty()) {
+            MediaServiceResponse uploadResponse = mediaServiceClient.uploadMedia(
+                    coverMedia,
+                    MediaDomain.EVENT_COVER,
+                    eventId,
+                    userId);
+            newMediaId = extractMediaId(uploadResponse);
+        }
+
+        // Step 2: Delegate pure database operations to transactional boundary with compensation rollback
+        EventDocument updatedEvent;
+        try {
+            updatedEvent = executeEventUpdate(eventId, eventDetails, newMediaId);
+        } catch (Exception ex) {
+            // Compensation: If database transaction fails, clean up the newly uploaded remote binary
+            if (newMediaId != null) {
+                try {
+                    mediaServiceClient.deleteMedia(newMediaId, userId);
+                    log.warn("🧹 Cleaned up newly uploaded cover media {} after database failure", newMediaId);
+                } catch (Exception cleanupError) {
+                    log.error("Failed to clean up newly uploaded media {}: {}", newMediaId, cleanupError.getMessage(), cleanupError);
+                }
+            }
+            throw ex;
+        }
+
+        // Step 3: Clean up previous cover media OUTSIDE the transaction
+        if (newMediaId != null && !newMediaId.equals(oldMediaId)) {
+            deleteOldCoverMediaIfNeeded(eventId, userId, oldMediaId, newMediaId);
+        }
+
+        return eventMapper.toResponse(updatedEvent);
     }
 
     @Override
-    @Transactional
     public EventDeleteResponse deleteEvent(String eventId, String userId) {
-        EventDocument event = getEventById(eventId);
+        log.info("Deleting event and associated data: {}", eventId);
+        EventDocument event = findEventEntity(eventId);
         if (!event.getOwnerUserId().equals(userId)) {
             throw new ForbiddenOperationException("Only the event owner can delete this event");
         }
 
         deleteEventCascade(event);
+        log.info("Event deleted successfully: {}", eventId);
         return eventMapper.toDeleteResponse(eventId, "Event deleted successfully");
     }
 
     @Override
     public EventSettingsResponse getSettings(String eventId) {
-        EventDocument event = getEventById(eventId);
+        EventDocument event = findEventEntity(eventId);
         return eventMapper.toSettingsResponse(event);
     }
 
@@ -177,56 +262,73 @@ public class EventServiceImpl implements IEventService {
             throw new ForbiddenOperationException("You don't have permission to edit this event");
         }
 
-        EventDocument event = getEventById(eventId);
+        EventDocument event = findEventEntity(eventId);
         event.setModerationEnabled(Boolean.TRUE.equals(request.moderationEnabled()));
-        updateEventDirectly(event);
+        event.setUpdatedAt(Instant.now());
+        eventRepository.save(event);
         return eventMapper.toSettingsResponse(event);
     }
 
     @Override
-    public EventDocument getEventById(String eventId) {
+    public List<EventSummaryResponse> getEventsWithPendingRequests(String userId) {
+        log.info("🔍 Getting events with pending requests for user: {}", userId);
+        List<EventDocument> userEvents = eventRepository.findByOwnerUserId(userId);
+        if (userEvents.isEmpty()) {
+            return List.of();
+        }
+
+        List<String> eventIds = userEvents.stream().map(EventDocument::getId).toList();
+
+        // Fetch all pending requests for all relevant events in exactly ONE batched query
+        Set<String> eventsWithPendingIds = eventAccessRequestRepository
+                .findByEventIdInAndStatus(eventIds, ApprovalStatus.PENDING)
+                .stream()
+                .map(EventAccessRequestDocument::getEventId)
+                .collect(Collectors.toSet());
+
+        return userEvents.stream()
+                .filter(event -> eventsWithPendingIds.contains(event.getId()))
+                .map(eventMapper::toOwnerSummary)
+                .toList();
+    }
+
+    private EventDocument findEventEntity(String eventId) {
         return eventRepository.findById(eventId)
                 .orElseThrow(() -> new ResourceNotFoundException("Event not found: " + eventId));
     }
 
     @Override
-    public List<EventDocument> getEventsByOwner(String ownerUserId) {
-        return eventRepository.findByOwnerUserId(ownerUserId);
+    public EventInternalDTO getEventById(String eventId) {
+        return eventInternalMapper.toDTO(findEventEntity(eventId));
     }
 
     @Override
-    public List<EventDocument> getPublicEvents() {
-        return eventRepository.findByVisibility(EventVisibility.PUBLIC);
+    public List<EventInternalDTO> getEventsByOwner(String ownerUserId) {
+        return eventRepository.findByOwnerUserId(ownerUserId).stream()
+                .map(eventInternalMapper::toDTO)
+                .toList();
     }
 
     @Override
-    public List<EventDocument> getProtectedEvents() {
-        return eventRepository.findByVisibility(EventVisibility.PROTECTED);
+    public List<EventInternalDTO> getPublicEvents() {
+        return eventRepository.findByVisibility(EventVisibility.PUBLIC).stream()
+                .map(eventInternalMapper::toDTO)
+                .toList();
     }
 
     @Override
-    public EventDocument updateEventDirectly(EventDocument event) {
-        event.setUpdatedAt(Instant.now());
-        EventDocument updated = eventRepository.save(event);
-        log.info("Event updated directly: {}", event.getId());
-        return updated;
+    public List<EventInternalDTO> getProtectedEvents() {
+        return eventRepository.findByVisibility(EventVisibility.PROTECTED).stream()
+                .map(eventInternalMapper::toDTO)
+                .toList();
     }
 
-    private EventDocument updateEventDocument(
+    @Transactional
+    protected EventDocument executeEventUpdate(
             String eventId,
-            String userId,
             EventUpdateRequest eventDetails,
-            MultipartFile coverMedia) {
-        EventDocument event = getEventById(eventId);
-
-        if (!collaboratorService.hasPermission(eventId, userId, "canEditEventDetails")) {
-            throw new ForbiddenOperationException("You don't have permission to edit this event");
-        }
-
-        validateUpdatePayload(eventDetails);
-
-        String oldMediaId = event.getCoverImageId();
-        String newMediaId = oldMediaId;
+            String newMediaId) {
+        EventDocument event = findEventEntity(eventId);
 
         event.setTitle(eventDetails.title().trim());
         event.setDescription(eventDetails.description() != null ? eventDetails.description().trim() : "");
@@ -234,19 +336,13 @@ public class EventServiceImpl implements IEventService {
         event.setVisibility(eventDetails.visibility());
         event.setModerationEnabled(Boolean.TRUE.equals(eventDetails.moderationEnabled()));
 
-        if (coverMedia != null && !coverMedia.isEmpty()) {
-            MediaServiceResponse uploadResponse = mediaServiceClient.uploadMedia(
-                    coverMedia,
-                    "EVENT_COVER",
-                    eventId,
-                    userId);
-            newMediaId = extractMediaId(uploadResponse);
+        if (newMediaId != null && !newMediaId.isBlank()) {
             event.setCoverImageId(newMediaId);
         }
 
         event.setUpdatedAt(Instant.now());
         EventDocument updatedEvent = eventRepository.save(event);
-        deleteOldCoverMediaIfNeeded(eventId, userId, oldMediaId, newMediaId);
+        log.info("Event database record updated successfully: {}", eventId);
         return updatedEvent;
     }
 
@@ -256,14 +352,27 @@ public class EventServiceImpl implements IEventService {
         log.info("Deleting event and associated data: {}", eventId);
 
         List<EventMediaApprovalDocument> approvals = eventMediaApprovalRepository.findByEventId(eventId);
-        for (EventMediaApprovalDocument approval : approvals) {
-            try {
-                mediaServiceClient.deleteMedia(approval.getMediaId(), ownerId);
-            } catch (Exception e) {
-                log.warn("Failed to delete remote media {}, continuing: {}", approval.getMediaId(), e.getMessage());
+        if (!approvals.isEmpty()) {
+            List<String> mediaIds = approvals.stream()
+                    .map(EventMediaApprovalDocument::getMediaId)
+                    .filter(id -> id != null && !id.isBlank())
+                    .toList();
+
+            if (!mediaIds.isEmpty()) {
+                try {
+                    mediaServiceClient.deleteMediaBulk(mediaIds, ownerId);
+                    log.info("Bulk deleted {} remote media files for event {}", mediaIds.size(), eventId);
+                } catch (Exception e) {
+                    log.error("Failed to bulk delete remote media for event {}: {}", eventId, e.getMessage(), e);
+                }
             }
         }
 
+        executeDatabaseDeletions(eventId, approvals);
+    }
+
+    @Transactional
+    protected void executeDatabaseDeletions(String eventId, List<EventMediaApprovalDocument> approvals) {
         eventMediaApprovalRepository.deleteAll(approvals);
         List<EventMediaDocument> mediaList = eventMediaRepository.findByEventId(eventId);
         eventMediaRepository.deleteAll(mediaList);
@@ -340,14 +449,19 @@ public class EventServiceImpl implements IEventService {
 
         String normalized = eventDateStr.trim().replace(" ", "T");
         try {
+            return Instant.parse(normalized);
+        } catch (Exception ignored) {
+        }
+
+        try {
             LocalDateTime ldt = LocalDateTime.parse(normalized);
-            return ldt.atZone(ZoneId.systemDefault()).toInstant();
+            return ldt.atZone(ZoneId.of("UTC")).toInstant();
         } catch (Exception ignored) {
         }
 
         try {
             LocalDate date = LocalDate.parse(normalized);
-            return date.atStartOfDay(ZoneId.systemDefault()).toInstant();
+            return date.atStartOfDay(ZoneId.of("UTC")).toInstant();
         } catch (Exception ignored) {
         }
 

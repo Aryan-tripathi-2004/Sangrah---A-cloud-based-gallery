@@ -1,0 +1,97 @@
+@if (events().length > 0) {
+  <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-5">
+    @for (event of events(); track event.id || event.eventId || $index) {
+      <a
+        [routerLink]="['/event', event.id || event.eventId]"
+        class="group relative rounded-2xl overflow-hidden bg-slate-850 border border-slate-800 hover:border-slate-700 shadow-md hover:shadow-2xl transition-all duration-300 flex flex-col"
+      >
+        <!-- Card Media / Cover Image -->
+        <div class="relative w-full aspect-[4/3] bg-slate-800 overflow-hidden">
+          @if (getCoverImageUrl(event)) {
+            <img
+              [src]="getCoverImageUrl(event)"
+              [alt]="event.title"
+              loading="lazy"
+              class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+            />
+          } @else {
+            <div class="w-full h-full bg-gradient-to-br from-indigo-950 via-slate-900 to-purple-950 flex flex-col items-center justify-center text-slate-500 p-4">
+              <span class="text-4xl mb-1">📅</span>
+              <span class="text-[11px] font-semibold text-slate-400">Event</span>
+            </div>
+          }
+
+          <!-- Dark Gradient Overlay -->
+          <div class="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/20 to-transparent opacity-60 group-hover:opacity-80 transition duration-300"></div>
+
+          <!-- Top Badges -->
+          <div class="absolute top-3 left-3 right-3 flex items-center justify-between">
+            <!-- Visibility Pill -->
+            <span
+              [class.bg-emerald-500/80]="event.visibility === 'PUBLIC'"
+              [class.bg-amber-500/80]="event.visibility === 'PROTECTED'"
+              [class.bg-slate-700/80]="event.visibility === 'PRIVATE'"
+              class="px-2.5 py-0.5 rounded-full text-[10px] font-bold text-white uppercase tracking-wider backdrop-blur-md shadow-sm"
+            >
+              {{ event.visibility }}
+            </span>
+
+            @if (event.status) {
+              <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-900/70 text-slate-300 backdrop-blur-md border border-slate-700/50">
+                {{ event.status }}
+              </span>
+            }
+          </div>
+
+          <!-- Date Badge at Bottom Left -->
+          <div class="absolute bottom-3 left-3 text-xs font-semibold text-slate-200 flex items-center gap-1.5 drop-shadow">
+            <span>🗓️</span>
+            <span>{{ formatDate(event.eventDate) }}</span>
+          </div>
+        </div>
+
+        <!-- Card Body -->
+        <div class="p-4 flex-1 flex flex-col justify-between">
+          <div>
+            <h3 class="font-bold text-white text-sm group-hover:text-blue-400 transition duration-200 line-clamp-1">
+              {{ event.title }}
+            </h3>
+            @if (event.description) {
+              <p class="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">
+                {{ event.description }}
+              </p>
+            }
+          </div>
+
+          <!-- Bottom Collaborators / Moderation info -->
+          <div class="mt-3 pt-3 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400">
+            <span class="flex items-center gap-1">
+              <span>👥</span>
+              <span>{{ event.collaborators?.length || 0 }} collabs</span>
+            </span>
+            <span class="text-blue-400 group-hover:translate-x-0.5 transition-transform duration-200 font-semibold">
+              View →
+            </span>
+          </div>
+        </div>
+      </a>
+    }
+  </div>
+} @else {
+  <!-- Empty State -->
+  <div class="text-center py-16 px-4 bg-slate-850/40 border border-slate-800/80 rounded-3xl">
+    <div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-slate-800/80 border border-slate-700 flex items-center justify-center text-3xl">
+      📅
+    </div>
+    <h3 class="text-lg font-bold text-white">No Events Yet</h3>
+    <p class="text-slate-400 text-xs mt-1 max-w-sm mx-auto">
+      You haven't created any events yet. Organize your memories, photos, and team collaborations.
+    </p>
+    <a
+      routerLink="/event/create"
+      class="inline-flex items-center gap-2 mt-5 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs shadow-lg shadow-blue-600/20 transition"
+    >
+      <span>+</span> Create Your First Event
+    </a>
+  </div>
+}

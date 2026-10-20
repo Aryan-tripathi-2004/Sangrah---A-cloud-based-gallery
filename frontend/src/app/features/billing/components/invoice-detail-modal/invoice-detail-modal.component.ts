@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter } from '@angular/core';
+import { Component, Input, Output, EventEmitter, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { InvoiceDTO } from '../../billing.service';
 import { StatusBadgeComponent } from '../status-badge/status-badge.component';
@@ -7,6 +7,7 @@ import { BillingService } from '../../billing.service';
 @Component({
   selector: 'app-invoice-detail-modal',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CommonModule, StatusBadgeComponent],
   templateUrl: './invoice-detail-modal.component.html'
 })
@@ -17,7 +18,10 @@ export class InvoiceDetailModalComponent {
 
   isDownloadingPDF = false;
 
-  constructor(private billingService: BillingService) {}
+  constructor(
+    private billingService: BillingService,
+    private cdr: ChangeDetectorRef
+  ) {}
 
   downloadPDF(): void {
     if (!this.invoice?.id) {
@@ -26,6 +30,7 @@ export class InvoiceDetailModalComponent {
     }
 
     this.isDownloadingPDF = true;
+    this.cdr.markForCheck();
     console.log('📥 Starting PDF download for invoice:', this.invoice.invoiceId);
 
     this.billingService.downloadInvoicePDF(this.invoice.invoiceId).subscribe({
@@ -40,11 +45,13 @@ export class InvoiceDetailModalComponent {
         document.body.removeChild(a);
         console.log('✅ PDF downloaded successfully:', this.invoice.invoiceId);
         this.isDownloadingPDF = false;
+        this.cdr.markForCheck();
       },
       error: (error) => {
         console.error('❌ PDF download failed:', error);
         alert('Failed to download PDF. Please try again.');
         this.isDownloadingPDF = false;
+        this.cdr.markForCheck();
       }
     });
   }

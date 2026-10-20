@@ -75,6 +75,7 @@ public class MediaDocument {
 
     private Instant updatedAt;
 
+    @Indexed
     private Instant deletedAt;
 
     /**

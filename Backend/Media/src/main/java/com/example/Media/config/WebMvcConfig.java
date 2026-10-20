@@ -11,10 +11,13 @@ import java.util.List;
  * Web MVC configuration to register custom argument resolvers.
  */
 @Configuration
+@lombok.RequiredArgsConstructor
 public class WebMvcConfig implements WebMvcConfigurer {
+
+    private final CurrentUserIdArgumentResolver currentUserIdArgumentResolver;
 
     @Override
     public void addArgumentResolvers(List<HandlerMethodArgumentResolver> resolvers) {
-        resolvers.add(new CurrentUserIdArgumentResolver());
+        resolvers.add(currentUserIdArgumentResolver);
     }
 }

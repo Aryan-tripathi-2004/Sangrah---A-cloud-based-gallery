@@ -1,6 +1,7 @@
 package com.example.Event.api.dto.request;
 
 import com.example.Event.shared.enums.EventVisibility;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
@@ -8,7 +9,8 @@ import jakarta.validation.constraints.Size;
 /**
  * Request to create an event.
  */
-@Schema(description = "Request to create or update an event")
+@JsonIgnoreProperties(ignoreUnknown = true)
+@Schema(description = "Request to create an event")
 public record EventRequest(
         @NotBlank(message = "Title is required")
         @Size(min = 1, max = 200, message = "Title must not exceed 200 characters")
@@ -25,9 +27,6 @@ public record EventRequest(
 
         @Schema(description = "Event visibility", example = "PRIVATE")
         EventVisibility visibility,
-
-        @Schema(description = "Cover image media ID")
-        String coverImageId,
 
         @Schema(description = "Whether uploads require moderation", example = "false")
         Boolean moderationEnabled

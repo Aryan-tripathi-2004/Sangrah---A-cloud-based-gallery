@@ -8,6 +8,8 @@ import org.springframework.web.context.request.NativeWebRequest;
 import org.springframework.web.method.support.HandlerMethodArgumentResolver;
 import org.springframework.web.method.support.ModelAndViewContainer;
 
+import org.springframework.stereotype.Component;
+
 /**
  * {@link HandlerMethodArgumentResolver} implementation that extracts and validates
  * the {@code X-User-Id} request header for controller method parameters annotated
@@ -27,6 +29,7 @@ import org.springframework.web.method.support.ModelAndViewContainer;
  * </ul>
  * </p>
  */
+@Component
 public class CurrentUserIdArgumentResolver implements HandlerMethodArgumentResolver {
 
     private static final String X_USER_ID_HEADER = "X-User-Id";

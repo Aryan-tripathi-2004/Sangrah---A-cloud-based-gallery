@@ -1,35 +1,35 @@
-import { Component, OnInit, inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, OnInit, inject, ChangeDetectionStrategy, signal } from '@angular/core';
 import { SangrahApiService, MediaItem } from '../../core/api/sangrah-api.service';
 import { LayoutComponent } from '../../shared/layout/layout.component';
 
 @Component({
   selector: 'app-gallery',
   standalone: true,
-  imports: [CommonModule, LayoutComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [LayoutComponent],
   templateUrl: './gallery.component.html',
 })
 export class GalleryComponent implements OnInit {
-  private api = inject(SangrahApiService);
+  public readonly api = inject(SangrahApiService);
 
-  gallery: MediaItem[] = [];
-  isLoading = true;
+  gallery = signal<MediaItem[]>([]);
+  isLoading = signal<boolean>(true);
 
   ngOnInit(): void {
     this.loadGallery();
   }
 
   loadGallery(): void {
+    this.isLoading.set(true);
     this.api.listGalleryMedia().subscribe({
       next: (response) => {
-        this.gallery = response.items;
-        this.isLoading = false;
+        this.gallery.set(response.items || []);
+        this.isLoading.set(false);
       },
       error: () => {
-        this.gallery = [];
-        this.isLoading = false;
+        this.gallery.set([]);
+        this.isLoading.set(false);
       },
     });
   }
 }
-
