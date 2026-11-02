@@ -26,12 +26,17 @@ import org.springframework.core.io.Resource;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
@@ -423,6 +428,25 @@ public class MediaServiceImpl implements IMediaService {
             }
         }
         return details;
+    }
+
+    @Override
+    public ResponseEntity<?> getMediaResponse(String mediaId, String callerUserId, String role, String acceptHeader) {
+        MediaResponse details = getAuthorizedMediaDetails(mediaId, callerUserId, role);
+
+        if (!shouldStreamBinary(acceptHeader)) {
+            return ResponseEntity.ok(details);
+        }
+
+        Resource resource = getMediaFile(mediaId);
+        ContentDisposition contentDisposition = ContentDisposition.inline()
+                .filename(details.originalFileName(), StandardCharsets.UTF_8)
+                .build();
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition.toString())
+                .contentType(MediaType.parseMediaType(details.mimeType()))
+                .body(resource);
     }
 
     @Override

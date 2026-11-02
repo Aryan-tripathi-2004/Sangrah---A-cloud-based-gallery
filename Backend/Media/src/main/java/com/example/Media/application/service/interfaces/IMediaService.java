@@ -8,6 +8,7 @@ import com.example.Media.api.dto.response.StorageUsageResponse;
 import com.example.Media.shared.enums.MediaDomain;
 import org.springframework.data.domain.Page;
 import org.springframework.core.io.Resource;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.Instant;
@@ -21,6 +22,8 @@ public interface IMediaService {
     MediaResponse uploadMedia(String userId, MediaDomain domain, String entityRefId, MultipartFile file);
 
     Resource getMediaFile(String mediaId);
+
+    ResponseEntity<?> getMediaResponse(String mediaId, String callerUserId, String role, String acceptHeader);
 
     MediaResponse getMediaById(String mediaId);
 

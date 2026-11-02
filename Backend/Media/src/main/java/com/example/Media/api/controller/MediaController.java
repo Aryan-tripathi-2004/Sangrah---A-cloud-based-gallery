@@ -11,8 +11,6 @@ import com.example.Media.shared.enums.MediaDomain;
 import io.swagger.v3.oas.annotations.Operation;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.core.io.Resource;
-import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -20,7 +18,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 
@@ -55,22 +52,7 @@ public class MediaController {
             @CurrentUserId(required = false) String callerUserId,
             @RequestHeader(value = "X-User-Role", defaultValue = "USER") String role,
             @RequestHeader(value = HttpHeaders.ACCEPT, defaultValue = MediaType.APPLICATION_JSON_VALUE) String acceptHeader) {
-
-        MediaResponse details = mediaService.getAuthorizedMediaDetails(mediaId, callerUserId, role);
-
-        if (!mediaService.shouldStreamBinary(acceptHeader)) {
-            return ResponseEntity.ok(details);
-        }
-
-        Resource resource = mediaService.getMediaFile(mediaId);
-        ContentDisposition contentDisposition = ContentDisposition.inline()
-                .filename(details.originalFileName(), StandardCharsets.UTF_8)
-                .build();
-
-        return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition.toString())
-                .contentType(MediaType.parseMediaType(details.mimeType()))
-                .body(resource);
+        return mediaService.getMediaResponse(mediaId, callerUserId, role, acceptHeader);
     }
 
     @DeleteMapping("/{mediaId}")

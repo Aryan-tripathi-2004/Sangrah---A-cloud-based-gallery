@@ -15,6 +15,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -46,6 +49,16 @@ public class BillingServiceImpl implements IBillingService {
     @Override
     public byte[] getInvoicePDF(String userId, String invoiceId) {
         return invoiceLifecycleService.getInvoicePDF(userId, invoiceId);
+    }
+
+    @Override
+    public ResponseEntity<byte[]> getInvoicePDFResponse(String userId, String invoiceId) {
+        byte[] pdfContent = getInvoicePDF(userId, invoiceId);
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_PDF);
+        headers.setContentLength(pdfContent.length);
+        headers.setContentDispositionFormData("attachment", "invoice_" + invoiceId + ".pdf");
+        return ResponseEntity.ok().headers(headers).body(pdfContent);
     }
 
     @Override

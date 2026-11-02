@@ -15,9 +15,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -70,15 +68,7 @@ public class BillingController {
             @CurrentUserId String userId
     ) {
         log.info("📥 Downloading PDF for invoice {} for user: {}", invoiceId, userId);
-
-        byte[] pdfContent = billingService.getInvoicePDF(userId, invoiceId);
-
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_PDF);
-        headers.setContentLength(pdfContent.length);
-        headers.setContentDispositionFormData("attachment", "invoice_" + invoiceId + ".pdf");
-
-        return ResponseEntity.ok().headers(headers).body(pdfContent);
+        return billingService.getInvoicePDFResponse(userId, invoiceId);
     }
 
     /**

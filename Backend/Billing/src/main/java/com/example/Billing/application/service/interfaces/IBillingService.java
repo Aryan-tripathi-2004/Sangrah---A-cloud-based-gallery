@@ -9,6 +9,7 @@ import com.example.Billing.api.dto.response.StripeConfigResponse;
 import com.example.Billing.api.dto.response.UserBillingSettingsDTO;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.ResponseEntity;
 
 import java.time.Instant;
 import java.util.List;
@@ -16,6 +17,7 @@ import java.util.List;
 public interface IBillingService {
     InvoiceDTO getInvoice(String userId, String invoiceId);
     byte[] getInvoicePDF(String userId, String invoiceId);
+    ResponseEntity<byte[]> getInvoicePDFResponse(String userId, String invoiceId);
     Page<InvoiceDTO> getInvoiceHistory(String userId, Pageable pageable);
     List<PaymentDTO> getPaymentHistory(String userId, int page, int size);
     InvoiceDTO createInvoice(String userId, String invoiceId, Instant startDate, Instant endDate);
