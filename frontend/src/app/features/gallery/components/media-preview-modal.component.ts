@@ -1,6 +1,7 @@
-import { Component, Input, Output, EventEmitter, inject, ChangeDetectionStrategy } from '@angular/core';
+import { Component, inject, ChangeDetectionStrategy, HostListener, input, output, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { MediaItem, SangrahApiService } from '../../../core/api/sangrah-api.service';
+import { GalleryApiService } from '../../../core/api/services/gallery-api.service';
+import { MediaItem } from '../../../core/api/models/api.models';
 
 @Component({
   selector: 'app-media-preview-modal',
@@ -21,24 +22,38 @@ import { MediaItem, SangrahApiService } from '../../../core/api/sangrah-api.serv
   ],
 })
 export class MediaPreviewModalComponent {
-  private api = inject(SangrahApiService);
+  private readonly api = inject(GalleryApiService);
 
-  @Input() isOpen = false;
-  @Input() media: MediaItem | null = null;
-  @Input() fileUrlOverride?: string | null;
-  @Output() closeModal = new EventEmitter<void>();
+  readonly isOpenInput = input<boolean>(false, { alias: 'isOpen' });
+  readonly mediaInput = input<MediaItem | null>(null, { alias: 'media' });
+  readonly fileUrlOverride = input<string | null | undefined>(null);
+  readonly closeModal = output<void>();
 
-  fileUrl: string = '';
+  readonly fileUrlComputed = computed(() => {
+    if (!this.isOpenInput()) return '';
+    const override = this.fileUrlOverride();
+    if (override && override.length > 0) return override;
+    const m = this.mediaInput();
+    return m ? this.api.getGalleryMediaFile(m.id) : '';
+  });
 
-  ngOnChanges(): void {
-    if (this.isOpen) {
-      if (this.fileUrlOverride && this.fileUrlOverride.length > 0) {
-        this.fileUrl = this.fileUrlOverride;
-      } else if (this.media) {
-        this.fileUrl = this.api.getGalleryMediaFile(this.media.id);
-      } else {
-        this.fileUrl = '';
-      }
+  get isOpen(): boolean {
+    return this.isOpenInput();
+  }
+
+  get media(): MediaItem | null {
+    return this.mediaInput();
+  }
+
+  get fileUrl(): string {
+    return this.fileUrlComputed();
+  }
+
+  @HostListener('document:keydown.escape', ['$event'])
+  onEscapeKey(event: KeyboardEvent): void {
+    if (this.isOpenInput()) {
+      event.preventDefault();
+      this.close();
     }
   }
 
@@ -47,15 +62,15 @@ export class MediaPreviewModalComponent {
   }
 
   onMediaError(): void {
-    console.error('Failed to load media:', this.media?.id);
+    console.error('Failed to load media:', this.mediaInput()?.id);
   }
 
   downloadMedia(): void {
-    if (!this.media) return;
-
+    const m = this.mediaInput();
+    if (!m) return;
     const link = document.createElement('a');
-    link.href = this.fileUrl;
-    link.download = this.media.originalFileName;
+    link.href = this.fileUrlComputed();
+    link.download = m.originalFileName;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

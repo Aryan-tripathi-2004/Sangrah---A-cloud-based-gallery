@@ -1,6 +1,7 @@
 package com.example.Auth.config.resolver;
 
 import com.example.Auth.api.annotation.CurrentUserId;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.MethodParameter;
 import org.springframework.stereotype.Component;
 import org.springframework.web.bind.MissingRequestHeaderException;
@@ -11,6 +12,9 @@ import org.springframework.web.method.support.ModelAndViewContainer;
 
 @Component
 public class CurrentUserIdArgumentResolver implements HandlerMethodArgumentResolver {
+
+    @Value("${security.header.user-id}")
+    private String userIdHeader;
 
     @Override
     public boolean supportsParameter(MethodParameter parameter) {
@@ -23,9 +27,9 @@ public class CurrentUserIdArgumentResolver implements HandlerMethodArgumentResol
                                   ModelAndViewContainer mavContainer,
                                   NativeWebRequest webRequest,
                                   WebDataBinderFactory binderFactory) throws Exception {
-        String userId = webRequest.getHeader("X-User-Id");
+        String userId = webRequest.getHeader(userIdHeader);
         if (userId == null || userId.isBlank()) {
-            throw new MissingRequestHeaderException("X-User-Id", parameter);
+            throw new MissingRequestHeaderException(userIdHeader, parameter);
         }
         return userId;
     }

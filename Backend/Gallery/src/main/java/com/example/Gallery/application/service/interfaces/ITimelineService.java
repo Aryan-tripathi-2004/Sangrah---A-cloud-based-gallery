@@ -1,11 +1,11 @@
 package com.example.Gallery.application.service.interfaces;
 
-import com.example.Gallery.api.dto.response.TimelineGroupResponse;
-
-import java.util.List;
+import com.example.Gallery.api.dto.response.TimelineResponse;
+import com.example.Gallery.shared.enums.TimelineGroupType;
 
 public interface ITimelineService {
-    List<TimelineGroupResponse> getDailyTimeline(String userId);
-    List<TimelineGroupResponse> getMonthlyTimeline(String userId);
-    List<TimelineGroupResponse> getYearlyTimeline(String userId);
+    TimelineResponse getTimeline(String userId, TimelineGroupType groupBy);
+    TimelineResponse getDailyTimeline(String userId);
+    TimelineResponse getMonthlyTimeline(String userId);
+    TimelineResponse getYearlyTimeline(String userId);
 }

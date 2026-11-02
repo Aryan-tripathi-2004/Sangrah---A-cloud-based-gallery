@@ -29,9 +29,9 @@ public interface EventAccessRequestRepository extends MongoRepository<EventAcces
     List<EventAccessRequestDocument> findByEventIdAndStatus(String eventId, ApprovalStatus status);
 
     /**
-        * Find requests for an event by status (ordered by timestamp)
+     * Find requests for an event by status (ordered by timestamp)
      */
-        List<EventAccessRequestDocument> findByEventIdAndStatusInOrderByRequestedAtDesc(String eventId, List<ApprovalStatus> status);
+    List<EventAccessRequestDocument> findByEventIdAndStatusInOrderByRequestedAtDesc(String eventId, List<ApprovalStatus> status);
 
     /**
      * Check for duplicate pending request from same requester
@@ -40,4 +40,14 @@ public interface EventAccessRequestRepository extends MongoRepository<EventAcces
             String eventId,
             String requesterUserId,
             ApprovalStatus status);
+
+    /**
+     * Find access requests by requester user ID
+     */
+    List<EventAccessRequestDocument> findByRequesterUserId(String requesterUserId);
+
+    /**
+     * Find access requests across multiple events by status
+     */
+    List<EventAccessRequestDocument> findByEventIdInAndStatus(List<String> eventIds, ApprovalStatus status);
 }

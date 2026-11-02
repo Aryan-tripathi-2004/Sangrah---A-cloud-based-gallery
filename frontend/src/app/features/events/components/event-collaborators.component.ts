@@ -1,9 +1,9 @@
-﻿import { Component, Input, OnInit, ChangeDetectorRef, inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, input, OnInit, inject, ChangeDetectionStrategy, DestroyRef, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
-import { SangrahApiService } from '../../../core/api/sangrah-api.service';
+import { EventApiService } from '../../../core/api/services/event-api.service';
 
-interface EventCollaborator {
+export interface EventCollaborator {
   userId: string;
   email?: string;
   displayName?: string;
@@ -21,24 +21,31 @@ interface EventCollaborator {
 @Component({
   selector: 'app-event-collaborators',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [FormsModule],
   templateUrl: './event-collaborators.component.html',
   styles: []
 })
 export class EventCollaboratorsComponent implements OnInit {
-  @Input() eventId!: string;
+  readonly eventIdInput = input.required<string>({ alias: 'eventId' });
 
-  private api = inject(SangrahApiService);
-  private cdr = inject(ChangeDetectorRef);
+  get eventId(): string {
+    return this.eventIdInput();
+  }
 
-  currentTab: 'collaborators' | 'add' = 'collaborators';
-  collaborators: EventCollaborator[] = [];
-  
-  searchQuery = '';
-  stagedUserEmail = '';
-  isAdding = false;
+  private readonly api = inject(EventApiService);
+  private readonly destroyRef = inject(DestroyRef);
 
-  newCollaboratorEmail = '';
+  // Modern Signal State
+  readonly currentTab = signal<'collaborators' | 'add'>('collaborators');
+  readonly collaborators = signal<EventCollaborator[]>([]);
+  readonly isAdding = signal<boolean>(false);
+
+  // Form Signals
+  readonly searchQuery = signal<string>('');
+  readonly stagedUserEmail = signal<string>('');
+  readonly newCollaboratorEmail = signal<string>('');
+
   newCollaboratorPermissions = {
     canUploadMedia: true,
     canReviewMedia: false,
@@ -48,35 +55,35 @@ export class EventCollaboratorsComponent implements OnInit {
     canEditEventDetails: false
   };
 
-  ngOnInit() {
+  ngOnInit(): void {
     this.loadCollaborators();
   }
 
-  loadCollaborators() {
-    this.api.getEventCollaborators(this.eventId).subscribe({
-      next: (data: any) => {
+  loadCollaborators(): void {
+    this.api.getEventCollaborators(this.eventId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (data: unknown) => {
+        const obj = data as { collaborators?: EventCollaborator[] } | null;
         if (Array.isArray(data)) {
-          this.collaborators = data.map(c => ({...c, showPermissions: false}));
-        } else if (data && data.collaborators) {
-          this.collaborators = data.collaborators.map((c: any) => ({...c, showPermissions: false}));
+          this.collaborators.set((data as EventCollaborator[]).map(c => ({ ...c, showPermissions: false })));
+        } else if (obj && Array.isArray(obj.collaborators)) {
+          this.collaborators.set(obj.collaborators.map((c: EventCollaborator) => ({ ...c, showPermissions: false })));
         } else {
-          this.collaborators = [];
+          this.collaborators.set([]);
         }
-        this.cdr.detectChanges();
       },
       error: (err) => {
         console.error('❌ Failed to load collaborators:', err);
-        this.collaborators = [];
+        this.collaborators.set([]);
       }
     });
   }
 
-  startAddingUser() {
-    if (!this.searchQuery || !this.searchQuery.includes('@')) return;
-    this.stagedUserEmail = this.searchQuery;
-    this.newCollaboratorEmail = this.searchQuery;
-    
-    // Default: Can Upload Media checked
+  startAddingUser(): void {
+    const query = this.searchQuery();
+    if (!query || !query.includes('@')) return;
+    this.stagedUserEmail.set(query);
+    this.newCollaboratorEmail.set(query);
+
     this.newCollaboratorPermissions = {
       canUploadMedia: true,
       canReviewMedia: false,
@@ -87,18 +94,25 @@ export class EventCollaboratorsComponent implements OnInit {
     };
   }
 
-  resetForm() {
-    this.searchQuery = '';
-    this.stagedUserEmail = '';
-    this.newCollaboratorEmail = '';
+  resetForm(): void {
+    this.searchQuery.set('');
+    this.stagedUserEmail.set('');
+    this.newCollaboratorEmail.set('');
   }
 
-  addCollaborator() {
-    if (!this.newCollaboratorEmail) return;
+  togglePermissions(collab: EventCollaborator): void {
+    this.collaborators.update(list =>
+      list.map(c => c.userId === collab.userId ? { ...c, showPermissions: !c.showPermissions } : c)
+    );
+  }
 
-    this.isAdding = true;
+  addCollaborator(): void {
+    const email = this.newCollaboratorEmail();
+    if (!email) return;
+
+    this.isAdding.set(true);
     const payload = {
-      userEmail: this.newCollaboratorEmail,
+      userEmail: email,
       permissions: {
         canUploadMedia: this.newCollaboratorPermissions.canUploadMedia,
         canReviewMedia: this.newCollaboratorPermissions.canReviewMedia,
@@ -109,32 +123,22 @@ export class EventCollaboratorsComponent implements OnInit {
       }
     };
 
-    this.api.addEventCollaborator(this.eventId, payload).subscribe({
-      next: (response) => {
-        // Ensure UI moves to the collaborators tab first, then refresh list.
-        this.currentTab = 'collaborators';
-        this.isAdding = false;
+    this.api.addEventCollaborator(this.eventId, payload).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: () => {
+        this.isAdding.set(false);
         this.resetForm();
+        this.currentTab.set('collaborators');
         this.loadCollaborators();
-        this.cdr.detectChanges();
-
-        // Extra safety: ensure change detection runs in next tick so any
-        // asynchronous template updates settle and the Add form is hidden.
-        setTimeout(() => {
-          this.currentTab = 'collaborators';
-          this.cdr.detectChanges();
-        }, 0);
       },
       error: (err) => {
         console.error('❌ [Add Collaborator] Failed:', err);
         alert('Failed to add collaborator. Verify email matches an existing user.');
-        this.isAdding = false;
-        this.cdr.detectChanges();
+        this.isAdding.set(false);
       }
     });
   }
 
-  removeCollaborator(userId: string) {
+  removeCollaborator(userId: string): void {
     if (!userId || userId === 'null' || userId === '') {
       alert('Cannot remove this collaborator entry - corrupted data detected.');
       this.loadCollaborators();
@@ -142,7 +146,7 @@ export class EventCollaboratorsComponent implements OnInit {
     }
 
     if (confirm('Remove this collaborator?')) {
-      this.api.removeEventCollaborator(this.eventId, userId).subscribe({
+      this.api.removeEventCollaborator(this.eventId, userId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
         next: () => {
           this.loadCollaborators();
         },
@@ -153,7 +157,7 @@ export class EventCollaboratorsComponent implements OnInit {
     }
   }
 
-  updatePermissions(userId: string, collaborator: EventCollaborator) {
+  updatePermissions(userId: string, collaborator: EventCollaborator): void {
     if (!userId || userId === 'null' || userId === '') {
       this.loadCollaborators();
       return;
@@ -170,10 +174,7 @@ export class EventCollaboratorsComponent implements OnInit {
       }
     };
 
-    this.api.updateCollaboratorPermissions(this.eventId, userId, payload).subscribe({
-      next: () => {
-        this.cdr.detectChanges();
-      },
+    this.api.updateCollaboratorPermissions(this.eventId, userId, payload).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       error: (err) => {
         console.error('❌ Failed to update permissions:', err);
         this.loadCollaborators();

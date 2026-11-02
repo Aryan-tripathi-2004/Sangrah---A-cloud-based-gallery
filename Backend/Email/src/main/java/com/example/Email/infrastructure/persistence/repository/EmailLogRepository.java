@@ -38,5 +38,11 @@ public interface EmailLogRepository extends MongoRepository<EmailLogDocument, St
      */
     List<EmailLogDocument> findByStatusAndCreatedAtAfter(EmailStatus status, Instant createdAfter);
 
+    /**
+     * Find logs by status created before a given point in time.
+     * Used by reconciliation scheduler to identify zombie emails stuck in PENDING.
+     */
+    List<EmailLogDocument> findByStatusAndCreatedAtBefore(EmailStatus status, Instant cutoffTime);
+
     List<EmailLogDocument> findByToEmailAndEmailType(String toEmail, EmailType emailType);
 }

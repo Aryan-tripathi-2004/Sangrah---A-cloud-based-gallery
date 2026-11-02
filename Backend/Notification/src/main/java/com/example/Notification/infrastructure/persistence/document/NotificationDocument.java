@@ -2,14 +2,13 @@ package com.example.Notification.infrastructure.persistence.document;
 
 import lombok.*;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Version;
 import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
-import org.springframework.data.annotation.Version;
 import com.example.Notification.shared.enums.NotificationType;
 
 import java.time.Instant;
-import java.util.Map;
 
 @Getter
 @Setter
@@ -23,15 +22,15 @@ public class NotificationDocument {
     @Id
     private String id;
 
-    @Indexed
-    private String recipientUserId;
-
     @Version
     private Long version;
 
+    @Indexed
+    private String recipientUserId;
+
     private NotificationType type;
 
-    private Map<String, Object> payload;
+    private NotificationPayload payload;
 
     private boolean read;
 

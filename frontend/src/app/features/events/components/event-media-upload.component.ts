@@ -1,40 +1,57 @@
-import { Component, Input, Output, EventEmitter, inject } from '@angular/core';
+import { Component, input, output, inject, ChangeDetectionStrategy, signal, DestroyRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { from, of } from 'rxjs';
+import { concatMap, tap, catchError } from 'rxjs/operators';
 import { EventService } from '../event.service';
-import { MediaItem } from '../../../core/api/sangrah-api.service';
+import { EventMediaUploadResponse } from '../../../core/api/models/api.models';
 
 @Component({
   selector: 'app-event-media-upload',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CommonModule],
   templateUrl: './event-media-upload.component.html',
 })
 export class EventMediaUploadComponent {
-  @Input() eventId!: string;
-  @Input() isOwner: boolean = false;
-  @Input() isModerated: boolean = false;
-  @Output() uploadComplete = new EventEmitter<any[]>();
+  readonly eventIdInput = input.required<string>({ alias: 'eventId' });
+  readonly isOwnerInput = input<boolean>(false, { alias: 'isOwner' });
+  readonly isModeratedInput = input<boolean>(false, { alias: 'isModerated' });
+  readonly uploadComplete = output<EventMediaUploadResponse[]>();
 
-  private eventService = inject(EventService);
+  get eventId(): string {
+    return this.eventIdInput();
+  }
 
-  isDragging = false;
-  uploadProgress$ = this.eventService.uploadProgress$;
-  uploadedCount = 0;
+  get isOwner(): boolean {
+    return this.isOwnerInput();
+  }
+
+  get isModerated(): boolean {
+    return this.isModeratedInput();
+  }
+
+  private readonly eventService = inject(EventService);
+  private readonly destroyRef = inject(DestroyRef);
+
+  readonly isDragging = signal<boolean>(false);
+  readonly uploadProgress = this.eventService.uploadProgress;
+  readonly uploadedCount = signal<number>(0);
 
   onDragOver(event: DragEvent): void {
     event.preventDefault();
     event.stopPropagation();
-    this.isDragging = true;
+    this.isDragging.set(true);
   }
 
   onDragLeave(): void {
-    this.isDragging = false;
+    this.isDragging.set(false);
   }
 
   onDrop(event: DragEvent): void {
     event.preventDefault();
     event.stopPropagation();
-    this.isDragging = false;
+    this.isDragging.set(false);
 
     const files = event.dataTransfer?.files;
     if (files) {
@@ -42,36 +59,45 @@ export class EventMediaUploadComponent {
     }
   }
 
-  onFileSelected(event: Event): void {
+  onFileSelected(event: globalThis.Event): void {
     const input = event.target as HTMLInputElement;
     if (input.files) {
       this.handleFiles(Array.from(input.files));
     }
-    // Reset input so selecting the same file again works
     input.value = '';
   }
 
   private handleFiles(files: File[]): void {
     if (files.length === 0) return;
 
-    this.uploadedCount = 0;
+    this.uploadedCount.set(0);
+    const uploadedItems: EventMediaUploadResponse[] = [];
 
-    // Upload files sequentially
-    let completed = 0;
-    files.forEach((file) => {
-      this.eventService.uploadEventMedia(this.eventId, file).subscribe({
-        next: (item) => {
-          completed++;
-          this.uploadedCount++;
-          if (completed === files.length) {
-            this.uploadComplete.emit([item]);
-          }
-        },
-        error: (error) => {
-          console.error('Upload error:', error);
-          completed++;
-        },
-      });
+    from(files).pipe(
+      concatMap(file =>
+        this.eventService.uploadEventMedia(this.eventId, file).pipe(
+          tap((item) => {
+            if (item) {
+              uploadedItems.push(item);
+              this.uploadedCount.update(c => c + 1);
+              setTimeout(() => {
+                this.eventService.removeProgress(file.name);
+              }, 2000);
+            }
+          }),
+          catchError(error => {
+            console.error('Upload error for event file:', file.name, error);
+            return of(null);
+          })
+        )
+      ),
+      takeUntilDestroyed(this.destroyRef)
+    ).subscribe({
+      complete: () => {
+        if (uploadedItems.length > 0) {
+          this.uploadComplete.emit(uploadedItems);
+        }
+      }
     });
   }
 }

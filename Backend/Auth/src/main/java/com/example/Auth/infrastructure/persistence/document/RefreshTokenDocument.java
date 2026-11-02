@@ -29,8 +29,8 @@ public class RefreshTokenDocument {
 
     private Instant createdAt;
     private Instant revokedAt;  // null if not revoked
+    private String replacedByToken;  // Holds successor token ID during rotation for grace period
 
-    /** Optimistic locking field managed by Spring Data MongoDB. */
     @Version
     private Long version;
 

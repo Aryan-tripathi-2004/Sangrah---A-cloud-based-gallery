@@ -1,105 +1,46 @@
 import { HttpInterceptorFn, HttpErrorResponse } from '@angular/common/http';
 import { inject } from '@angular/core';
-import { Router } from '@angular/router';
-import { SangrahApiService } from '../api/sangrah-api.service';
-import { catchError, filter, switchMap, take, throwError, BehaviorSubject } from 'rxjs';
-
-// Track if we're already refreshing to prevent infinite loops
-let isRefreshing = false;
-const refreshTokenSubject: BehaviorSubject<any> = new BehaviorSubject<any>(null);
+import { AuthService } from '../auth/auth.service';
+import { NormalizedApiError } from '../errors/api-error.model';
+import { catchError, throwError } from 'rxjs';
+import { switchMap } from 'rxjs/operators';
 
 export const errorInterceptor: HttpInterceptorFn = (req, next) => {
-  const router = inject(Router);
-  const api = inject(SangrahApiService);
+  const authService = inject(AuthService);
 
   return next(req).pipe(
     catchError((error: HttpErrorResponse) => {
-      // Handle 401 Unauthorized - attempt to refresh token
+      // Handle 401 Unauthorized
       if (error.status === 401) {
-        
-        // CRITICAL: If the 401 is from the refresh endpoint itself, we are fully logged out.
-        // Don't try to intercept it again, just fail immediately.
-        if (req.url.includes('/auth/token/refresh')) {
-          console.error('❌ Refresh token 401 - Session dead');
-          isRefreshing = false;
-          refreshTokenSubject.next('REFRESH_FAILED');
-          if (typeof window !== 'undefined') {
-            localStorage.removeItem('token');
-            localStorage.removeItem('refreshToken');
-          }
-          router.navigate(['/login']);
-          return throwError(() => error);
+        // If 401 occurred on the login or refresh endpoint itself, session is dead -> log out immediately
+        if (req.url.includes('/auth/token/refresh') || req.url.includes('/auth/login')) {
+          console.error('❌ [errorInterceptor] 401 received on auth endpoint - session terminated');
+          authService.logout();
+          return throwError(() => new NormalizedApiError(error));
         }
 
-        if (!isRefreshing) {
-          isRefreshing = true;
-          refreshTokenSubject.next(null);
-          console.log('🔄 Token expired (401), attempting to refresh...');
-          console.log('📋 Refresh token in storage:', !!localStorage.getItem('refreshToken'));
-
-          return api.refreshAccessToken().pipe(
-            switchMap((response) => {
-              isRefreshing = false;
-              console.log('✅ Token refreshed, retrying original request');
-              refreshTokenSubject.next(response.token);
-
-              // Get the new token from localStorage and update the request
-              const newToken = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-
-              if (newToken) {
-                // Clone request and update Authorization header with new token
-                const retryReq = req.clone({
-                  setHeaders: {
-                    Authorization: `Bearer ${newToken}`
-                  }
-                });
-                console.log('🔄 Retrying request with new token');
-                return next(retryReq);
-              } else {
-                console.error('❌ No token after refresh');
-                return throwError(() => new Error('Token refresh failed'));
+        // Delegate to AuthService's centralized, deduplicated refresh pipeline
+        return authService.refreshToken().pipe(
+          switchMap((newToken: string) => {
+            // Retry the original request with the freshly acquired access token
+            const retryReq = req.clone({
+              setHeaders: {
+                Authorization: `Bearer ${newToken}`
               }
-            }),
-            catchError((err) => {
-              isRefreshing = false;
-              console.error('❌ Token refresh failed:', err);
-              // Refresh failed - clear tokens and redirect to login
-              if (typeof window !== 'undefined') {
-                localStorage.removeItem('token');
-                localStorage.removeItem('refreshToken');
-              }
-              // Unblock queued requests by emitting a failure indicator
-              refreshTokenSubject.next('REFRESH_FAILED');
-              
-              router.navigate(['/login']);
-              return throwError(() => new Error('Session expired. Please log in again.'));
-            })
-          );
-        } else {
-          // If already refreshing, wait for the subject to emit a new token
-          return refreshTokenSubject.pipe(
-            filter(token => token != null),
-            take(1),
-            switchMap(token => {
-              if (token === 'REFRESH_FAILED') {
-                return throwError(() => new Error('Session expired. Please log in again.'));
-              }
-              return next(req.clone({
-                setHeaders: {
-                  Authorization: `Bearer ${token}`
-                }
-              }));
-            }),
-            catchError(err => {
-              // If the subject errors out (e.g. refresh failed), propagate that error
-              return throwError(() => err);
-            })
-          );
-        }
+            });
+            return next(retryReq);
+          }),
+          catchError((refreshErr) => {
+            console.error('❌ [errorInterceptor] Token refresh failed:', refreshErr);
+            authService.logout();
+            return throwError(() => new NormalizedApiError(new Error('Session expired. Please log in again.')));
+          })
+        );
       }
 
-      // For other errors, just pass them through
-      return throwError(() => error);
+      // Propagate all standard backend custom exceptions normalized into RFC-9457 Problem Details
+      const normalizedError = new NormalizedApiError(error);
+      return throwError(() => normalizedError);
     })
   );
 };

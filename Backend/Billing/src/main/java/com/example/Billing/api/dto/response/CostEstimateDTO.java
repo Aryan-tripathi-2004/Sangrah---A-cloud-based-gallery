@@ -1,5 +1,7 @@
 package com.example.Billing.api.dto.response;
 
+import java.math.BigDecimal;
+
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -11,16 +13,16 @@ import java.time.Instant;
 public record CostEstimateDTO(
     CurrentMonthDataDTO currentMonthData,
     StorageBreakdownDTO storageBreakdown,
-    Double costPerDay,
-    Double ratePerGBDay
+    BigDecimal costPerDay,
+    BigDecimal ratePerGBDay
 ) {
     @Builder
     public record CurrentMonthDataDTO(
         Instant startDate,
         Integer daysElapsed,
-        Double estimatedGBDays,
-        Double estimatedCost,
-        Double projectedMonthlyTotal
+        BigDecimal estimatedGBDays,
+        BigDecimal estimatedCost,
+        BigDecimal projectedMonthlyTotal
     ) {}
 
     @Builder
@@ -30,8 +32,8 @@ public record CostEstimateDTO(
     ) {
         @Builder
         public record StorageTypeDTO(
-            Double gbDays,
-            Double cost
+            BigDecimal gbDays,
+            BigDecimal cost
         ) {}
     }
 }

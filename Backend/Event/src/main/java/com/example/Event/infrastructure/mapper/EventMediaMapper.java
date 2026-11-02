@@ -9,150 +9,104 @@ import com.example.Event.api.dto.response.EventMediaModerationResponse;
 import com.example.Event.api.dto.response.EventMediaResponse;
 import com.example.Event.api.dto.response.EventMediaUploadResponse;
 import com.example.Event.api.dto.response.MessageResponse;
-import com.example.Event.infrastructure.client.MediaServiceClient;
-import com.example.Event.infrastructure.client.UserServiceClient;
 import com.example.Event.infrastructure.client.dto.MediaServiceResponse;
 import com.example.Event.infrastructure.persistence.document.EventMediaApprovalDocument;
 import com.example.Event.infrastructure.persistence.document.EventMediaDocument;
 import com.example.Event.shared.enums.ApprovalStatus;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.mapstruct.InjectionStrategy;
 import org.mapstruct.Mapper;
+import org.mapstruct.Mapping;
 import org.mapstruct.MappingConstants;
+import org.mapstruct.ReportingPolicy;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.MediaType;
 
 import java.time.Instant;
 import java.util.List;
 
-@Slf4j
-@Mapper(componentModel = MappingConstants.ComponentModel.SPRING,
-        injectionStrategy = InjectionStrategy.CONSTRUCTOR)
-public abstract class EventMediaMapper {
+@Mapper(
+    componentModel = MappingConstants.ComponentModel.SPRING,
+    injectionStrategy = InjectionStrategy.CONSTRUCTOR,
+    unmappedTargetPolicy = ReportingPolicy.IGNORE
+)
+public interface EventMediaMapper {
 
-    protected UserServiceClient userServiceClient;
-    protected MediaServiceClient mediaServiceClient;
+    @Mapping(target = "id", source = "document.id")
+    @Mapping(target = "mediaId", source = "document.id")
+    @Mapping(target = "uploaderId", source = "document.uploaderUserId")
+    @Mapping(target = "mediaType", source = "document.mimeType")
+    @Mapping(target = "fileName", source = "document.originalFileName")
+    @Mapping(target = "fileSize", source = "document.sizeBytes")
+    @Mapping(target = "storagePath", source = "document.storageKey")
+    @Mapping(target = "createdAt", source = "document.uploadedAt")
+    EventMediaResponse toResponse(EventMediaDocument document);
 
-    protected EventMediaMapper() {
-    }
+    @Mapping(target = "eventId", source = "request.eventId")
+    @Mapping(target = "originalFileName", source = "request.fileName")
+    @Mapping(target = "mimeType", source = "request.mediaType")
+    @Mapping(target = "sizeBytes", expression = "java(request.fileSize() == null ? 0L : request.fileSize())")
+    @Mapping(target = "storageKey", source = "request.storagePath")
+    EventMediaDocument toDocument(EventMediaRequest request);
 
-    @Autowired
-    public EventMediaMapper(UserServiceClient userServiceClient, MediaServiceClient mediaServiceClient) {
-        this.userServiceClient = userServiceClient;
-        this.mediaServiceClient = mediaServiceClient;
-    }
-
-    public EventMediaResponse toResponse(EventMediaDocument document) {
-        if (document == null) {
-            return null;
-        }
-        return new EventMediaResponse(
-                document.getId(),
-                document.getId(),
-                document.getEventId(),
-                document.getUploaderUserId(),
-                document.getMimeType(),
-                document.getOriginalFileName(),
-                document.getSizeBytes(),
-                document.getStorageKey(),
-                toIso(document.getUploadedAt()),
-                document.getStatus());
-    }
-
-    public EventMediaDocument toDocument(EventMediaRequest request) {
-        if (request == null) {
-            return null;
-        }
-        return EventMediaDocument.builder()
-                .eventId(request.eventId())
-                .originalFileName(request.fileName())
-                .mimeType(request.mediaType())
-                .sizeBytes(request.fileSize() == null ? 0L : request.fileSize())
-                .storageKey(request.storagePath())
-                .build();
-    }
-
-    public EventMediaFileResponse toFileResponse(byte[] fileBytes, MediaType contentType) {
+    default EventMediaFileResponse toFileResponse(byte[] fileBytes, MediaType contentType) {
         return new EventMediaFileResponse(new ByteArrayResource(fileBytes), contentType);
     }
 
-    public EventMediaUploadResponse toUploadResponse(String mediaId, ApprovalStatus moderationStatus, String message) {
-        return new EventMediaUploadResponse(mediaId, moderationStatus, message);
-    }
+    EventMediaUploadResponse toUploadResponse(String mediaId, ApprovalStatus moderationStatus, String message);
 
-    public EventMediaCollectionResponse toCollectionResponse(
+    EventMediaCollectionResponse toCollectionResponse(
             String eventId,
             List<EventMediaItemResponse> media,
-            String message) {
-        return new EventMediaCollectionResponse(eventId, media, message);
+            String message);
+
+    default EventMediaDetailResponse toDetailResponse(String eventId, String mediaId, ApprovalStatus moderationStatus) {
+        return toDetailResponse(mediaId, eventId, null, moderationStatus);
     }
 
-    public EventMediaDetailResponse toDetailResponse(String eventId, String mediaId, ApprovalStatus moderationStatus) {
-        MediaServiceResponse details = mediaServiceClient.getMediaDetails(mediaId);
-        return new EventMediaDetailResponse(mediaId, eventId, details, moderationStatus);
-    }
+    @Mapping(target = "mediaId", source = "mediaId")
+    @Mapping(target = "eventId", source = "eventId")
+    @Mapping(target = "details", source = "details")
+    @Mapping(target = "moderationStatus", source = "moderationStatus")
+    EventMediaDetailResponse toDetailResponse(
+            String mediaId,
+            String eventId,
+            MediaServiceResponse details,
+            ApprovalStatus moderationStatus);
 
-    public EventMediaDetailResponse toDetailResponse(String mediaId, String eventId, MediaServiceResponse details, ApprovalStatus moderationStatus) {
-        return new EventMediaDetailResponse(mediaId, eventId, details, moderationStatus);
-    }
-
-    public EventMediaModerationResponse toModerationResponse(
+    EventMediaModerationResponse toModerationResponse(
             ApprovalStatus status,
             String reason,
-            String message) {
-        return new EventMediaModerationResponse(status, reason, message);
+            String message);
+
+    MessageResponse toMessageResponse(String message);
+
+    @Mapping(target = "id", source = "approval.mediaId")
+    @Mapping(target = "mediaId", source = "approval.mediaId")
+    @Mapping(target = "status", source = "approval.status")
+    @Mapping(target = "uploaderId", source = "approval.uploaderUserId")
+    @Mapping(target = "uploaderName", ignore = true)
+    @Mapping(target = "uploadedAt", source = "approval.createdAt")
+    @Mapping(target = "fileName", ignore = true)
+    @Mapping(target = "mimeType", ignore = true)
+    @Mapping(target = "reason", source = "approval.rejectionReason")
+    EventMediaItemResponse toTimelineItem(EventMediaApprovalDocument approval);
+
+    default EventMediaItemResponse toDetailedItem(EventMediaApprovalDocument approval) {
+        return toDetailedItem(approval, approval != null ? approval.getUploaderUserId() : null, null);
     }
 
-    public MessageResponse toMessageResponse(String message) {
-        return new MessageResponse(message);
-    }
+    @Mapping(target = "id", source = "approval.mediaId")
+    @Mapping(target = "mediaId", source = "approval.mediaId")
+    @Mapping(target = "status", source = "approval.status")
+    @Mapping(target = "uploaderId", source = "approval.uploaderUserId")
+    @Mapping(target = "uploaderName", source = "uploaderName")
+    @Mapping(target = "uploadedAt", source = "approval.createdAt")
+    @Mapping(target = "fileName", expression = "java(mediaDetails != null ? mediaDetails.resolvedTitle() : null)")
+    @Mapping(target = "mimeType", source = "mediaDetails.mimeType")
+    @Mapping(target = "reason", source = "approval.rejectionReason")
+    EventMediaItemResponse toDetailedItem(EventMediaApprovalDocument approval, String uploaderName, MediaServiceResponse mediaDetails);
 
-    public EventMediaItemResponse toTimelineItem(EventMediaApprovalDocument approval) {
-        if (approval == null) {
-            return null;
-        }
-        return new EventMediaItemResponse(
-                approval.getMediaId(),
-                approval.getMediaId(),
-                approval.getStatus(),
-                approval.getUploaderUserId(),
-                null,
-                toIso(approval.getCreatedAt()),
-                null,
-                null);
-    }
-
-    public EventMediaItemResponse toDetailedItem(EventMediaApprovalDocument approval) {
-        if (approval == null) {
-            return null;
-        }
-        String uploaderName = userServiceClient.getUserDisplayName(approval.getUploaderUserId());
-        MediaServiceResponse mediaDetails = null;
-        try {
-            mediaDetails = mediaServiceClient.getMediaDetails(approval.getMediaId());
-        } catch (Exception e) {
-            log.warn("Could not fetch media details for {}: {}", approval.getMediaId(), e.getMessage());
-        }
-        return toDetailedItem(approval, uploaderName, mediaDetails);
-    }
-
-    public EventMediaItemResponse toDetailedItem(EventMediaApprovalDocument approval, String uploaderName, MediaServiceResponse mediaDetails) {
-        if (approval == null) {
-            return null;
-        }
-        return new EventMediaItemResponse(
-                approval.getMediaId(),
-                approval.getMediaId(),
-                approval.getStatus(),
-                approval.getUploaderUserId(),
-                uploaderName,
-                toIso(approval.getCreatedAt()),
-                mediaDetails != null ? mediaDetails.originalFileName() : null,
-                mediaDetails != null ? mediaDetails.mimeType() : null);
-    }
-
-    public String toIso(Instant instant) {
+    default String toIso(Instant instant) {
         return instant == null ? null : instant.toString();
     }
 }

@@ -1,6 +1,8 @@
 package com.example.Gallery.infrastructure.persistence.repository;
 
 import com.example.Gallery.infrastructure.persistence.document.StorageUsageLedgerDocument;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.data.mongodb.repository.Query;
 import org.springframework.stereotype.Repository;
@@ -42,6 +44,11 @@ public interface StorageUsageLedgerRepository extends MongoRepository<StorageUsa
      * Includes both active and deleted files
      */
     List<StorageUsageLedgerDocument> findByStartAtBetween(Instant startDate, Instant endDate);
+
+    /**
+     * Paginated find entries within a date range (for unbounded data safe billing processing)
+     */
+    Page<StorageUsageLedgerDocument> findByStartAtBetween(Instant startDate, Instant endDate, Pageable pageable);
 
     /**
      * Find entries for a user within a date range

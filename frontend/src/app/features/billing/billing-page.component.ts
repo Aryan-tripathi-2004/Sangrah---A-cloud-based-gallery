@@ -1,5 +1,6 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, ChangeDetectionStrategy, inject, signal, DestroyRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { LayoutComponent } from '../../shared/layout/layout.component';
 import { BillingService, InvoiceDTO } from './billing.service';
 import { BillingSummaryComponent } from './components/billing-summary/billing-summary.component';
@@ -14,6 +15,7 @@ type Tab = 'dashboard' | 'invoices' | 'payments' | 'settings';
 @Component({
   selector: 'app-billing-page',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     CommonModule,
     LayoutComponent,
@@ -27,76 +29,76 @@ type Tab = 'dashboard' | 'invoices' | 'payments' | 'settings';
   templateUrl: './billing-page.component.html'
 })
 export class BillingPageComponent implements OnInit {
-  activeTab: Tab = 'dashboard';
+  private readonly billingService = inject(BillingService);
+  private readonly destroyRef = inject(DestroyRef);
 
-  showInvoiceModal = false;
-  selectedInvoice: InvoiceDTO | null = null;
+  readonly activeTab = signal<Tab>('dashboard');
+  readonly showInvoiceModal = signal<boolean>(false);
+  readonly selectedInvoice = signal<InvoiceDTO | null>(null);
+  readonly showStripeModal = signal<boolean>(false);
+  readonly stripeInvoiceId = signal<string | null>(null);
 
-  showStripeModal = false;
-  stripeInvoiceId: string | null = null;
-
-  tabs = [
+  readonly tabs = [
     { id: 'dashboard', label: '📊 Dashboard' },
     { id: 'invoices', label: '📄 Invoices' },
     { id: 'payments', label: '💳 Payments' },
     { id: 'settings', label: '⚙️ Settings' }
   ] as const;
 
-  loading$;
-  error$;
-
-  constructor(private billingService: BillingService) {
-    this.loading$ = this.billingService.loading$;
-    this.error$ = this.billingService.error$;
-  }
+  readonly loading = this.billingService.loading;
+  readonly error = this.billingService.error;
 
   ngOnInit(): void {
-    // Load initial data
-    this.billingService.loadCostEstimate().subscribe();
-    this.billingService.loadInvoices().subscribe();
+    // Load initial data with destroyRef lifecycle safety
+    this.billingService.loadCostEstimate()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe();
+
+    this.billingService.loadInvoices()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe();
   }
 
   switchTab(tabId: Tab): void {
-    this.activeTab = tabId;
-    // Load specific data when switching tabs
+    this.activeTab.set(tabId);
     if (tabId === 'payments') {
-      this.billingService.loadPaymentHistory().subscribe();
+      this.billingService.loadPaymentHistory()
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe();
     }
   }
 
   openInvoiceDetail(invoice: InvoiceDTO): void {
-    this.selectedInvoice = invoice;
-    this.showInvoiceModal = true;
+    this.selectedInvoice.set(invoice);
+    this.showInvoiceModal.set(true);
   }
 
   closeInvoiceModal(): void {
-    this.showInvoiceModal = false;
-    this.selectedInvoice = null;
+    this.showInvoiceModal.set(false);
+    this.selectedInvoice.set(null);
   }
 
   onPayInvoice(invoiceId: string): void {
-    // Show Stripe payment modal
-    this.stripeInvoiceId = invoiceId;
-    this.showStripeModal = true;
+    this.stripeInvoiceId.set(invoiceId);
+    this.showStripeModal.set(true);
   }
 
   onStripePaymentSuccess(): void {
-    // Close modals and reload invoices
-    this.showStripeModal = false;
-    this.showInvoiceModal = false;
-    this.stripeInvoiceId = null;
-    this.selectedInvoice = null;
+    this.showStripeModal.set(false);
+    this.showInvoiceModal.set(false);
+    this.stripeInvoiceId.set(null);
+    this.selectedInvoice.set(null);
 
-    // Reload invoice list to reflect updated payment status
-    this.billingService.loadInvoices().subscribe();
+    this.billingService.loadInvoices()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe();
 
-    // Show success message (optional)
     console.log('✅ Payment processed successfully');
   }
 
   onStripeModalClose(): void {
-    this.showStripeModal = false;
-    this.stripeInvoiceId = null;
+    this.showStripeModal.set(false);
+    this.stripeInvoiceId.set(null);
   }
 
   dismissError(): void {

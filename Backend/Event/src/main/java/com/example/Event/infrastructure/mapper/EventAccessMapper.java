@@ -7,149 +7,109 @@ import com.example.Event.api.dto.response.AccessRequestResponse;
 import com.example.Event.api.dto.response.AccessRequestsResponse;
 import com.example.Event.api.dto.response.AccessRevocationResponse;
 import com.example.Event.api.dto.response.AccessStatusResponse;
-import com.example.Event.infrastructure.client.UserServiceClient;
 import com.example.Event.infrastructure.persistence.document.EventAccessRequestDocument;
 import com.example.Event.shared.enums.AccessStatus;
 import com.example.Event.shared.enums.ApprovalDuration;
 import com.example.Event.shared.enums.ApprovalStatus;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.mapstruct.InjectionStrategy;
 import org.mapstruct.Mapper;
+import org.mapstruct.Mapping;
 import org.mapstruct.MappingConstants;
 
 import java.time.Instant;
 import java.util.List;
 
-@Mapper(componentModel = MappingConstants.ComponentModel.SPRING,
-        injectionStrategy = InjectionStrategy.CONSTRUCTOR)
-public abstract class EventAccessMapper {
+@Mapper(
+    componentModel = MappingConstants.ComponentModel.SPRING,
+    injectionStrategy = InjectionStrategy.CONSTRUCTOR,
+    imports = {AccessStatus.class, ApprovalDuration.class}
+)
+public interface EventAccessMapper {
 
-    protected UserServiceClient userServiceClient;
+    @Mapping(target = "requestId", source = "document.id")
+    @Mapping(target = "status", source = "document.status")
+    @Mapping(target = "message", source = "message")
+    AccessRequestMutationResponse toMutationResponse(EventAccessRequestDocument document, String message);
 
-    protected EventAccessMapper() {
-    }
+    AccessRequestsResponse toRequestsResponse(String eventId, List<AccessRequestResponse> requests);
 
-    @Autowired
-    public EventAccessMapper(UserServiceClient userServiceClient) {
-        this.userServiceClient = userServiceClient;
-    }
-
-    public AccessRequestMutationResponse toMutationResponse(EventAccessRequestDocument document, String message) {
-        if (document == null) {
-            return null;
-        }
-        return new AccessRequestMutationResponse(document.getId(), document.getStatus(), message);
-    }
-
-    public AccessRequestsResponse toRequestsResponse(String eventId, List<AccessRequestResponse> requests) {
-        return new AccessRequestsResponse(eventId, requests);
-    }
-
-    public AccessApprovalResponse toApprovalResponse(
+    @Mapping(target = "status", source = "document.status")
+    @Mapping(target = "message", source = "message")
+    @Mapping(target = "approvalDuration", source = "approvalDuration")
+    @Mapping(target = "accessExpiresAt", expression = "java(accessExpiresAt != null ? accessExpiresAt.toString() : \"Never\")")
+    AccessApprovalResponse toApprovalResponse(
             EventAccessRequestDocument document,
             ApprovalDuration approvalDuration,
             Instant accessExpiresAt,
-            String message) {
-        if (document == null) {
-            return null;
-        }
-        return new AccessApprovalResponse(
-                document.getStatus(),
-                message,
-                approvalDuration,
-                accessExpiresAt != null ? accessExpiresAt.toString() : "Never");
+            String message);
+
+    @Mapping(target = "status", source = "document.status")
+    @Mapping(target = "message", source = "message")
+    @Mapping(target = "reason", source = "reason")
+    AccessRejectionResponse toRejectionResponse(EventAccessRequestDocument document, String message, String reason);
+
+    AccessRevocationResponse toRevocationResponse(ApprovalStatus status, String message);
+
+    @Mapping(target = "requestId", source = "document.id")
+    @Mapping(target = "displayName", source = "resolvedDisplayName")
+    @Mapping(target = "message", expression = "java(document.getMessage() != null ? document.getMessage() : \"\")")
+    @Mapping(target = "requestedAt", source = "document.requestedAt")
+    AccessRequestResponse toAccessRequestResponse(EventAccessRequestDocument document, String resolvedDisplayName);
+
+    default AccessRequestResponse toAccessRequestResponse(EventAccessRequestDocument document) {
+        return toAccessRequestResponse(document, document != null ? document.getRequesterUserId() : null);
     }
 
-    public AccessRejectionResponse toRejectionResponse(EventAccessRequestDocument document, String message, String reason) {
-        if (document == null) {
-            return null;
-        }
-        return new AccessRejectionResponse(document.getStatus(), message, reason);
-    }
-
-    public AccessRevocationResponse toRevocationResponse(ApprovalStatus status, String message) {
-        return new AccessRevocationResponse(status, message);
-    }
-
-    public AccessRequestResponse toAccessRequestResponse(EventAccessRequestDocument document) {
-        if (document == null) {
-            return null;
-        }
-        String displayName;
-        try {
-            displayName = userServiceClient.getUserDisplayName(document.getRequesterUserId());
-        } catch (Exception e) {
-            displayName = document.getRequesterUserId();
-        }
-        return new AccessRequestResponse(
-                document.getId(),
-                document.getRequesterUserId(),
-                displayName,
-                document.getMessage() != null ? document.getMessage() : "",
-                document.getStatus(),
-                toIso(document.getRequestedAt()));
-    }
-
-    public AccessStatusResponse toSimpleStatus(AccessStatus status, boolean hasAccess, boolean showRequestButton) {
+    default AccessStatusResponse toSimpleStatus(AccessStatus status, boolean hasAccess, boolean showRequestButton) {
         return AccessStatusResponse.simple(status, hasAccess, showRequestButton);
     }
 
-    public AccessStatusResponse toPendingStatus(EventAccessRequestDocument document) {
-        return new AccessStatusResponse(
-                AccessStatus.PENDING,
-                false,
-                false,
-                toIso(document.getRequestedAt()),
-                null,
-                null,
-                null);
-    }
+    @Mapping(target = "status", expression = "java(AccessStatus.PENDING)")
+    @Mapping(target = "hasAccess", constant = "false")
+    @Mapping(target = "showRequestButton", constant = "false")
+    @Mapping(target = "createdAt", source = "requestedAt")
+    @Mapping(target = "expiresAt", ignore = true)
+    @Mapping(target = "rejectionReason", ignore = true)
+    @Mapping(target = "revokedAt", ignore = true)
+    AccessStatusResponse toPendingStatus(EventAccessRequestDocument document);
 
-    public AccessStatusResponse toRejectedStatus(EventAccessRequestDocument document) {
-        return new AccessStatusResponse(
-                AccessStatus.REJECTED,
-                false,
-                true,
-                null,
-                null,
-                document.getRejectionReason(),
-                null);
-    }
+    @Mapping(target = "status", expression = "java(AccessStatus.REJECTED)")
+    @Mapping(target = "hasAccess", constant = "false")
+    @Mapping(target = "showRequestButton", constant = "true")
+    @Mapping(target = "createdAt", ignore = true)
+    @Mapping(target = "expiresAt", ignore = true)
+    @Mapping(target = "rejectionReason", source = "rejectionReason")
+    @Mapping(target = "revokedAt", ignore = true)
+    AccessStatusResponse toRejectedStatus(EventAccessRequestDocument document);
 
-    public AccessStatusResponse toRevokedStatus(EventAccessRequestDocument document) {
-        return new AccessStatusResponse(
-                AccessStatus.REVOKED,
-                false,
-                true,
-                null,
-                null,
-                null,
-                toIso(document.getRevokedAt()));
-    }
+    @Mapping(target = "status", expression = "java(AccessStatus.REVOKED)")
+    @Mapping(target = "hasAccess", constant = "false")
+    @Mapping(target = "showRequestButton", constant = "true")
+    @Mapping(target = "createdAt", ignore = true)
+    @Mapping(target = "expiresAt", ignore = true)
+    @Mapping(target = "rejectionReason", ignore = true)
+    @Mapping(target = "revokedAt", source = "revokedAt")
+    AccessStatusResponse toRevokedStatus(EventAccessRequestDocument document);
 
-    public AccessStatusResponse toExpiredStatus(EventAccessRequestDocument document) {
-        return new AccessStatusResponse(
-                AccessStatus.EXPIRED,
-                false,
-                true,
-                null,
-                document.getAccessExpiresAt().toString(),
-                null,
-                null);
-    }
+    @Mapping(target = "status", expression = "java(AccessStatus.EXPIRED)")
+    @Mapping(target = "hasAccess", constant = "false")
+    @Mapping(target = "showRequestButton", constant = "true")
+    @Mapping(target = "createdAt", ignore = true)
+    @Mapping(target = "expiresAt", source = "accessExpiresAt")
+    @Mapping(target = "rejectionReason", ignore = true)
+    @Mapping(target = "revokedAt", ignore = true)
+    AccessStatusResponse toExpiredStatus(EventAccessRequestDocument document);
 
-    public AccessStatusResponse toApprovedStatus(EventAccessRequestDocument document) {
-        return new AccessStatusResponse(
-                AccessStatus.APPROVED,
-                true,
-                false,
-                null,
-                document.getAccessExpiresAt() != null ? document.getAccessExpiresAt().toString() : ApprovalDuration.FOREVER.name(),
-                null,
-                null);
-    }
+    @Mapping(target = "status", expression = "java(AccessStatus.APPROVED)")
+    @Mapping(target = "hasAccess", constant = "true")
+    @Mapping(target = "showRequestButton", constant = "false")
+    @Mapping(target = "createdAt", ignore = true)
+    @Mapping(target = "expiresAt", expression = "java(document.getAccessExpiresAt() != null ? document.getAccessExpiresAt().toString() : ApprovalDuration.FOREVER.name())")
+    @Mapping(target = "rejectionReason", ignore = true)
+    @Mapping(target = "revokedAt", ignore = true)
+    AccessStatusResponse toApprovedStatus(EventAccessRequestDocument document);
 
-    public String toIso(Instant instant) {
+    default String toIso(Instant instant) {
         return instant == null ? null : instant.toString();
     }
 }

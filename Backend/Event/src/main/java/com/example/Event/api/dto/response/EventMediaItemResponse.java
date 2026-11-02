@@ -8,10 +8,11 @@ public record EventMediaItemResponse(
         String id,
         String mediaId,
         ApprovalStatus status,
-        String uploaderUserId,
+        String uploaderId,
         String uploaderName,
         String uploadedAt,
-        String originalFileName,
-        String mimeType
+        String fileName,
+        String mimeType,
+        String reason
 ) {
 }

@@ -1,23 +1,19 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, ChangeDetectionStrategy, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { BillingService, PaymentDTO } from '../../billing.service';
 import { StatusBadgeComponent } from '../status-badge/status-badge.component';
-import { Observable } from 'rxjs';
 
 @Component({
   selector: 'app-payment-history',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CommonModule, StatusBadgeComponent],
   templateUrl: './payment-history.component.html'
 })
-export class PaymentHistoryComponent implements OnInit {
-  payments$!: Observable<PaymentDTO[]>;
+export class PaymentHistoryComponent {
+  private readonly billingService = inject(BillingService);
 
-  constructor(private billingService: BillingService) {}
-
-  ngOnInit(): void {
-    this.payments$ = this.billingService.payments$;
-  }
+  readonly payments = this.billingService.payments;
 
   retryPayment(paymentId: string): void {
     alert('🔄 Payment retry coming in Phase 2');

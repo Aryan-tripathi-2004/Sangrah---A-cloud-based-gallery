@@ -1,49 +1,83 @@
-import { Component, Input, OnInit, ChangeDetectorRef, inject, Output, EventEmitter } from '@angular/core';
+import { Component, OnInit, inject, ChangeDetectionStrategy, DestroyRef, input, output, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { SangrahApiService } from '../../../core/api/sangrah-api.service';
-
-interface Event {
-  id: string;
-  visibility: string;
-  ownerUserId: string;
-}
+import { EventApiService } from '../../../core/api/services/event-api.service';
+import { AccessStatusResponse, Event } from '../../../core/api/models/api.models';
 
 @Component({
   selector: 'app-event-access-request',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CommonModule, FormsModule],
   templateUrl: './event-access-request.component.html',
   styles: []
 })
 export class EventAccessRequestComponent implements OnInit {
-  @Input() eventId!: string;
-  @Input() event: Event | null = null;
-  @Input() autoOpen: boolean = false; // when true, open request form automatically
-  @Input() hideButton: boolean = false; // when true, hide the request button (modal mode)
-  @Output() requestSubmitted: EventEmitter<void> = new EventEmitter();
-  @Output() requestWithdrawn: EventEmitter<void> = new EventEmitter();
+  readonly eventId = input.required<string>();
+  readonly event = input<Event | null>(null);
+  readonly autoOpen = input<boolean>(false);
+  readonly hideButton = input<boolean>(false);
 
-  private api = inject(SangrahApiService);
-  private cdr = inject(ChangeDetectorRef);
+  readonly requestSubmitted = output<void>();
+  readonly requestWithdrawn = output<void>();
 
-  showRequestButton = false;
-  shouldShowComponent = false; // NEW: Show component when user doesn't have access
-  showRequestForm = false;
-  showReRequestForm = false;
-  requestMessage = '';
-  reRequestMessage = '';
-  isSubmitting = false;
+  private readonly api = inject(EventApiService);
+  private readonly destroyRef = inject(DestroyRef);
 
-  // Status: 'none' | 'pending' | 'approved' | 'expired' | 'rejected' | 'revoked'
-  requestStatus: string = 'none';
-  requestCreatedAt: Date | null = null;
-  expiresAt: string | null = null;
-  rejectionReason = '';
-  revokedAt: string | null = null;
+  readonly showRequestButtonSignal = signal(false);
+  get showRequestButton(): boolean { return this.showRequestButtonSignal(); }
+  set showRequestButton(v: boolean) { this.showRequestButtonSignal.set(v); }
+
+  readonly shouldShowComponentSignal = signal(false);
+  get shouldShowComponent(): boolean { return this.shouldShowComponentSignal(); }
+  set shouldShowComponent(v: boolean) { this.shouldShowComponentSignal.set(v); }
+
+  readonly showRequestFormSignal = signal(false);
+  get showRequestForm(): boolean { return this.showRequestFormSignal(); }
+  set showRequestForm(v: boolean) { this.showRequestFormSignal.set(v); }
+
+  readonly showReRequestFormSignal = signal(false);
+  get showReRequestForm(): boolean { return this.showReRequestFormSignal(); }
+  set showReRequestForm(v: boolean) { this.showReRequestFormSignal.set(v); }
+
+  readonly requestMessageSignal = signal('');
+  get requestMessage(): string { return this.requestMessageSignal(); }
+  set requestMessage(v: string) { this.requestMessageSignal.set(v); }
+
+  readonly reRequestMessageSignal = signal('');
+  get reRequestMessage(): string { return this.reRequestMessageSignal(); }
+  set reRequestMessage(v: string) { this.reRequestMessageSignal.set(v); }
+
+  readonly isSubmittingSignal = signal(false);
+  get isSubmitting(): boolean { return this.isSubmittingSignal(); }
+  set isSubmitting(v: boolean) { this.isSubmittingSignal.set(v); }
+
+  readonly requestStatusSignal = signal('none');
+  get requestStatus(): string { return this.requestStatusSignal(); }
+  set requestStatus(v: string) { this.requestStatusSignal.set(v); }
+
+  readonly errorMessageSignal = signal('');
+  get errorMessage(): string { return this.errorMessageSignal(); }
+  set errorMessage(v: string) { this.errorMessageSignal.set(v); }
+
+  readonly requestCreatedAtSignal = signal<Date | null>(null);
+  get requestCreatedAt(): Date | null { return this.requestCreatedAtSignal(); }
+  set requestCreatedAt(v: Date | null) { this.requestCreatedAtSignal.set(v); }
+
+  readonly expiresAtSignal = signal<string | null>(null);
+  get expiresAt(): string | null { return this.expiresAtSignal(); }
+  set expiresAt(v: string | null) { this.expiresAtSignal.set(v); }
+
+  readonly rejectionReasonSignal = signal('');
+  get rejectionReason(): string { return this.rejectionReasonSignal(); }
+  set rejectionReason(v: string) { this.rejectionReasonSignal.set(v); }
+
+  readonly revokedAtSignal = signal<string | null>(null);
+  get revokedAt(): string | null { return this.revokedAtSignal(); }
+  set revokedAt(v: string | null) { this.revokedAtSignal.set(v); }
 
   ngOnInit() {
-    // Reset all form states when component is initialized (or recreated)
     this.showRequestForm = false;
     this.showReRequestForm = false;
     this.requestMessage = '';
@@ -54,44 +88,39 @@ export class EventAccessRequestComponent implements OnInit {
     this.expiresAt = null;
     this.rejectionReason = '';
     this.revokedAt = null;
-    
-    // Check access status and auto-open if needed
+    this.errorMessage = '';
+
     this.checkAccessStatus();
   }
 
   get isModalMode(): boolean {
-    return this.hideButton || this.autoOpen;
+    return this.hideButton() || this.autoOpen();
   }
 
   openRequestForm() {
-    // Reset message to default when opening form
     this.requestMessage = 'Hey Owner..!! I want to access your event.';
     this.showRequestForm = true;
   }
 
   closeForm() {
-    // Close the form and emit withdrawn event if in modal mode (hideButton=true)
     this.showRequestForm = false;
     this.showReRequestForm = false;
-    if (this.hideButton) {
+    if (this.hideButton()) {
       try { this.requestWithdrawn.emit(); } catch {}
     }
   }
 
   checkAccessStatus() {
-    // NEW: Use dedicated access-status endpoint instead of listing all requests
-    this.api.getAccessStatus(this.eventId).subscribe({
-      next: (status: any) => {
+    const id = this.eventId();
+    if (!id) return;
+
+    this.api.getAccessStatus(id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (status: AccessStatusResponse) => {
         console.log('📋 Access status:', status);
 
-        // Normalize status to lowercase for consistent template comparisons
         const rawStatus = (status.status || 'none').toString().toLowerCase();
         this.requestStatus = rawStatus;
-        // Handle both boolean and string values for showRequestButton
         this.showRequestButton = status.showRequestButton === true || status.showRequestButton === 'true';
-        
-        // Show component if user doesn't have access - show for ALL access-related statuses
-        // (none, pending, approved, expired, rejected, revoked)
         this.shouldShowComponent = true;
 
         if (status.createdAt) {
@@ -107,39 +136,47 @@ export class EventAccessRequestComponent implements OnInit {
           this.revokedAt = status.revokedAt;
         }
 
-        // In modal mode, open the request form immediately instead of showing a status shell.
         if (this.isModalMode && this.requestStatus !== 'pending' && this.requestStatus !== 'approved') {
           this.showRequestForm = true;
         }
 
-        // If caller requested auto-open and there's no existing request, open form
-        if (this.autoOpen && this.requestStatus === 'none' && this.showRequestButton) {
+        if (this.autoOpen() && this.requestStatus === 'none' && this.showRequestButton) {
           this.openRequestForm();
         }
-        this.cdr.detectChanges();
       },
       error: (err) => {
-        console.log('ℹ️ No access requests yet - user can request access');
-        this.requestStatus = 'none';
-        this.showRequestButton = true;
-        this.shouldShowComponent = true;
-        this.showRequestForm = this.isModalMode;
-        if (this.autoOpen) {
-          this.openRequestForm();
+        if (err?.status === 404) {
+          console.log('ℹ️ No access requests yet - user can request access');
+          this.errorMessage = '';
+          this.requestStatus = 'none';
+          this.showRequestButton = true;
+          this.shouldShowComponent = true;
+          this.showRequestForm = this.isModalMode;
+          if (this.autoOpen()) {
+            this.openRequestForm();
+          }
+        } else {
+          console.error('❌ Failed to check access status:', err);
+          this.errorMessage = 'Unable to verify access status. Please try again later.';
+          this.requestStatus = 'error';
+          this.showRequestButton = false;
+          this.shouldShowComponent = false;
+          this.showRequestForm = false;
+          this.showReRequestForm = false;
         }
-        this.cdr.detectChanges();
       }
     });
   }
 
   submitRequest() {
     this.isSubmitting = true;
+    const id = this.eventId();
     const request$ = ['expired', 'revoked', 'rejected'].includes(this.requestStatus)
-      ? this.api.reRequestAccess(this.eventId, this.requestMessage || undefined)
-      : this.api.requestEventAccess(this.eventId, this.requestMessage || undefined);
+      ? this.api.reRequestAccess(id, this.requestMessage || undefined)
+      : this.api.requestEventAccess(id, this.requestMessage || undefined);
 
-    request$.subscribe({
-      next: (response) => {
+    request$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: () => {
         this.requestStatus = 'pending';
         this.requestCreatedAt = new Date();
         this.showRequestForm = false;
@@ -147,25 +184,21 @@ export class EventAccessRequestComponent implements OnInit {
         this.requestMessage = '';
         this.reRequestMessage = '';
         this.isSubmitting = false;
-        // Toast: "Request sent!"
         console.log('✅ Access request sent successfully');
-        // Notify parent components that a request was submitted
         try { this.requestSubmitted.emit(); } catch {}
-        this.cdr.detectChanges();
       },
       error: (err) => {
         this.isSubmitting = false;
         console.error('❌ Failed to send access request:', err);
         alert('Error: ' + (err.error?.error || 'Failed to submit access request'));
-        this.cdr.detectChanges();
       }
     });
   }
 
-  // NEW: Handle re-request after expiration or revocation
   submitReRequest() {
     this.isSubmitting = true;
-    this.api.reRequestAccess(this.eventId, this.reRequestMessage || undefined).subscribe({
+    const id = this.eventId();
+    this.api.reRequestAccess(id, this.reRequestMessage || undefined).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {
         this.requestStatus = 'pending';
         this.showReRequestForm = false;
@@ -173,7 +206,6 @@ export class EventAccessRequestComponent implements OnInit {
         this.isSubmitting = false;
         console.log('✅ Access re-request sent successfully');
         try { this.requestSubmitted.emit(); } catch {}
-        this.cdr.detectChanges();
       },
       error: (err) => {
         this.isSubmitting = false;
@@ -184,31 +216,11 @@ export class EventAccessRequestComponent implements OnInit {
   }
 
   withdrawRequest() {
-    // NEW: Allow user to withdraw/unsubmit their pending request
     if (confirm('Are you sure you want to withdraw your request?')) {
       this.isSubmitting = true;
-      // Call a hypothetical endpoint to withdraw the request
-      // For now, we'll mark it as 'none' since the backend may not have this endpoint yet
-      console.log('Withdrawing request for event:', this.eventId);
-
-      // In a real implementation, call backend endpoint:
-      // this.api.withdrawAccessRequest(this.eventId).subscribe({
-      //   next: () => {
-      //     this.requestStatus = 'none';
-      //     this.isSubmitting = false;
-      //     this.cdr.detectChanges();
-      //   },
-      //   error: (err) => {
-      //     this.isSubmitting = false;
-      //     console.error('Failed to withdraw request:', err);
-      //   }
-      // });
-
-      // For now, just reset the state
       this.requestStatus = 'none';
       this.isSubmitting = false;
       try { this.requestWithdrawn.emit(); } catch {}
-      this.cdr.detectChanges();
     }
   }
 }

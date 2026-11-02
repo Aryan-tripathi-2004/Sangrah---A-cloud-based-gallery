@@ -1,110 +1,84 @@
-import { Component, Input, OnInit, inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, OnInit, inject, ChangeDetectionStrategy, signal, computed, DestroyRef, input } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { switchMap } from 'rxjs/operators';
+
 import { EventService, EventMediaStatus } from '../event.service';
-import { SangrahApiService, MediaItem } from '../../../core/api/sangrah-api.service';
+import { EventApiService } from '../../../core/api/services/event-api.service';
+import { MediaItem } from '../../../core/api/models/api.models';
 import { MediaPreviewModalComponent } from '../../gallery/components/media-preview-modal.component';
 
 @Component({
   selector: 'app-event-timeline',
   standalone: true,
-  imports: [CommonModule, MediaPreviewModalComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [MediaPreviewModalComponent],
   templateUrl: './event-timeline.component.html',
 })
 export class EventTimelineComponent implements OnInit {
-  @Input() eventId!: string;
+  readonly eventId = input.required<string>();
 
-  private eventService = inject(EventService);
-  private api = inject(SangrahApiService);
+  private readonly eventService = inject(EventService);
+  private readonly api = inject(EventApiService);
+  private readonly destroyRef = inject(DestroyRef);
 
-  sortBy: 'newest' | 'oldest' = 'newest';
-  tokenReady = false;
+  readonly sortBy = signal<'newest' | 'oldest'>('newest');
+  readonly tokenReady = signal(true);
 
   // Preview modal state
-  previewOpen = false;
-  previewMedia: MediaItem | null = null;
-  previewFileUrl: string | null = null;
+  readonly previewOpen = signal(false);
+  readonly previewMedia = signal<MediaItem | null>(null);
+  readonly previewFileUrl = signal<string | null>(null);
+
+  // Computed media states aligning with template bindings
+  readonly approvedMedia = computed(() =>
+    this.eventService.eventMedia().filter((m) => m.status === 'APPROVED')
+  );
+
+  readonly sortedMedia = computed(() => {
+    return [...this.approvedMedia()].sort((a, b) => {
+      const ta = new Date(a.uploadedAt).getTime();
+      const tb = new Date(b.uploadedAt).getTime();
+      return this.sortBy() === 'newest' ? tb - ta : ta - tb;
+    });
+  });
+
+  readonly pendingCount = this.eventService.pendingCount;
+  readonly rejectedCount = this.eventService.rejectedCount;
 
   ngOnInit(): void {
-    this.ensureValidMediaToken();
+    const id = this.eventId();
+    if (id && this.eventService.eventMedia().length === 0) {
+      this.eventService.loadEventMedia(id)
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe({
+          error: (error) => console.error('Failed to load media:', error),
+        });
+    }
   }
 
-  isVideo(media: EventMediaStatus): boolean {
-    const mt = (media as any).mimeType || '';
-    if (typeof mt === 'string' && mt.startsWith('video/')) return true;
-    const name = (media as any).fileName || '';
-    return /\.(mp4|webm|mov|ogg)$/i.test(name);
+  toggleSort(): void {
+    this.sortBy.update((v) => (v === 'newest' ? 'oldest' : 'newest'));
   }
 
-  private ensureValidMediaToken(): void {
-    if (typeof window === 'undefined') {
-      this.tokenReady = true;
-      return;
-    }
-
-    const token = localStorage.getItem('token');
-    if (!token) {
-      this.tokenReady = true;
-      return;
-    }
-
-    const expiresAt = this.getTokenExpiryMillis(token);
-    const now = Date.now();
-
-    // Refresh if expired or close to expiry so image/video URL requests do not 401.
-    if (expiresAt !== null && expiresAt - now < 120000) {
-      // Do not block rendering — show media immediately using current token, and refresh in background.
-      this.tokenReady = true;
-      this.api.refreshAccessToken().subscribe({
-        next: () => {
-          // token refreshed; let Angular re-evaluate bindings so URLs update from localStorage
-        },
-        error: () => {
-          // ignore refresh errors — keep showing current media
-        },
-      });
-      return;
-    }
-
-    this.tokenReady = true;
-  }
-
-  private getTokenExpiryMillis(token: string): number | null {
-    try {
-      const payload = token.split('.')[1];
-      if (!payload) return null;
-
-      const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
-      const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
-      const decoded = JSON.parse(atob(padded));
-
-      if (typeof decoded.exp !== 'number') {
-        return null;
-      }
-
-      return decoded.exp * 1000;
-    } catch {
-      return null;
-    }
+  isVideo(item: EventMediaStatus): boolean {
+    return !!(item.mimeType?.startsWith('video/'));
   }
 
   getMediaUrl(mediaId: string): string {
-    return this.api.getEventMediaFile(this.eventId, mediaId);
+    return this.api.getEventMediaFile(this.eventId(), mediaId);
   }
 
   onImageError(event: Event): void {
     const img = event.target as HTMLImageElement;
     console.warn('Failed to load image:', img.src);
-    // Image will show placeholder on error due to CSS
   }
 
   onMediaError(event: Event): void {
     const el = event.target as HTMLVideoElement;
     console.warn('Failed to load media:', el?.currentSrc || el?.src);
-    // Let the UI show the placeholder block
   }
 
   onTileClick(event: MouseEvent, media: EventMediaStatus): void {
-    // If user clicked on a native control (video controls, button, etc.) do not open modal
     const target = event.target as HTMLElement | null;
     if (!target) return;
 
@@ -112,79 +86,48 @@ export class EventTimelineComponent implements OnInit {
       return;
     }
 
-    // Prepare a MediaItem-like object for the preview modal
     const item: MediaItem = {
       id: media.mediaId,
       originalFileName: media.fileName || media.mediaId,
-      mimeType: (media as any).mimeType as string | undefined,
-      sizeBytes: (media as any).sizeBytes || 0,
+      mimeType: media.mimeType || 'application/octet-stream',
+      sizeBytes: 0,
       type: this.isVideo(media) ? 'VIDEO' : 'IMAGE',
       checksumSha256: '',
       metadata: {},
-      uploadedAt: media.uploadedAt,
-    } as MediaItem;
+      uploadedAt: media.uploadedAt
+    };
 
-    this.previewMedia = item;
-    this.previewFileUrl = this.getMediaUrl(media.mediaId);
-    this.previewOpen = true;
+    this.previewMedia.set(item);
+    this.previewFileUrl.set(this.getMediaUrl(media.mediaId));
+    this.previewOpen.set(true);
   }
 
   closePreview(): void {
-    this.previewOpen = false;
-    this.previewMedia = null;
-    this.previewFileUrl = null;
+    this.previewOpen.set(false);
+    this.previewMedia.set(null);
+    this.previewFileUrl.set(null);
   }
 
-  getApprovedMedia(): EventMediaStatus[] {
-    return this.eventService
-      .getEventMediaValue()
-      .filter((m) => m.status === 'APPROVED');
-  }
-
-  getPendingCount(): number {
-    return this.eventService
-      .getEventMediaValue()
-      .filter((m) => m.status === 'PENDING').length;
-  }
-
-  getRejectedCount(): number {
-    return this.eventService
-      .getEventMediaValue()
-      .filter((m) => m.status === 'REJECTED').length;
-  }
-
-  getSortedMedia(): EventMediaStatus[] {
-    const approved = this.getApprovedMedia();
-    return approved.sort((a, b) => {
-      const dateA = new Date(a.uploadedAt).getTime();
-      const dateB = new Date(b.uploadedAt).getTime();
-      return this.sortBy === 'newest' ? dateB - dateA : dateA - dateB;
+  deleteMedia(event: MouseEvent, mediaId: string): void {
+    event.stopPropagation();
+    const id = this.eventId();
+    this.api.deleteEventMedia(id, mediaId).pipe(
+      switchMap(() => this.eventService.loadEventMedia(id)),
+      takeUntilDestroyed(this.destroyRef)
+    ).subscribe({
+      next: () => this.closePreview(),
+      error: (err) => console.error('Failed to delete media:', err)
     });
   }
 
-  deleteMedia(event: Event, mediaId: string): void {
-    event.stopPropagation();
-    
-    if (!confirm('Are you sure you want to delete this media? This action cannot be undone.')) {
-      return;
-    }
-
-    this.api.deleteEventMedia(this.eventId, mediaId).subscribe({
-      next: () => {
-        // Reload media after deletion
-        this.eventService.loadEventMedia(this.eventId).subscribe({
-          next: () => {
-            // Refresh UI
-          },
-          error: (error) => {
-            console.error('Failed to reload media:', error);
-          },
-        });
-      },
-      error: (error) => {
-        console.error('Delete failed:', error);
-        alert('Failed to delete media: ' + (error.error?.error || error.message));
-      },
+  onDeleteFromPreview(mediaId: string): void {
+    const id = this.eventId();
+    this.api.deleteEventMedia(id, mediaId).pipe(
+      switchMap(() => this.eventService.loadEventMedia(id)),
+      takeUntilDestroyed(this.destroyRef)
+    ).subscribe({
+      next: () => this.closePreview(),
+      error: (err) => console.error('Failed to delete media from preview:', err)
     });
   }
 }

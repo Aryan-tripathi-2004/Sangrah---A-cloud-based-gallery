@@ -1,103 +1,156 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, inject, signal, ChangeDetectionStrategy, DestroyRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { SangrahApiService, User } from '../../core/api/sangrah-api.service';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { forkJoin, of } from 'rxjs';
+import { catchError } from 'rxjs/operators';
+import { UserApiService } from '../../core/api/services/user-api.service';
+import { EventApiService } from '../../core/api/services/event-api.service';
+import { GalleryApiService } from '../../core/api/services/gallery-api.service';
+import { User, Event, MediaItem, StorageUsage } from '../../core/api/models/api.models';
 import { LayoutComponent } from '../../shared/layout/layout.component';
-import {Router} from '@angular/router';
-import {FormsModule} from '@angular/forms';
+import { ProfileSidebarComponent } from './components/profile-sidebar/profile-sidebar.component';
+import { ProfileTabsComponent, ProfileTabType } from './components/profile-tabs/profile-tabs.component';
+import { EventsGridComponent } from './components/events-grid/events-grid.component';
+import { GalleryGridComponent } from './components/gallery-grid/gallery-grid.component';
 
 @Component({
   selector: 'app-profile',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule,FormsModule, LayoutComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [
+    CommonModule,
+    LayoutComponent,
+    ProfileSidebarComponent,
+    ProfileTabsComponent,
+    EventsGridComponent,
+    GalleryGridComponent,
+  ],
   templateUrl: './profile.component.html',
-  
 })
 export class ProfileComponent implements OnInit {
-  private api = inject(SangrahApiService);
-  private fb = inject(FormBuilder);
-  private router = inject(Router);
+  private readonly userApi = inject(UserApiService);
+  private readonly eventApi = inject(EventApiService);
+  private readonly galleryApi = inject(GalleryApiService);
+  private readonly destroyRef = inject(DestroyRef);
 
-  user: User | null = null;
-  form = this.fb.group({
-    email: [{ value: '', disabled: true }],
-    displayName: ['', [Validators.required]],
-  });
+  readonly user = signal<User | null>(null);
+  readonly myEvents = signal<Event[]>([]);
+  readonly galleryItems = signal<MediaItem[]>([]);
+  readonly storageUsage = signal<StorageUsage | null>(null);
 
-  isLoading = false;
-  errorMessage = '';
-  successMessage = '';
+  readonly activeTab = signal<ProfileTabType>('events');
+  readonly isLoading = signal(true);
+  readonly isUploadingAvatar = signal(false);
+  readonly isSavingBio = signal(false);
 
-  showDeleteConfirm = false;
-  deleteConfirmInput = '';
-  isDeleting = false;
-  deleteError = '';
+  readonly feedbackMessage = signal<{ type: 'success' | 'error'; text: string } | null>(null);
 
   ngOnInit(): void {
-    this.loadProfile();
+    this.loadAllProfileData();
   }
 
-  loadProfile(): void {
-    this.api.getProfile().subscribe({
-      next: (user) => {
-        this.user = user;
-        this.form.patchValue(user);
+  loadAllProfileData(): void {
+    this.isLoading.set(true);
+
+    forkJoin({
+      profile: this.userApi.getProfile().pipe(
+        catchError((err) => {
+          console.error('Failed to load profile:', err);
+          this.showFeedback({ type: 'error', text: 'Failed to load profile data' });
+          return of(null);
+        })
+      ),
+      events: this.eventApi.getMyEvents().pipe(
+        catchError((err) => {
+          console.error('Failed to load events:', err);
+          return of([]);
+        })
+      ),
+      gallery: this.galleryApi.listGalleryMedia().pipe(
+        catchError((err) => {
+          console.error('Failed to load gallery items:', err);
+          return of({ count: 0, items: [] });
+        })
+      ),
+      storage: this.galleryApi.getStorageUsageGallery().pipe(
+        catchError((err) => {
+          console.error('Failed to load storage usage:', err);
+          return of(null);
+        })
+      ),
+    })
+    .pipe(takeUntilDestroyed(this.destroyRef))
+    .subscribe({
+      next: ({ profile, events, gallery, storage }) => {
+        if (profile) {
+          this.user.set(profile);
+        }
+        this.myEvents.set(Array.isArray(events) ? events : []);
+        this.galleryItems.set(gallery && Array.isArray(gallery.items) ? gallery.items : []);
+        this.storageUsage.set(storage);
+        this.isLoading.set(false);
       },
-      error: () => {
-        this.errorMessage = 'Failed to load profile';
+      error: (err) => {
+        console.error('Unexpected error loading profile data:', err);
+        this.isLoading.set(false);
       },
     });
   }
 
-  onSubmit(): void {
-    if (this.form.invalid || !this.user) return;
+  onAvatarSelected(file: File): void {
+    this.isUploadingAvatar.set(true);
+    this.showFeedback(null);
 
-    this.isLoading = true;
-    this.errorMessage = '';
-    this.successMessage = '';
-
-    const formValue = this.form.value as Partial<User>;
-    this.api.updateProfile(formValue).subscribe({
-      next: (updated) => {
-        this.user = updated;
-        this.successMessage = 'Profile updated successfully!';
-        this.isLoading = false;
-        setTimeout(() => {
-          this.successMessage = '';
-        }, 3000);
-      },
-      error: () => {
-        this.isLoading = false;
-        this.errorMessage = 'Failed to update profile';
-      },
-    });
+    this.userApi.uploadProfileAvatar(file)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (updatedUser) => {
+          this.user.set(updatedUser);
+          this.isUploadingAvatar.set(false);
+          this.showFeedback({ type: 'success', text: 'Profile photo updated successfully!' });
+        },
+        error: (err) => {
+          this.isUploadingAvatar.set(false);
+          this.showFeedback({
+            type: 'error',
+            text: err.message || err.error?.message || 'Failed to upload profile photo.',
+          });
+        },
+      });
   }
 
-  openDeleteConfirm(): void {
-    this.showDeleteConfirm = true;
-    this.deleteConfirmInput = '';
-    this.deleteError = '';
+  onBioSaved(newBio: string): void {
+    this.isSavingBio.set(true);
+    this.showFeedback(null);
+
+    this.userApi.updateProfile({ bio: newBio })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (updatedUser) => {
+          this.user.set(updatedUser);
+          this.isSavingBio.set(false);
+          this.showFeedback({ type: 'success', text: 'Bio updated successfully!' });
+        },
+        error: (err) => {
+          this.isSavingBio.set(false);
+          this.showFeedback({
+            type: 'error',
+            text: err.message || err.error?.message || 'Failed to update bio.',
+          });
+        },
+      });
   }
 
-  cancelDelete(): void{
-    this.showDeleteConfirm = false;
+  onTabChanged(tab: ProfileTabType): void {
+    this.activeTab.set(tab);
   }
 
-  confirmDelete(): void {
-    if (!this.user || this.deleteConfirmInput !== this.user.email){
-      this.deleteError = 'Email does not match';
-      return;
+  private showFeedback(feedback: { type: 'success' | 'error'; text: string } | null): void {
+    this.feedbackMessage.set(feedback);
+    if (feedback) {
+      setTimeout(() => {
+        this.feedbackMessage.set(null);
+      }, 4000);
     }
-    this.isDeleting = true;
-    this.api.deleteAccount().subscribe({
-      next: () => {
-        this.api.logout();
-        this.router.navigate(['/']);
-      },
-      error: () => {
-        this.isDeleting = false;
-        this.deleteError = 'Failed to delete account. Please try again.';
-      }
-    });
   }
 }

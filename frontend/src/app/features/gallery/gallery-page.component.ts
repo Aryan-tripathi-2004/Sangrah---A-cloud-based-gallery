@@ -1,37 +1,44 @@
-import { Component, OnInit, inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, OnInit, inject, ChangeDetectionStrategy, signal, computed, DestroyRef } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+
 import { LayoutComponent } from '../../shared/layout/layout.component';
 import { MediaUploadComponent } from './components/media-upload.component';
 import { TimelineViewComponent } from './components/timeline-view.component';
 import { MediaPreviewModalComponent } from './components/media-preview-modal.component';
 import { GalleryService } from './gallery.service';
-import { MediaItem, StorageUsage } from '../../core/api/sangrah-api.service';
+import { MediaItem, StorageUsage } from '../../core/api/models/api.models';
 
 @Component({
   selector: 'app-gallery-page',
   standalone: true,
-  imports: [CommonModule, LayoutComponent, MediaUploadComponent, TimelineViewComponent, MediaPreviewModalComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [LayoutComponent, MediaUploadComponent, TimelineViewComponent, MediaPreviewModalComponent],
   templateUrl: './gallery-page.component.html',
 })
 export class GalleryPageComponent implements OnInit {
-  private gallery = inject(GalleryService);
+  public readonly gallery = inject(GalleryService);
+  private readonly destroyRef = inject(DestroyRef);
 
-  activeTab: 'timeline' | 'upload' | 'stats' = 'timeline';
-  storageUsage: StorageUsage | null = null;
+  // Modern Angular Signals for state
+  activeTab = signal<'timeline' | 'upload' | 'stats'>('timeline');
+  readonly storageUsage = this.gallery.storageUsage;
+  isPreviewOpen = signal<boolean>(false);
+  selectedMedia = signal<MediaItem | null>(null);
 
-  // Preview modal state
-  isPreviewOpen = false;
-  selectedMedia: MediaItem | null = null;
+  // Computed helper
+  averageFileSize = computed(() => {
+    const usage = this.storageUsage();
+    if (!usage || usage.fileCount === 0) return '—';
+    const avgBytes = usage.totalBytesUsed / usage.fileCount;
+    return this.formatBytes(Math.round(avgBytes));
+  });
 
   ngOnInit(): void {
     this.loadStorageUsage();
   }
 
-  private loadStorageUsage(): void {
-    this.gallery.loadStorageUsage().subscribe({
-      next: (usage) => {
-        this.storageUsage = usage;
-      },
+  loadStorageUsage(): void {
+    this.gallery.loadStorageUsage().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       error: (error) => {
         console.error('Failed to load storage usage:', error);
       },
@@ -40,44 +47,25 @@ export class GalleryPageComponent implements OnInit {
 
   onUploadComplete(items: MediaItem[]): void {
     console.log('Upload complete:', items);
-    // Reload storage usage after upload
     this.loadStorageUsage();
-    // Switch to timeline to show new media
     setTimeout(() => {
-      this.activeTab = 'timeline';
+      this.activeTab.set('timeline');
     }, 500);
   }
 
   onMediaPreview(media: MediaItem): void {
-    this.selectedMedia = media;
-    this.isPreviewOpen = true;
-
-    // Handle ESC key press
-    const handleEscKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        this.closePreview();
-      }
-    };
-    document.addEventListener('keydown', handleEscKey);
+    this.selectedMedia.set(media);
+    this.isPreviewOpen.set(true);
   }
 
   closePreview(): void {
-    this.isPreviewOpen = false;
-    this.selectedMedia = null;
+    this.isPreviewOpen.set(false);
+    this.selectedMedia.set(null);
   }
 
   onMediaDelete(mediaId: string): void {
     console.log('Delete complete:', mediaId);
-    // Reload storage usage after deletion
     this.loadStorageUsage();
-  }
-
-  getAverageFileSize(): string {
-    if (!this.storageUsage || this.storageUsage.fileCount === 0) {
-      return '—';
-    }
-    const avgBytes = this.storageUsage.totalBytesUsed / this.storageUsage.fileCount;
-    return this.formatBytes(Math.round(avgBytes));
   }
 
   private formatBytes(bytes: number): string {

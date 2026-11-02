@@ -16,10 +16,10 @@ import jakarta.annotation.PostConstruct;
 @Configuration
 public class EnvConfig {
 
-    @Value("${spring.mail.host:}")
+    @Value("${spring.mail.host}")
     private String mailHost;
 
-    @Value("${spring.mail.username:}")
+    @Value("${spring.mail.username}")
     private String mailUsername;
 
     /**

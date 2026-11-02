@@ -1,158 +1,188 @@
 package com.example.Email.shared.exception;
 
 import jakarta.mail.MessagingException;
+import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.lang.NonNull;
+import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.WebRequest;
+import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
 import java.net.URI;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.stream.Collectors;
+import java.util.Map;
 
-/**
- * Centralised RFC-9457 error-response factory for the Email microservice.
- *
- * <p>This advice intercepts every exception that escapes a controller method and
- * converts it into a {@link ProblemDetail} response (Spring Boot 3 native support).
- * No controller method needs a try-catch block – all exception handling lives here.
- *
- * <p>Handled exception hierarchy:
- * <ol>
- *   <li>{@link MethodArgumentNotValidException} – Jakarta Bean Validation failures → 422</li>
- *   <li>{@link MessagingException}              – SMTP transport errors          → 502</li>
- *   <li>{@link ResourceNotFoundException}       – 404 look-up misses             → 404</li>
- *   <li>{@link Exception}                       – catch-all safety net           → 500
- *       (message suppressed to avoid leaking internals to callers)</li>
- * </ol>
- *
- * <p>Every {@link ProblemDetail} is enriched with:
- * <ul>
- *   <li>{@code timestamp} – UTC instant of the error</li>
- *   <li>{@code service}   – identifies this microservice for distributed tracing</li>
- * </ul>
- */
 @Slf4j
 @RestControllerAdvice
-public class GlobalExceptionHandler {
+public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
-    private static final URI VALIDATION_TYPE  = URI.create("https://sangrah.com/problems/validation-error");
-    private static final URI SMTP_TYPE        = URI.create("https://sangrah.com/problems/smtp-error");
-    private static final URI NOT_FOUND_TYPE   = URI.create("https://sangrah.com/problems/resource-not-found");
-    private static final URI INTERNAL_TYPE    = URI.create("https://sangrah.com/problems/internal-error");
+    private static final String BASE_ERROR_URI = "https://api.sangrah.com/errors/";
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // 1. Validation failures (Jakarta Bean Validation)
-    // ─────────────────────────────────────────────────────────────────────────
+    public record FieldViolation(String field, String message) {}
 
-    /**
-     * Handle {@link MethodArgumentNotValidException} raised when {@code @Valid}
-     * constraint checking fails on a request body record.
-     *
-     * <p>Returns HTTP {@code 422 Unprocessable Entity} with a list of
-     * field-level violation messages in the {@code violations} extension property.
-     */
-    @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ProblemDetail handleValidationException(MethodArgumentNotValidException ex) {
-        log.warn("⚠️ [GLOBAL HANDLER] Validation failure: {}", ex.getMessage());
+    @Override
+    protected ResponseEntity<Object> handleMethodArgumentNotValid(
+            @NonNull MethodArgumentNotValidException ex,
+            @NonNull HttpHeaders headers,
+            @NonNull HttpStatusCode status,
+            @NonNull WebRequest request) {
 
-        List<String> violations = ex.getBindingResult()
-                .getFieldErrors()
-                .stream()
-                .map(fe -> fe.getField() + ": " + fe.getDefaultMessage())
-                .collect(Collectors.toList());
+        log.warn("Validation failed with {} error(s)", ex.getBindingResult().getErrorCount());
 
-        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
-                HttpStatus.UNPROCESSABLE_ENTITY,
-                "One or more request fields failed validation."
-        );
-        problem.setType(VALIDATION_TYPE);
-        problem.setTitle("Validation Error");
+        List<FieldViolation> violations = ex.getBindingResult().getAllErrors().stream()
+                .map(error -> new FieldViolation(
+                        error instanceof FieldError fieldError ? fieldError.getField() : error.getObjectName(),
+                        error.getDefaultMessage()))
+                .toList();
+
+        Map<String, String> errors = new LinkedHashMap<>();
+        for (FieldError error : ex.getBindingResult().getFieldErrors()) {
+            errors.put(error.getField(), error.getDefaultMessage());
+        }
+
+        ProblemDetail problem = buildProblemDetail(
+                HttpStatus.BAD_REQUEST,
+                "Validation Failed",
+                "One or more request fields failed validation.",
+                "validation-failed",
+                request);
+        problem.setProperty("errors", errors);
         problem.setProperty("violations", violations);
-        problem.setProperty("timestamp", Instant.now());
         problem.setProperty("service", "email-service");
-        return problem;
+
+        return ResponseEntity.badRequest().body(problem);
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // 2. SMTP / Messaging failures
-    // ─────────────────────────────────────────────────────────────────────────
+    @Override
+    protected ResponseEntity<Object> handleHttpMessageNotReadable(
+            @NonNull HttpMessageNotReadableException ex,
+            @NonNull HttpHeaders headers,
+            @NonNull HttpStatusCode status,
+            @NonNull WebRequest request) {
 
-    /**
-     * Handle {@link MessagingException} propagated by {@code EmailServiceImpl}
-     * when the SMTP transport layer rejects or cannot deliver a message.
-     *
-     * <p>Returns HTTP {@code 502 Bad Gateway} – the upstream mail server is the
-     * failing dependency, not the service itself.
-     */
+        log.warn("Malformed or unreadable request body: {}", ex.getMessage());
+        ProblemDetail problem = buildProblemDetail(
+                HttpStatus.BAD_REQUEST,
+                "Malformed Request Body",
+                "The request payload is malformed or contains unsupported values.",
+                "invalid-body",
+                request);
+        problem.setProperty("service", "email-service");
+        return ResponseEntity.badRequest().body(problem);
+    }
+
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<ProblemDetail> handleConstraintViolation(
+            ConstraintViolationException ex,
+            WebRequest request) {
+
+        log.warn("Constraint violation: {}", ex.getMessage());
+        Map<String, String> errors = new LinkedHashMap<>();
+        ex.getConstraintViolations().forEach(v ->
+                errors.put(v.getPropertyPath().toString(), v.getMessage()));
+
+        ProblemDetail problem = buildProblemDetail(
+                HttpStatus.BAD_REQUEST,
+                "Constraint Violation",
+                "One or more request parameters failed validation.",
+                "constraint-violation",
+                request);
+        problem.setProperty("errors", errors);
+        problem.setProperty("service", "email-service");
+        return ResponseEntity.badRequest().body(problem);
+    }
+
     @ExceptionHandler(MessagingException.class)
-    public ProblemDetail handleMessagingException(MessagingException ex) {
-        log.error("❌ [GLOBAL HANDLER] SMTP MessagingException: {}", ex.getMessage(), ex);
-
-        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+    public ResponseEntity<ProblemDetail> handleMessagingException(
+            MessagingException ex,
+            WebRequest request) {
+        log.error("SMTP MessagingException: {}", ex.getMessage(), ex);
+        ProblemDetail problem = buildProblemDetail(
                 HttpStatus.BAD_GATEWAY,
-                "The email could not be dispatched due to an SMTP transport error. "
-                + "Please try again later."
-        );
-        problem.setType(SMTP_TYPE);
-        problem.setTitle("SMTP Delivery Error");
-        problem.setProperty("timestamp", Instant.now());
+                "SMTP Delivery Error",
+                "The email could not be dispatched due to an SMTP transport error.",
+                "smtp-error",
+                request);
         problem.setProperty("service", "email-service");
-        return problem;
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(problem);
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // 3. Resource not found
-    // ─────────────────────────────────────────────────────────────────────────
-
-    /**
-     * Handle {@link ResourceNotFoundException} thrown when an email log entry
-     * or other entity cannot be located in MongoDB.
-     *
-     * <p>Returns HTTP {@code 404 Not Found}.
-     */
     @ExceptionHandler(ResourceNotFoundException.class)
-    public ProblemDetail handleResourceNotFoundException(ResourceNotFoundException ex) {
-        log.warn("⚠️ [GLOBAL HANDLER] Resource not found: {}", ex.getReason());
-
-        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+    public ResponseEntity<ProblemDetail> handleResourceNotFound(
+            ResourceNotFoundException ex,
+            WebRequest request) {
+        ProblemDetail problem = buildProblemDetail(
                 HttpStatus.NOT_FOUND,
-                ex.getReason()
-        );
-        problem.setType(NOT_FOUND_TYPE);
-        problem.setTitle("Resource Not Found");
-        problem.setProperty("timestamp", Instant.now());
+                "Resource Not Found",
+                ex.getReason() != null ? ex.getReason() : ex.getMessage(),
+                "not-found",
+                request);
         problem.setProperty("service", "email-service");
-        return problem;
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(problem);
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // 4. Catch-all safety net
-    // ─────────────────────────────────────────────────────────────────────────
-
-    /**
-     * Catch-all handler for every unhandled {@link Exception} subclass.
-     *
-     * <p>Returns HTTP {@code 500 Internal Server Error}. The exception message
-     * is <strong>intentionally suppressed</strong> in the response body to prevent
-     * stack-trace or implementation detail leakage to external callers. The full
-     * exception is still logged at ERROR level for internal diagnostics.
-     */
-    @ExceptionHandler(Exception.class)
-    public ProblemDetail handleGenericException(Exception ex) {
-        log.error("❌ [GLOBAL HANDLER] Unhandled exception: {}", ex.getMessage(), ex);
-
-        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+    @ExceptionHandler(EmailProcessingException.class)
+    public ResponseEntity<ProblemDetail> handleEmailProcessing(
+            EmailProcessingException ex,
+            WebRequest request) {
+        log.error("Email processing failed: {}", ex.getMessage(), ex);
+        ProblemDetail problem = buildProblemDetail(
                 HttpStatus.INTERNAL_SERVER_ERROR,
-                "An unexpected error occurred. Please contact support if the problem persists."
-        );
-        problem.setType(INTERNAL_TYPE);
-        problem.setTitle("Internal Server Error");
-        problem.setProperty("timestamp", Instant.now());
+                "Email Processing Error",
+                "Email processing failed. Please try again later.",
+                "email-processing-error",
+                request);
         problem.setProperty("service", "email-service");
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(problem);
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ProblemDetail> handleIllegalArgument(
+            IllegalArgumentException ex,
+            WebRequest request) {
+        ProblemDetail problem = buildProblemDetail(
+                HttpStatus.BAD_REQUEST, "Invalid Argument", ex.getMessage(), "bad-request", request);
+        problem.setProperty("service", "email-service");
+        return ResponseEntity.badRequest().body(problem);
+    }
+
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ProblemDetail> handleGlobalException(
+            Exception ex,
+            WebRequest request) {
+        log.error("Unhandled internal exception in Email service", ex);
+        ProblemDetail problem = buildProblemDetail(
+                HttpStatus.INTERNAL_SERVER_ERROR,
+                "Internal Server Error",
+                "An unexpected internal server error occurred.",
+                "internal-server-error",
+                request);
+        problem.setProperty("service", "email-service");
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(problem);
+    }
+
+    private ProblemDetail buildProblemDetail(
+            HttpStatus status,
+            String title,
+            String detail,
+            String slug,
+            WebRequest request) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, detail);
+        problem.setTitle(title);
+        problem.setType(URI.create(BASE_ERROR_URI + slug));
+        problem.setInstance(URI.create(request.getDescription(false).replace("uri=", "")));
+        problem.setProperty("timestamp", Instant.now());
         return problem;
     }
 }

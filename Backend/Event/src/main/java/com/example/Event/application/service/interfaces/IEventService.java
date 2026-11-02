@@ -9,13 +9,17 @@ import com.example.Event.api.dto.response.EventResponse;
 import com.example.Event.api.dto.response.EventSettingsResponse;
 import com.example.Event.api.dto.response.EventSummaryResponse;
 import com.example.Event.api.dto.response.EventUpdateResponse;
-import com.example.Event.infrastructure.persistence.document.EventDocument;
+import com.example.Event.shared.enums.EventScope;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
 public interface IEventService {
-    EventCreateResponse createEvent(EventRequest request, String userId);
+    EventCreateResponse createEvent(EventRequest request, MultipartFile coverMedia, String userId);
+
+    default EventCreateResponse createEvent(EventRequest request, String userId) {
+        return createEvent(request, null, userId);
+    }
 
     List<EventSummaryResponse> getGlobalEvents(String userId);
 
@@ -23,7 +27,7 @@ public interface IEventService {
 
     EventResponse getEvent(String eventId, String userId);
 
-    EventUpdateResponse updateEvent(
+    EventResponse updateEvent(
             String eventId,
             EventUpdateRequest eventDetails,
             MultipartFile coverMedia,
@@ -35,13 +39,14 @@ public interface IEventService {
 
     EventSettingsResponse updateSettings(String eventId, EventSettingsRequest request, String userId);
 
-    EventDocument getEventById(String eventId);
+    List<EventSummaryResponse> getEventsWithPendingRequests(String userId);
 
-    List<EventDocument> getEventsByOwner(String ownerUserId);
-
-    List<EventDocument> getPublicEvents();
-
-    List<EventDocument> getProtectedEvents();
-
-    EventDocument updateEventDirectly(EventDocument event);
+    default List<EventSummaryResponse> getEvents(String userId, EventScope scope) {
+        EventScope targetScope = scope != null ? scope : EventScope.GLOBAL;
+        return switch (targetScope) {
+            case MY_EVENTS -> getMyEvents(userId);
+            case PENDING_REQUESTS -> getEventsWithPendingRequests(userId);
+            default -> getGlobalEvents(userId);
+        };
+    }
 }

@@ -1,19 +1,19 @@
-import { CommonModule } from '@angular/common';
-import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { Component, input, output, ChangeDetectionStrategy } from '@angular/core';
 
 @Component({
   selector: 'app-error-modal',
   standalone: true,
-  imports: [CommonModule],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [],
   templateUrl: './error-modal.component.html',
 })
 export class ErrorModalComponent {
-  @Input() isOpen = false;
-  @Input() title = 'Something went wrong';
-  @Input() message = '';
-  @Input() retryLabel = 'Retry';
-  @Input() closeLabel = 'Close';
+  readonly isOpen = input<boolean>(false);
+  readonly title = input<string>('Something went wrong');
+  readonly message = input<string>('');
+  readonly retryLabel = input<string>('Retry');
+  readonly closeLabel = input<string>('Close');
 
-  @Output() retry = new EventEmitter<void>();
-  @Output() closeModal = new EventEmitter<void>();
+  readonly retry = output<void>();
+  readonly closeModal = output<void>();
 }

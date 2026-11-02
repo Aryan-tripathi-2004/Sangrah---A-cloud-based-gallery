@@ -2,9 +2,11 @@ package com.example.Media.infrastructure.persistence.repository;
 
 import com.example.Media.infrastructure.persistence.document.MediaDocument;
 import com.example.Media.shared.enums.MediaDomain;
+import org.springframework.data.mongodb.repository.Aggregation;
 import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -32,9 +34,21 @@ public interface MediaRepository extends MongoRepository<MediaDocument, String> 
     // Find media by storage key
     Optional<MediaDocument> findByStorageKey(String storageKey);
 
+    // Find soft-deleted media older than cutoff date that still have a storage key attached
+    List<MediaDocument> findByDeletedAtBeforeAndStorageKeyIsNotNull(Instant cutoffDate);
+
     // Count active media for a user
     long countByUserIdAndDeletedAtIsNull(String userId);
 
     // Count active media in a domain for a user
     long countByUserIdAndDomainAndDeletedAtIsNull(String userId, MediaDomain domain);
+
+    /**
+     * Compute total active storage consumption in bytes directly in MongoDB aggregation pipeline.
+     */
+    @Aggregation(pipeline = {
+        "{ '$match': { 'userId': ?0, 'deletedAt': null } }",
+        "{ '$group': { '_id': null, 'totalBytes': { '$sum': '$sizeBytes' } } }"
+    })
+    Long sumSizeBytesByUserIdAndDeletedAtIsNull(String userId);
 }

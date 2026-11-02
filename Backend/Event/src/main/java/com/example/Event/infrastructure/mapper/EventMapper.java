@@ -10,160 +10,95 @@ import com.example.Event.api.dto.response.EventSummaryResponse;
 import com.example.Event.api.dto.response.EventUpdateResponse;
 import com.example.Event.infrastructure.persistence.document.EventDocument;
 import com.example.Event.shared.enums.AccessStatus;
+import org.mapstruct.InjectionStrategy;
 import org.mapstruct.Mapper;
+import org.mapstruct.Mapping;
 import org.mapstruct.MappingConstants;
+import org.mapstruct.ReportingPolicy;
 
 import java.time.Instant;
 import java.util.List;
 
-@Mapper(componentModel = MappingConstants.ComponentModel.SPRING)
+@Mapper(
+    componentModel = MappingConstants.ComponentModel.SPRING,
+    injectionStrategy = InjectionStrategy.CONSTRUCTOR,
+    unmappedTargetPolicy = ReportingPolicy.IGNORE
+)
 public interface EventMapper {
+
+    @Mapping(target = "eventId", source = "document.id")
+    @Mapping(target = "id", source = "document.id")
+    @Mapping(target = "eventDate", source = "document.eventDate")
+    @Mapping(target = "createdAt", source = "document.createdAt")
+    @Mapping(target = "status", source = "document.status")
+    @Mapping(target = "accessStatus", source = "accessStatus")
+    @Mapping(target = "requiresApproval", source = "requiresApproval")
+    @Mapping(target = "message", source = "message")
+    EventResponse toResponse(
+            EventDocument document,
+            AccessStatus accessStatus,
+            Boolean requiresApproval,
+            String message);
 
     default EventResponse toResponse(EventDocument document) {
         return toResponse(document, null, null, null);
     }
 
-    default EventResponse toResponse(
-            EventDocument document,
-            AccessStatus accessStatus,
-            Boolean requiresApproval,
-            String message) {
-        if (document == null) {
-            return null;
-        }
-        return new EventResponse(
-                document.getId(),
-                document.getId(),
-                document.getOwnerUserId(),
-                document.getTitle(),
-                document.getDescription(),
-                document.getCoverImageId(),
-                toIso(document.getEventDate()),
-                document.getVisibility(),
-                document.isModerationEnabled(),
-                toCollaboratorResponses(document.getCollaborators()),
-                document.getStatus(),
-                toIso(document.getCreatedAt()),
-                accessStatus,
-                requiresApproval,
-                message);
-    }
+    @Mapping(target = "eventId", source = "document.id")
+    @Mapping(target = "id", source = "document.id")
+    @Mapping(target = "title", source = "document.title")
+    @Mapping(target = "message", source = "message")
+    EventCreateResponse toCreateResponse(EventDocument document, String message);
 
-    default EventCreateResponse toCreateResponse(EventDocument document, String message) {
-        if (document == null) {
-            return null;
-        }
-        return new EventCreateResponse(
-                document.getId(),
-                document.getId(),
-                document.getTitle(),
-                message);
-    }
+    @Mapping(target = "eventId", source = "document.id")
+    @Mapping(target = "id", source = "document.id")
+    @Mapping(target = "eventDate", source = "document.eventDate")
+    @Mapping(target = "createdAt", source = "document.createdAt")
+    @Mapping(target = "moderationEnabled", expression = "java(isOwner ? document.isModerationEnabled() : null)")
+    @Mapping(target = "collaborators", expression = "java(isOwner ? toCollaboratorResponses(document.getCollaborators()) : null)")
+    @Mapping(target = "accessStatus", source = "accessStatus")
+    @Mapping(target = "pendingRequestsCount", source = "pendingRequestsCount")
+    EventSummaryResponse toSummaryWithAccess(
+            EventDocument document,
+            String accessStatus,
+            boolean isOwner,
+            Integer pendingRequestsCount);
 
     default EventSummaryResponse toPublicSummary(EventDocument document) {
-        if (document == null) {
-            return null;
-        }
-        return new EventSummaryResponse(
-                document.getId(),
-                document.getId(),
-                document.getOwnerUserId(),
-                document.getTitle(),
-                document.getDescription(),
-                document.getCoverImageId(),
-                toIso(document.getEventDate()),
-                document.getVisibility(),
-                null,
-                null,
-                toIso(document.getCreatedAt()));
+        return toSummaryWithAccess(document, null, false, null);
     }
 
     default EventSummaryResponse toOwnerSummary(EventDocument document) {
-        if (document == null) {
-            return null;
-        }
-        return new EventSummaryResponse(
-                document.getId(),
-                document.getId(),
-                document.getOwnerUserId(),
-                document.getTitle(),
-                document.getDescription(),
-                document.getCoverImageId(),
-                toIso(document.getEventDate()),
-                document.getVisibility(),
-                document.isModerationEnabled(),
-                toCollaboratorResponses(document.getCollaborators()),
-                toIso(document.getCreatedAt()));
+        return toSummaryWithAccess(document, "OWNER", true, null);
     }
 
-    default EventUpdateResponse toUpdateResponse(EventDocument document, String status, String message) {
-        if (document == null) {
-            return null;
-        }
-        return new EventUpdateResponse(
-                status,
-                message,
-                document.getId(),
-                document.getId(),
-                document.getTitle(),
-                document.getDescription(),
-                toIso(document.getEventDate()),
-                document.getVisibility(),
-                document.isModerationEnabled(),
-                document.getCoverImageId(),
-                toCollaboratorResponses(document.getCollaborators()));
+    default EventSummaryResponse toOwnerSummaryWithPendingCount(EventDocument document, Integer pendingRequestsCount) {
+        return toSummaryWithAccess(document, "OWNER", true, pendingRequestsCount);
     }
 
-    default EventDeleteResponse toDeleteResponse(String eventId, String message) {
-        return new EventDeleteResponse(eventId, message);
+    default EventSummaryResponse toSummaryWithAccess(EventDocument document, String accessStatus, boolean isOwner) {
+        return toSummaryWithAccess(document, accessStatus, isOwner, null);
     }
 
-    default EventSettingsResponse toSettingsResponse(EventDocument document) {
-        if (document == null) {
-            return null;
-        }
-        return new EventSettingsResponse(document.isModerationEnabled());
-    }
+    @Mapping(target = "eventId", source = "document.id")
+    @Mapping(target = "id", source = "document.id")
+    @Mapping(target = "status", source = "status")
+    @Mapping(target = "message", source = "message")
+    EventUpdateResponse toUpdateResponse(EventDocument document, String status, String message);
 
-    default EventDocument toDocument(EventRequest request) {
-        if (request == null) {
-            return null;
-        }
-        return EventDocument.builder()
-                .title(request.title())
-                .description(request.description())
-                .visibility(request.resolvedVisibility())
-                .moderationEnabled(request.moderationEnabledOrDefault())
-                .coverImageId(request.coverImageId())
-                .build();
-    }
+    EventDeleteResponse toDeleteResponse(String eventId, String message);
 
-    default CollaboratorResponse toCollaboratorResponse(EventDocument.EventCollaborator collaborator) {
-        if (collaborator == null) {
-            return null;
-        }
-        return new CollaboratorResponse(
-                collaborator.getUserId(),
-                collaborator.getCanUploadMedia(),
-                collaborator.getCanReviewMedia(),
-                collaborator.getCanReviewAccessRequests(),
-                collaborator.getCanDirectUpload(),
-                collaborator.getCanDeleteMedia(),
-                collaborator.getCanEditEventDetails(),
-                collaborator.getAddedAt(),
-                collaborator.getAddedByUserId(),
-                null,
-                null);
-    }
+    EventSettingsResponse toSettingsResponse(EventDocument document);
 
-    default List<CollaboratorResponse> toCollaboratorResponses(List<EventDocument.EventCollaborator> collaborators) {
-        if (collaborators == null) {
-            return null;
-        }
-        return collaborators.stream()
-                .map(this::toCollaboratorResponse)
-                .toList();
-    }
+    @Mapping(target = "title", expression = "java(request.title() != null ? request.title().trim() : null)")
+    @Mapping(target = "description", expression = "java(request.description() != null ? request.description().trim() : null)")
+    @Mapping(target = "visibility", expression = "java(request.resolvedVisibility())")
+    @Mapping(target = "moderationEnabled", expression = "java(request.moderationEnabledOrDefault())")
+    EventDocument toDocument(EventRequest request);
+
+    CollaboratorResponse toCollaboratorResponse(EventDocument.EventCollaborator collaborator);
+
+    List<CollaboratorResponse> toCollaboratorResponses(List<EventDocument.EventCollaborator> collaborators);
 
     default String toIso(Instant instant) {
         return instant == null ? null : instant.toString();

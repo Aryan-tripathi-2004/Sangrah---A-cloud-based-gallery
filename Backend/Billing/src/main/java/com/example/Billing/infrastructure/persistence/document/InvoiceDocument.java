@@ -1,5 +1,7 @@
 package com.example.Billing.infrastructure.persistence.document;
 
+import java.math.BigDecimal;
+
 import com.example.Billing.shared.enums.InvoiceStatus;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -71,11 +73,11 @@ public class InvoiceDocument {
     @AllArgsConstructor
     @Builder
     public static class StorageMetrics {
-        private Double imageGBDays;
-        private Double imageCost;
-        private Double videoGBDays;
-        private Double videoCost;
-        private Double totalGBDays;
+        private BigDecimal imageGBDays;
+        private BigDecimal imageCost;
+        private BigDecimal videoGBDays;
+        private BigDecimal videoCost;
+        private BigDecimal totalGBDays;
     }
 
     @Getter
@@ -84,10 +86,10 @@ public class InvoiceDocument {
     @AllArgsConstructor
     @Builder
     public static class Charges {
-        private Double storageRate;  // e.g., 0.01 per GB-day
-        private Double subtotal;
-        private Double taxRate;     // e.g., 0.08 for 8%
-        private Double tax;
-        private Double totalAmount;
+        private BigDecimal storageRate;  // e.g., 0.01 per GB-day
+        private BigDecimal subtotal;
+        private BigDecimal taxRate;     // e.g., 0.08 for 8%
+        private BigDecimal tax;
+        private BigDecimal totalAmount;
     }
 }

@@ -1,5 +1,7 @@
 package com.example.Billing.infrastructure.client;
 
+import java.math.BigDecimal;
+
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -21,13 +23,13 @@ public interface EmailServiceClient {
         String invoiceId,
         String userId,
         String userEmail,
-        Double amount,
+        BigDecimal amount,
         byte[] pdfContent,
         String emailType
     ) {}
 
     @PostMapping(
-            value = "/api/v1/email/invoices/paid",
+            value = "/api/v1/email",
             consumes = MediaType.APPLICATION_JSON_VALUE
     )
     void sendInvoicePaidEmail(@RequestBody EmailSendRequest request);

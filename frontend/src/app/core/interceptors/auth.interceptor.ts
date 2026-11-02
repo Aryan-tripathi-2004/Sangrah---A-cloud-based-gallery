@@ -1,27 +1,30 @@
 import { HttpInterceptorFn } from '@angular/common/http';
+import { inject, PLATFORM_ID } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
+import { AuthService } from '../auth/auth.service';
 
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
-  // 🔐 CRITICAL: Skip adding token for auth refresh endpoint (uses refreshToken in body instead)
-  if (req.url.includes('/auth/token/refresh')) {
-    console.log('🔄 [authInterceptor] Token refresh endpoint detected - Optional skip');
+  const platformId = inject(PLATFORM_ID);
+  const authService = inject(AuthService);
+
+  // Skip adding token for public authentication endpoints
+  if (
+    req.url.includes('/auth/token/refresh') ||
+    req.url.includes('/auth/login') ||
+    req.url.includes('/auth/register')
+  ) {
+    return next(req);
   }
 
-  // Only add token for API requests (not for external resources)
-  if (req.url.includes('/api/')) {
-    // For refresh endpoint, try to use refreshToken in Authorization header if that's what backend expects 
-    // Or just use the expired token (often backends accept expired token on refresh endpoint to identify user)
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-
+  // Add Authorization header for protected API requests
+  if (req.url.includes('/api/') && isPlatformBrowser(platformId)) {
+    const token = authService.getToken();
     if (token) {
-      console.log('🔐 [authInterceptor] Adding Authorization header to request:', req.method, req.url.substring(0, 50));
-      // Clone the request and add Authorization header
       req = req.clone({
         setHeaders: {
-          Authorization: `Bearer ${token}`
-        }
+          Authorization: `Bearer ${token}`,
+        },
       });
-    } else {
-      console.warn('⚠️ [authInterceptor] No token in localStorage for:', req.url.substring(0, 50));
     }
   }
 

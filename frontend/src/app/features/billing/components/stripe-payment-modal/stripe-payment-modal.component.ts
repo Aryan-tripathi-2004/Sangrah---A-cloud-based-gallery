@@ -1,13 +1,28 @@
-import { Component, Input, Output, EventEmitter, ViewChild, ElementRef, OnInit, OnDestroy, NgZone } from '@angular/core';
+import {
+  Component,
+  input,
+  output,
+  ViewChild,
+  ElementRef,
+  OnInit,
+  OnDestroy,
+  NgZone,
+  ChangeDetectionStrategy,
+  inject,
+  DestroyRef,
+  signal,
+} from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { BillingService } from '../../billing.service';
-import { Observable, Subject } from 'rxjs';
-import { takeUntil } from 'rxjs/operators';
-import { loadStripe, Stripe, StripeElements, StripePaymentElement } from '@stripe/stripe-js';
+import { timer, EMPTY } from 'rxjs';
+import { switchMap, take, filter, catchError } from 'rxjs/operators';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { loadStripe, Stripe, StripeElements, StripePaymentElement, StripeAddressElement } from '@stripe/stripe-js';
 
 @Component({
   selector: 'app-stripe-payment-modal',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CommonModule],
   templateUrl: './stripe-payment-modal.component.html',
   styles: [`
@@ -25,36 +40,75 @@ import { loadStripe, Stripe, StripeElements, StripePaymentElement } from '@strip
   `]
 })
 export class StripePaymentModalComponent implements OnInit, OnDestroy {
-  @Input() invoiceId!: string;
-  @Output() closeModal = new EventEmitter<void>();
-  @Output() paymentSuccess = new EventEmitter<void>();
-  @ViewChild('stripeContainer') stripeContainerRef!: ElementRef;
-  @ViewChild('addressContainer') addressContainerRef!: ElementRef;  // NEW: Address element container
+  readonly invoiceId = input.required<string>();
+  readonly closeModal = output<void>();
+  readonly paymentSuccess = output<void>();
 
-  paymentIntent$: Observable<any>;
+  @ViewChild('stripeContainer') stripeContainerRef!: ElementRef;
+  @ViewChild('addressContainer') addressContainerRef!: ElementRef;
+
+  private readonly billingService = inject(BillingService);
+  private readonly ngZone = inject(NgZone);
+  private readonly destroyRef = inject(DestroyRef);
+
+  readonly paymentIntent = this.billingService.paymentIntent;
 
   stripe: Stripe | null = null;
   elements: StripeElements | null = null;
   paymentElement: StripePaymentElement | null = null;
-  addressElement: any = null;  // Address element for billing details
+  addressElement: StripeAddressElement | null = null;
 
-  stripeReady = false;
-  processing = false;
-  paymentError = '';
-  showSuccessMessage = false;
-  showProcessingMessage = false;  // NEW: Show "waiting for confirmation" message
-  timeoutCountdown = 300;  // NEW: 5 minutes = 300 seconds
+  readonly stripeReadySignal = signal<boolean>(false);
+  readonly processingSignal = signal<boolean>(false);
+  readonly paymentErrorSignal = signal<string>('');
+  readonly showSuccessMessageSignal = signal<boolean>(false);
+  readonly showProcessingMessageSignal = signal<boolean>(false);
+  readonly timeoutCountdownSignal = signal<number>(300);
 
-  private destroy$ = new Subject<void>();
-  private webhookSocket: WebSocket | null = null;  // NEW: WebSocket for real-time updates
-  private webhookTimeout: any = null;  // NEW: Timeout handler
-  private countdownInterval: any = null;  // NEW: Countdown timer
+  private webhookSocket: WebSocket | null = null;
+  private webhookTimeout: ReturnType<typeof setTimeout> | null = null;
+  private countdownInterval: ReturnType<typeof setInterval> | null = null;
 
-  constructor(
-    private billingService: BillingService,
-    private ngZone: NgZone
-  ) {
-    this.paymentIntent$ = this.billingService.paymentIntent$;
+  get stripeReady(): boolean {
+    return this.stripeReadySignal();
+  }
+  set stripeReady(val: boolean) {
+    this.stripeReadySignal.set(val);
+  }
+
+  get processing(): boolean {
+    return this.processingSignal();
+  }
+  set processing(val: boolean) {
+    this.processingSignal.set(val);
+  }
+
+  get paymentError(): string {
+    return this.paymentErrorSignal();
+  }
+  set paymentError(val: string) {
+    this.paymentErrorSignal.set(val);
+  }
+
+  get showSuccessMessage(): boolean {
+    return this.showSuccessMessageSignal();
+  }
+  set showSuccessMessage(val: boolean) {
+    this.showSuccessMessageSignal.set(val);
+  }
+
+  get showProcessingMessage(): boolean {
+    return this.showProcessingMessageSignal();
+  }
+  set showProcessingMessage(val: boolean) {
+    this.showProcessingMessageSignal.set(val);
+  }
+
+  get timeoutCountdown(): number {
+    return this.timeoutCountdownSignal();
+  }
+  set timeoutCountdown(val: number) {
+    this.timeoutCountdownSignal.set(val);
   }
 
   async ngOnInit(): Promise<void> {
@@ -79,14 +133,14 @@ export class StripePaymentModalComponent implements OnInit, OnDestroy {
       console.log('✅ Stripe loaded successfully');
 
       // Create payment intent on backend
-      console.log('💳 Creating payment intent for invoice:', this.invoiceId);
+      const targetInvoiceId = this.invoiceId();
+      console.log('💳 Creating payment intent for invoice:', targetInvoiceId);
       this.billingService
-        .createPaymentIntent(this.invoiceId)
-        .pipe(takeUntil(this.destroy$))
+        .createPaymentIntent(targetInvoiceId)
+        .pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe({
           next: (response) => {
             console.log('✅ Payment intent created:', response);
-            // Payment intent created, now setup Elements
             this.setupPaymentElements();
           },
           error: (err) => {
@@ -148,10 +202,10 @@ export class StripePaymentModalComponent implements OnInit, OnDestroy {
 
       // Create ADDRESS element first (collects name, email, address)
       this.addressElement = this.elements.create('address', {
-        mode: 'billing',  // Collect billing address
+        mode: 'billing',
         defaultValues: {
           address: {
-            country: 'IN'  // Default to India
+            country: 'IN'
           }
         }
       });
@@ -169,12 +223,10 @@ export class StripePaymentModalComponent implements OnInit, OnDestroy {
       }
 
       // Create PAYMENT element
-      // The payment element automatically collects billing details (name, email, address)
-      // because the payment intent has a customer attached
       this.paymentElement = this.elements.create('payment');
       console.log('✅ Payment element created with auto billing details collection');
 
-      // Mount payment element - container is always in DOM now
+      // Mount payment element
       if (this.stripeContainerRef && this.stripeContainerRef.nativeElement) {
         console.log('📌 Mounting payment element...');
         this.paymentElement.mount(this.stripeContainerRef.nativeElement);
@@ -208,7 +260,6 @@ export class StripePaymentModalComponent implements OnInit, OnDestroy {
     try {
       console.log('🚀 Calling stripe.confirmPayment()...');
 
-      // Run in zone to ensure change detection
       await this.ngZone.run(async () => {
         console.log('⏳ Inside ngZone.run()');
 
@@ -223,18 +274,15 @@ export class StripePaymentModalComponent implements OnInit, OnDestroy {
         console.log('📊 confirmPayment result:', result);
 
         if (result.error) {
-          // Show error from Stripe
           console.error('❌ Payment error:', result.error);
           this.paymentError = result.error.message || 'Payment failed. Please try again.';
           this.processing = false;
         } else {
-          // Payment successful
           console.log('✅ Payment confirmed!');
           this.showSuccessMessage = true;
-          this.showProcessingMessage = true;  // Show "waiting..." message
+          this.showProcessingMessage = true;
           this.processing = false;
 
-          // 🔄 Sync payment status and check invoice (MVP approach - simpler and more reliable)
           console.log('🔄 Syncing payment status with backend...');
           this.syncAndUpdateStatus();
         }
@@ -249,116 +297,76 @@ export class StripePaymentModalComponent implements OnInit, OnDestroy {
   /**
    * Sync payment status with Stripe and update database
    */
-  private syncAndUpdateStatus(attempts: number = 0, maxAttempts: number = 5): void {
-    if (attempts >= maxAttempts) {
-      console.warn('⏱️ Sync attempts exhausted - falling back to polling');
-      this.pollPaymentStatus();
-      return;
-    }
-
-    console.log(`🔄 Syncing payment status... (attempt ${attempts + 1}/${maxAttempts})`);
-
-    this.billingService.syncPaymentStatus(this.invoiceId).subscribe({
-      next: (status) => {
-        console.log('✅ Sync response - Status:', status.status);
-
-        if (status.status === 'PAID') {
-          // Database updated successfully!
-          console.log('✅✅ Payment successfully synced and marked as PAID!');
-          this.paymentSuccess.emit();
-          setTimeout(() => {
-            this.closeModal.emit();
-          }, 1500);
-        } else {
-          // Still processing, retry sync or fall back to polling
-          console.log('⏳ Payment still processing, retrying sync...');
-          setTimeout(() => {
-            this.syncAndUpdateStatus(attempts + 1, maxAttempts);
-          }, 1000);
-        }
+  private syncAndUpdateStatus(maxAttempts: number = 5): void {
+    console.log('🔄 Syncing payment status with backend...');
+    const targetInvoiceId = this.invoiceId();
+    timer(0, 1000).pipe(
+      take(maxAttempts),
+      takeUntilDestroyed(this.destroyRef),
+      switchMap((attempt) => {
+        console.log(`🔄 Syncing payment status... (attempt ${attempt + 1}/${maxAttempts})`);
+        return this.billingService.syncPaymentStatus(targetInvoiceId).pipe(
+          catchError((err) => {
+            console.error('❌ Sync failed:', err);
+            return EMPTY;
+          })
+        );
+      }),
+      filter(status => status?.status === 'PAID'),
+      take(1)
+    ).subscribe({
+      next: () => {
+        console.log('✅✅ Payment successfully synced and marked as PAID!');
+        this.clearTimeouts();
+        this.paymentSuccess.emit();
+        setTimeout(() => {
+          this.closeModal.emit();
+        }, 1500);
       },
-      error: (err) => {
-        console.error('❌ Sync failed:', err);
-        if (attempts < maxAttempts - 1) {
-          // Retry sync
-          setTimeout(() => {
-            this.syncAndUpdateStatus(attempts + 1, maxAttempts);
-          }, 1000);
-        } else {
-          // Max retries reached, fall back to polling
-          console.warn('⚠️ Max sync retries reached, falling back to polling');
-          this.pollPaymentStatus();
-        }
+      complete: () => {
+        console.warn('⚠️ Sync attempts completed without PAID, falling back to polling');
+        this.pollPaymentStatus();
       }
     });
   }
 
   /**
    * Poll payment status until it's marked as PAID or timeout
-   * Fallback method if sync endpoint is unavailable
    */
-  private pollPaymentStatus(attempts: number = 0, maxAttempts: number = 30): void {
-    if (attempts >= maxAttempts) {
-      console.warn('⏱️ Payment status poll timeout - closing modal');
-      this.paymentSuccess.emit();
-      this.closeModal.emit();
-      return;
-    }
-
-    // Wait 1 second before polling
-    setTimeout(() => {
-      console.log(`🔍 Polling payment status... (attempt ${attempts + 1}/${maxAttempts})`);
-
-      this.billingService.getPaymentStatus(this.invoiceId).subscribe({
-        next: (status) => {
-          console.log('📊 Payment status:', status.status);
-
-          if (status.status === 'PAID') {
-            // Payment successful!
-            console.log('✅ Invoice marked as PAID!');
-            this.clearTimeouts();
-            this.paymentSuccess.emit();
-            setTimeout(() => {
-              this.closeModal.emit();
-            }, 1500);
-          } else {
-            // Still pending, poll again
-            this.pollPaymentStatus(attempts + 1, maxAttempts);
-          }
-        },
-        error: (err) => {
-          console.error('❌ Error checking payment status:', err);
-          // Try again anyway
-          this.pollPaymentStatus(attempts + 1, maxAttempts);
-        }
-      });
-    }, 1000);
+  private pollPaymentStatus(maxAttempts: number = 30): void {
+    console.log('🔍 Starting declarative polling for payment status...');
+    const targetInvoiceId = this.invoiceId();
+    timer(0, 1000).pipe(
+      take(maxAttempts),
+      takeUntilDestroyed(this.destroyRef),
+      switchMap((attempt) => {
+        console.log(`🔍 Polling payment status... (attempt ${attempt + 1}/${maxAttempts})`);
+        return this.billingService.getPaymentStatus(targetInvoiceId).pipe(
+          catchError((err) => {
+            console.error('❌ Error checking payment status:', err);
+            return EMPTY;
+          })
+        );
+      }),
+      filter(status => status?.status === 'PAID'),
+      take(1)
+    ).subscribe({
+      next: () => {
+        console.log('✅ Invoice marked as PAID!');
+        this.clearTimeouts();
+        this.paymentSuccess.emit();
+        setTimeout(() => {
+          this.closeModal.emit();
+        }, 1500);
+      },
+      complete: () => {
+        console.warn('⏱️ Payment status poll timeout - closing modal');
+        this.paymentSuccess.emit();
+        this.closeModal.emit();
+      }
+    });
   }
 
-  /**
-   * FUTURE: WebSocket Listener for Real-Time Updates
-   *
-   * NOTE: MVP uses sync/polling approach instead. WebSocket can be added later
-   * as an optimization when:
-   * 1. Backend WebSocket endpoint is implemented
-   * 2. Stripe CLI or actual webhooks are configured
-   * 3. Real-time updates become critical for UX
-   */
-  private setupWebSocketListener(): void {
-    console.log('🔌 WebSocket approach - deferred for future optimization');
-    // For MVP: just use sync/polling (below)
-  }
-
-  /**
-   * FUTURE: Countdown Timer for WebSocket
-   */
-  private startCountdownTimer(): void {
-    // Deferred for WebSocket implementation
-  }
-
-  /**
-   * Clear all timeout and interval handles
-   */
   private clearTimeouts(): void {
     if (this.webhookTimeout) {
       clearTimeout(this.webhookTimeout);
@@ -371,13 +379,11 @@ export class StripePaymentModalComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
-    // Clean up timers
     this.clearTimeouts();
     if (this.webhookSocket) {
       this.webhookSocket.close();
     }
 
-    // Clean up Stripe elements
     if (this.addressElement) {
       this.addressElement.destroy();
     }
@@ -385,7 +391,5 @@ export class StripePaymentModalComponent implements OnInit, OnDestroy {
       this.paymentElement.destroy();
     }
     this.billingService.clearPaymentIntent();
-    this.destroy$.next();
-    this.destroy$.complete();
   }
 }

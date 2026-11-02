@@ -1,52 +1,48 @@
-import { Component, Input, Output, EventEmitter, inject, OnInit } from '@angular/core';
+import { Component, inject, ChangeDetectionStrategy, signal, input, output, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { MediaItem, SangrahApiService } from '../../../core/api/sangrah-api.service';
+import { GalleryApiService } from '../../../core/api/services/gallery-api.service';
+import { MediaItem } from '../../../core/api/models/api.models';
 
 @Component({
   selector: 'app-media-item',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CommonModule],
   templateUrl: './media-item.component.html',
 })
-export class MediaItemComponent implements OnInit {
-  private api = inject(SangrahApiService);
+export class MediaItemComponent {
+  private readonly api = inject(GalleryApiService);
 
-  @Input() media!: MediaItem;
-  @Output() preview = new EventEmitter<MediaItem>();
-  @Output() delete = new EventEmitter<string>();
+  readonly mediaInput = input.required<MediaItem>({ alias: 'media' });
+  readonly preview = output<MediaItem>();
+  readonly delete = output<string>();
 
-  fileUrl: string = '';
-  imageLoaded: boolean = false;
+  readonly imageLoaded = signal<boolean>(false);
+  readonly fileUrl = computed(() => this.api.getGalleryMediaFile(this.mediaInput().id));
+  readonly isImage = computed(() => this.mediaInput().type === 'IMAGE');
+  readonly isVideo = computed(() => this.mediaInput().type === 'VIDEO');
 
-  ngOnInit(): void {
-    this.fileUrl = this.api.getGalleryMediaFile(this.media.id);
-  }
-
-  get isImage(): boolean {
-    return this.media.type === 'IMAGE';
-  }
-
-  get isVideo(): boolean {
-    return this.media.type === 'VIDEO';
+  get media(): MediaItem {
+    return this.mediaInput();
   }
 
   onPreview(): void {
-    this.preview.emit(this.media);
+    this.preview.emit(this.mediaInput());
   }
 
   onDelete(): void {
-    if (confirm(`Delete "${this.media.originalFileName}"?`)) {
-      this.delete.emit(this.media.id);
+    const item = this.mediaInput();
+    if (confirm(`Delete "${item.originalFileName}"?`)) {
+      this.delete.emit(item.id);
     }
   }
 
   onImageError(): void {
-    console.error('Failed to load media:', this.media.id);
-    this.imageLoaded = false;
+    this.imageLoaded.set(false);
   }
 
   onImageLoad(): void {
-    this.imageLoaded = true;
+    this.imageLoaded.set(true);
   }
 
   formatSize(bytes: number): string {

@@ -1,15 +1,28 @@
 package com.example.Gallery.api.dto.response;
 
+import lombok.Builder;
+
 /**
- * Response showing current storage usage (informational, NOT a quota limit)
- * Pay-as-you-use model: users can upload unlimited, only charged for what they use
+ * Response showing current storage usage matching the frontend API contract.
  */
+@Builder
 public record StorageUsageResponse(
     long totalBytesUsed,
     long fileCount,
-    long imageBytes,
-    long videoBytes,
-    String oldestFile,
-    String newestFile,
-    String formattedUsage
-) {}
+    StorageBreakdown breakdown,
+    StorageFormatted formatted,
+    String message
+) {
+    @Builder
+    public record StorageBreakdown(
+        long imageBytes,
+        long videoBytes
+    ) {}
+
+    @Builder
+    public record StorageFormatted(
+        String totalFormatted,
+        String imageFormatted,
+        String videoFormatted
+    ) {}
+}

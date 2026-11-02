@@ -1,20 +1,21 @@
 package com.example.Billing.application.service.impl;
 
 import com.example.Billing.api.dto.response.CostEstimateDTO;
-import com.example.Billing.infrastructure.persistence.document.StorageUsageLedgerDocument;
+import com.example.Billing.api.dto.response.StorageUsageLedgerDTO;
+import com.example.Billing.application.service.interfaces.ICostEstimationService;
+import com.example.Billing.infrastructure.client.MediaServiceClient;
+import com.example.Billing.infrastructure.mapper.StorageUsageMapper;
 import com.example.Billing.infrastructure.persistence.repository.StorageUsageLedgerRepository;
 import com.example.Billing.shared.util.BillingCalculator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
-import java.time.LocalDate;
-import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
-
-import com.example.Billing.application.service.interfaces.ICostEstimationService;
 
 @Slf4j
 @Service
@@ -22,134 +23,110 @@ import com.example.Billing.application.service.interfaces.ICostEstimationService
 public class CostEstimationServiceImpl implements ICostEstimationService {
 
     private final StorageUsageLedgerRepository ledgerRepository;
+    private final MediaServiceClient mediaServiceClient;
     private final BillingCalculator calculator;
+    private final StorageUsageMapper storageUsageMapper;
 
-    /**
-     * Estimate current month's cost based on usage so far
-     * @param userId User ID
-     * @return Cost estimate with projection
-     */
+    @Override
     public CostEstimateDTO estimateCurrentMonthCost(String userId) {
-        log.info("📊 Estimating current month cost for user: {}", userId);
+        log.info("Estimating current month cost for user: {}", userId);
 
         Instant monthStart = calculator.getCurrentMonthStart();
         Instant now = Instant.now();
 
-        // Get all active ledger entries for current month
-        List<StorageUsageLedgerDocument> currentMonthEntries =
-            ledgerRepository.findByUserIdAndCreatedAtGreaterThanEqual(userId, monthStart);
+        List<StorageUsageLedgerDTO> currentMonthEntries = getLedgerEntriesForPeriod(userId, monthStart, now);
 
-        log.info("📋 Found {} storage entries for user {} in current month", currentMonthEntries.size(), userId);
+        BigDecimal currentImageGBDays = BigDecimal.ZERO;
+        BigDecimal currentVideoGBDays = BigDecimal.ZERO;
+        int daysElapsed = Math.max(1, (int) ChronoUnit.DAYS.between(monthStart, now));
 
-        // Calculate current usage
-        double currentImageGBDays = 0.0;
-        double currentVideoGBDays = 0.0;
-        int daysElapsed = (int) ChronoUnit.DAYS.between(monthStart, now);
-        if (daysElapsed <= 0) daysElapsed = 1;
-
-        for (StorageUsageLedgerDocument entry : currentMonthEntries) {
-            double gbDays = calculator.calculateGBDays(entry.getSizeBytes(), entry.getStartAt(), entry.getEndAt());
-
-            // Determine type (would need mediaType field - for now assume all images)
-            // TODO: Get media type from Gallery service or add to ledger
-            currentImageGBDays += gbDays;
+        for (StorageUsageLedgerDTO entry : currentMonthEntries) {
+            BigDecimal gbDays = calculator.calculateGBDays(
+                    entry.sizeBytes(),
+                    entry.startAt(),
+                    entry.endAt()
+            );
+            currentImageGBDays = currentImageGBDays.add(gbDays);
         }
 
-        double currentCost = calculator.calculateCost(currentImageGBDays);
-        double projectedTotal = calculator.projectMonthlyTotal(currentImageGBDays, daysElapsed);
+        BigDecimal totalGBDays = currentImageGBDays.add(currentVideoGBDays);
+        BigDecimal imageCost = calculator.calculateCost(currentImageGBDays);
+        BigDecimal videoCost = calculator.calculateCost(currentVideoGBDays);
+        BigDecimal currentCost = imageCost.add(videoCost);
+        BigDecimal projectedTotal = calculator.projectMonthlyTotal(totalGBDays, daysElapsed);
 
-        // Build response
         CostEstimateDTO.CurrentMonthDataDTO monthData = CostEstimateDTO.CurrentMonthDataDTO.builder()
-            .startDate(monthStart)
-            .daysElapsed(daysElapsed)
-            .estimatedGBDays(currentImageGBDays)
-            .estimatedCost(currentCost)
-            .projectedMonthlyTotal(projectedTotal)
-            .build();
-
-        CostEstimateDTO.StorageBreakdownDTO.StorageTypeDTO images =
-            CostEstimateDTO.StorageBreakdownDTO.StorageTypeDTO.builder()
-                .gbDays(currentImageGBDays)
-                .cost(currentCost)
-                .build();
-
-        CostEstimateDTO.StorageBreakdownDTO.StorageTypeDTO videos =
-            CostEstimateDTO.StorageBreakdownDTO.StorageTypeDTO.builder()
-                .gbDays(0.0)
-                .cost(0.0)
+                .startDate(monthStart)
+                .daysElapsed(daysElapsed)
+                .estimatedGBDays(totalGBDays)
+                .estimatedCost(currentCost)
+                .projectedMonthlyTotal(projectedTotal)
                 .build();
 
         CostEstimateDTO.StorageBreakdownDTO breakdown = CostEstimateDTO.StorageBreakdownDTO.builder()
-            .images(images)
-            .videos(videos)
-            .build();
+                .images(CostEstimateDTO.StorageBreakdownDTO.StorageTypeDTO.builder()
+                        .gbDays(currentImageGBDays)
+                        .cost(imageCost)
+                        .build())
+                .videos(CostEstimateDTO.StorageBreakdownDTO.StorageTypeDTO.builder()
+                        .gbDays(currentVideoGBDays)
+                        .cost(videoCost)
+                        .build())
+                .build();
 
-        double costPerDay = daysElapsed > 0 ? currentCost / daysElapsed : 0.0;
-
-        log.info("💰 Cost estimate: ${:.2f} current | ${:.2f} projected | ${:.2f}/day",
-            currentCost, projectedTotal, costPerDay);
+        BigDecimal costPerDay = currentCost.divide(BigDecimal.valueOf(daysElapsed), 2, RoundingMode.HALF_UP);
 
         return CostEstimateDTO.builder()
-            .currentMonthData(monthData)
-            .storageBreakdown(breakdown)
-            .costPerDay(costPerDay)
-            .ratePerGBDay(BillingCalculator.STORAGE_RATE_PER_GB_DAY)
-            .build();
+                .currentMonthData(monthData)
+                .storageBreakdown(breakdown)
+                .costPerDay(costPerDay)
+                .ratePerGBDay(calculator.getStorageRatePerGbDay())
+                .build();
     }
 
-    /**
-     * Calculate actual cost for a specific date range
-     * @param userId User ID
-     * @param startDate Start of period
-     * @param endDate End of period
-     * @return Cost breakdown
-     */
+    @Override
     public BillingCostDetails calculateCostForPeriod(String userId, Instant startDate, Instant endDate) {
-        log.info("📊 Calculating cost for user {} from {} to {}", userId, startDate, endDate);
+        List<StorageUsageLedgerDTO> entries = getLedgerEntriesForPeriod(userId, startDate, endDate);
 
-        List<StorageUsageLedgerDocument> entries =
-            ledgerRepository.findByUserIdAndCreatedAtGreaterThanEqual(userId, startDate);
-
-        double totalImageGBDays = 0.0;
-        double totalVideoGBDays = 0.0;
+        BigDecimal totalImageGBDays = BigDecimal.ZERO;
         int fileCount = 0;
 
-        for (StorageUsageLedgerDocument entry : entries) {
-            // Only count files that existed during this period
-            Instant fileStart = entry.getStartAt();
-            Instant fileEnd = entry.getEndAt() != null ? entry.getEndAt() : endDate;
+        for (StorageUsageLedgerDTO entry : entries) {
+            Instant fileStart = entry.startAt() == null || entry.startAt().isBefore(startDate) ? startDate : entry.startAt();
+            Instant fileEnd = entry.endAt() == null || entry.endAt().isAfter(endDate) ? endDate : entry.endAt();
 
-            // Skip if file doesn't overlap with billing period
-            if (fileEnd.isBefore(startDate) || fileStart.isAfter(endDate)) {
-                continue;
+            if (fileStart.isBefore(fileEnd)) {
+                BigDecimal gbDays = calculator.calculateGBDays(entry.sizeBytes(), fileStart, fileEnd);
+                totalImageGBDays = totalImageGBDays.add(gbDays);
+                fileCount++;
             }
-
-            // Calculate days in billing period only
-            Instant periodStart = fileStart.isBefore(startDate) ? startDate : fileStart;
-            Instant periodEnd = fileEnd.isBefore(endDate) ? fileEnd : endDate;
-
-            double gbDays = calculator.calculateGBDays(entry.getSizeBytes(), periodStart, periodEnd);
-
-            // TODO: Get media type from Gallery service
-            totalImageGBDays += gbDays;
-            fileCount++;
         }
 
-        double imageCost = calculator.calculateCost(totalImageGBDays);
-        double totalCost = imageCost;  // + videoCost when implemented
-
-        log.info("💰 Period cost calculated: ${:.2f} ({} files, {:.2f} GB-days)",
-            totalCost, fileCount, totalImageGBDays);
+        BigDecimal imageCost = calculator.calculateCost(totalImageGBDays);
 
         return BillingCostDetails.builder()
-            .imageGBDays(totalImageGBDays)
-            .imageCost(imageCost)
-            .videoGBDays(0.0)
-            .videoCost(0.0)
-            .totalGBDays(totalImageGBDays)
-            .totalCost(totalCost)
-            .fileCount(fileCount)
-            .build();
+                .imageGBDays(totalImageGBDays)
+                .imageCost(imageCost)
+                .videoGBDays(BigDecimal.ZERO)
+                .videoCost(BigDecimal.ZERO)
+                .totalGBDays(totalImageGBDays)
+                .totalCost(imageCost)
+                .fileCount(fileCount)
+                .build();
     }
 
+    private List<StorageUsageLedgerDTO> getLedgerEntriesForPeriod(String userId, Instant start, Instant end) {
+        try {
+            List<StorageUsageLedgerDTO> remoteEntries = mediaServiceClient.getUserStorageLedger(userId, start, end);
+            if (remoteEntries != null && !remoteEntries.isEmpty()) {
+                return remoteEntries;
+            }
+        } catch (Exception e) {
+            log.warn("Could not query MediaService storage ledger, falling back to local repository: {}", e.getMessage());
+        }
+
+        return ledgerRepository.findByUserIdAndCreatedAtGreaterThanEqual(userId, start).stream()
+                .map(storageUsageMapper::toLedgerDTO)
+                .toList();
+    }
 }

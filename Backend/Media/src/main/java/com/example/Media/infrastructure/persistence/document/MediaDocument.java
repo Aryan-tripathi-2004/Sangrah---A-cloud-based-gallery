@@ -75,6 +75,7 @@ public class MediaDocument {
 
     private Instant updatedAt;
 
+    @Indexed
     private Instant deletedAt;
 
     /**
@@ -87,5 +88,9 @@ public class MediaDocument {
     // Helper method to check if media is active (not deleted)
     public boolean isActive() {
         return deletedAt == null;
+    }
+
+    public boolean isDeleted() {
+        return deletedAt != null;
     }
 }

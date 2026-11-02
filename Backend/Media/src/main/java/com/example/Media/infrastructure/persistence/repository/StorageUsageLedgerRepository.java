@@ -2,6 +2,8 @@ package com.example.Media.infrastructure.persistence.repository;
 
 import com.example.Media.infrastructure.persistence.document.StorageUsageLedgerDocument;
 import com.example.Media.shared.enums.MediaDomain;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.stereotype.Repository;
 
@@ -14,6 +16,9 @@ public interface StorageUsageLedgerRepository extends MongoRepository<StorageUsa
     // Find ledger entries for a user in a date range (for billing)
     List<StorageUsageLedgerDocument> findByUserIdAndStartAtBetween(String userId, Instant startDate, Instant endDate);
 
+    // Find paginated ledger entries across all users in a date range (for batch billing)
+    Page<StorageUsageLedgerDocument> findByStartAtBetween(Instant startDate, Instant endDate, Pageable pageable);
+
     // Find ledger entries for a user and domain in a date range
     List<StorageUsageLedgerDocument> findByUserIdAndDomainAndStartAtBetween(String userId, MediaDomain domain, Instant startDate, Instant endDate);
 
@@ -22,6 +27,9 @@ public interface StorageUsageLedgerRepository extends MongoRepository<StorageUsa
 
     // Find ledger entry by domain reference
     List<StorageUsageLedgerDocument> findByDomainRefId(String domainRefId);
+
+    // Find ledger entries by multiple domain references
+    List<StorageUsageLedgerDocument> findByDomainRefIdIn(List<String> domainRefIds);
 
     // Find all entries for a user across all domains
     List<StorageUsageLedgerDocument> findByUserId(String userId);

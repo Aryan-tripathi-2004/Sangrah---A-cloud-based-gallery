@@ -3,7 +3,9 @@ package com.example.Event.application.service.interfaces;
 import com.example.Event.api.dto.request.AccessApprovalRequest;
 import com.example.Event.api.dto.request.AccessMessageRequest;
 import com.example.Event.api.dto.request.AccessRejectionRequest;
+import com.example.Event.api.dto.request.AccessStatusUpdateRequest;
 import com.example.Event.api.dto.response.AccessApprovalResponse;
+import com.example.Event.api.dto.response.AccessStatusUpdateResponse;
 import com.example.Event.api.dto.response.AccessRejectionResponse;
 import com.example.Event.api.dto.response.AccessRequestMutationResponse;
 import com.example.Event.api.dto.response.AccessRequestsResponse;
@@ -20,6 +22,8 @@ public interface IEventAccessService {
     AccessRejectionResponse rejectRequest(String eventId, String requestId, AccessRejectionRequest request, String userId);
 
     AccessRevocationResponse revokeRequest(String eventId, String requestId, String userId);
+
+    AccessStatusUpdateResponse updateAccessStatus(String eventId, String requestId, AccessStatusUpdateRequest request, String userId);
 
     AccessRequestMutationResponse reRequestAccess(String eventId, AccessMessageRequest request, String userId);
 

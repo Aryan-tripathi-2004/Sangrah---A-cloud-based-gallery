@@ -6,6 +6,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Builder;
 
 import java.time.LocalDateTime;
+import com.example.Notification.api.dto.request.NotificationPayloadDTO;
 
 /**
  * DTO for notification response.
@@ -15,28 +16,19 @@ import java.time.LocalDateTime;
 public record NotificationResponse(
 
     @Schema(description = "Notification ID", example = "507f1f77bcf86cd799439011")
-    String notificationId,
+    String id,
 
     @Schema(description = "Recipient user ID")
-    String userId,
+    String recipientUserId,
 
-    @Schema(description = "Notification title", example = "File Uploaded")
-    String title,
+    @Schema(description = "Type of notification", example = "INFO")
+    NotificationType type,
 
-    @Schema(description = "Notification message")
-    String message,
-
-    @Schema(description = "Type of notification (INFO, WARNING, ERROR, SUCCESS)", example = "INFO")
-    NotificationType notificationType,
+    @Schema(description = "Notification payload")
+    NotificationPayloadDTO payload,
 
     @Schema(description = "Is notification read")
     Boolean read,
-
-    @Schema(description = "Related resource ID")
-    String relatedResourceId,
-
-    @Schema(description = "Action URL to trigger")
-    String actionUrl,
 
     @Schema(description = "Notification creation timestamp")
     @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")

@@ -1,27 +1,29 @@
 <div class="space-y-6">
-      <h2 class="text-2xl font-bold">Access Requests</h2>
+  <h2 class="text-2xl font-bold">Access Requests</h2>
 
-      <!-- Request Tabs -->
-      <div class="flex gap-3">
-        <button
-          (click)="filterStatus = 'PENDING'"
-          [class.bg-blue-600]="filterStatus === 'PENDING'"
-          [class.bg-slate-700]="filterStatus !== 'PENDING'"
-          class="px-4 py-2 rounded-lg font-medium transition">
-          ⏳ Pending ({{ getPendingCount() }})
-        </button>
-        <button
-          (click)="filterStatus = 'APPROVED'"
-          [class.bg-blue-600]="filterStatus === 'APPROVED'"
-          [class.bg-slate-700]="filterStatus !== 'APPROVED'"
-          class="px-4 py-2 rounded-lg font-medium transition">
-          ✅ Approved ({{ getApprovedCount() }})
-        </button>
-      </div>
+  <!-- Request Tabs -->
+  <div class="flex gap-3">
+    <button
+      (click)="filterStatus = 'PENDING'"
+      [class.bg-blue-600]="filterStatus === 'PENDING'"
+      [class.bg-slate-700]="filterStatus !== 'PENDING'"
+      class="px-4 py-2 rounded-lg font-medium transition">
+      ⏳ Pending ({{ getPendingCount() }})
+    </button>
+    <button
+      (click)="filterStatus = 'APPROVED'"
+      [class.bg-blue-600]="filterStatus === 'APPROVED'"
+      [class.bg-slate-700]="filterStatus !== 'APPROVED'"
+      class="px-4 py-2 rounded-lg font-medium transition">
+      ✅ Approved ({{ getApprovedCount() }})
+    </button>
+  </div>
 
-      <!-- Request List -->
-      <div *ngIf="getFilteredRequests().length > 0" class="space-y-3">
-        <div *ngFor="let req of getFilteredRequests()" class="bg-slate-800/30 border border-slate-700/50 rounded-lg p-4">
+  <!-- Request List -->
+  @if (getFilteredRequests().length > 0) {
+    <div class="space-y-3">
+      @for (req of getFilteredRequests(); track req) {
+        <div class="bg-slate-800/30 border border-slate-700/50 rounded-lg p-4">
           <div class="flex items-start justify-between mb-3">
             <div>
               <p class="font-semibold">{{ req.displayName || req.requesterUserId }}</p>
@@ -33,94 +35,104 @@
               {{ req.status }}
             </span>
           </div>
-
-          <p *ngIf="req.message" class="text-slate-300 text-sm mb-4 italic border-l-2 border-slate-600 pl-3">
-            "{{ req.message }}"
-          </p>
-
-          <div *ngIf="req.status === 'PENDING'" class="flex gap-3">
-            <button
-              (click)="openApproveForm(req.requestId)"
-              [disabled]="processingId === req.requestId"
-              class="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-slate-600 px-4 py-2 rounded font-semibold text-sm transition">
-              {{ processingId === req.requestId ? '⏳' : '✅ Approve' }}
-            </button>
-            <button
-              (click)="openRejectForm(req.requestId)"
-              [disabled]="processingId === req.requestId"
-              class="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-slate-600 px-4 py-2 rounded font-semibold text-sm transition">
-              {{ processingId === req.requestId ? '⏳' : '❌ Reject' }}
-            </button>
-          </div>
-
+          @if (req.message) {
+            <p class="text-slate-300 text-sm mb-4 italic border-l-2 border-slate-600 pl-3">
+              "{{ req.message }}"
+            </p>
+          }
+          @if (req.status === 'PENDING') {
+            <div class="flex gap-3">
+              <button
+                (click)="openApproveForm(req.requestId)"
+                [disabled]="processingId === req.requestId"
+                class="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-slate-600 px-4 py-2 rounded font-semibold text-sm transition">
+                {{ processingId === req.requestId ? '⏳' : '✅ Approve' }}
+              </button>
+              <button
+                (click)="openRejectForm(req.requestId)"
+                [disabled]="processingId === req.requestId"
+                class="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-slate-600 px-4 py-2 rounded font-semibold text-sm transition">
+                {{ processingId === req.requestId ? '⏳' : '❌ Reject' }}
+              </button>
+            </div>
+          }
           <!-- Revoke for approved requests -->
-          <div *ngIf="req.status === 'APPROVED'" class="flex gap-3">
-            <button
-              (click)="openRevoke(req.requestId)"
-              [disabled]="processingId === req.requestId"
-              class="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-slate-600 px-4 py-2 rounded font-semibold text-sm transition">
-              {{ processingId === req.requestId ? '⏳' : '🚫 Revoke Access' }}
-            </button>
-          </div>
-
+          @if (req.status === 'APPROVED') {
+            <div class="flex gap-3">
+              <button
+                (click)="openRevoke(req.requestId)"
+                [disabled]="processingId === req.requestId"
+                class="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-slate-600 px-4 py-2 rounded font-semibold text-sm transition">
+                {{ processingId === req.requestId ? '⏳' : '🚫 Revoke Access' }}
+              </button>
+            </div>
+          }
           <!-- Approve Form -->
-          <div *ngIf="approveFormId === req.requestId" class="mt-4 p-3 bg-slate-800 rounded border border-green-500/30">
-            <p class="text-sm mb-3">Choose access duration:</p>
-            <div class="space-y-2 mb-3">
-              <label class="flex items-center gap-2">
-                <input type="radio" [(ngModel)]="approveDuration" value="FOREVER" class="w-4 h-4">
-                <span>Forever (no expiration)</span>
-              </label>
-              <label class="flex items-center gap-2">
-                <input type="radio" [(ngModel)]="approveDuration" value="UNTIL_DATE" class="w-4 h-4">
-                <span>Until a specific date:</span>
-              </label>
-              <input
-                *ngIf="approveDuration === 'UNTIL_DATE'"
-                type="date"
-                [(ngModel)]="approveUntilDate"
-                [attr.min]="minDate"
-                class="w-full bg-slate-700 rounded p-2 text-white mt-2 border border-slate-600">
+          @if (approveFormId === req.requestId) {
+            <div class="mt-4 p-3 bg-slate-800 rounded border border-green-500/30">
+              <p class="text-sm mb-3">Choose access duration:</p>
+              <div class="space-y-2 mb-3">
+                <label class="flex items-center gap-2">
+                  <input type="radio" [(ngModel)]="approveDuration" value="FOREVER" class="w-4 h-4">
+                  <span>Forever (no expiration)</span>
+                </label>
+                <label class="flex items-center gap-2">
+                  <input type="radio" [(ngModel)]="approveDuration" value="UNTIL_DATE" class="w-4 h-4">
+                  <span>Until a specific date:</span>
+                </label>
+                @if (approveDuration === 'UNTIL_DATE') {
+                  <input
+                    type="date"
+                    [(ngModel)]="approveUntilDate"
+                    [attr.min]="minDate"
+                    class="w-full bg-slate-700 rounded p-2 text-white mt-2 border border-slate-600">
+                }
+              </div>
+              <div class="flex gap-2">
+                <button
+                  (click)="confirmApprove(req.requestId)"
+                  class="flex-1 bg-green-600 hover:bg-green-700 py-2 rounded text-sm font-semibold transition">
+                  Confirm Approval
+                </button>
+                <button
+                  (click)="approveFormId = null"
+                  class="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded text-sm transition">
+                  Cancel
+                </button>
+              </div>
             </div>
-            <div class="flex gap-2">
-              <button
-                (click)="confirmApprove(req.requestId)"
-                class="flex-1 bg-green-600 hover:bg-green-700 py-2 rounded text-sm font-semibold transition">
-                Confirm Approval
-              </button>
-              <button
-                (click)="approveFormId = null"
-                class="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded text-sm transition">
-                Cancel
-              </button>
-            </div>
-          </div>
-
+          }
           <!-- Reject Form -->
-          <div *ngIf="rejectFormId === req.requestId" class="mt-4 p-3 bg-slate-800 rounded border border-red-500/30">
-            <textarea
-              [(ngModel)]="rejectionReason"
-              placeholder="Reason for rejection (optional)"
-              class="w-full bg-slate-700 rounded p-2 text-white text-sm mb-2 border border-slate-600">
-            </textarea>
-            <div class="flex gap-2">
-              <button
-                (click)="confirmReject(req.requestId)"
-                class="flex-1 bg-red-600 hover:bg-red-700 py-2 rounded text-sm font-semibold transition">
-                Confirm Reject
-              </button>
-              <button
-                (click)="rejectFormId = null"
-                class="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded text-sm transition">
-                Cancel
-              </button>
+          @if (rejectFormId === req.requestId) {
+            <div class="mt-4 p-3 bg-slate-800 rounded border border-red-500/30">
+              <textarea
+                [(ngModel)]="rejectionReason"
+                placeholder="Reason for rejection (optional)"
+                class="w-full bg-slate-700 rounded p-2 text-white text-sm mb-2 border border-slate-600">
+              </textarea>
+              <div class="flex gap-2">
+                <button
+                  (click)="confirmReject(req.requestId)"
+                  class="flex-1 bg-red-600 hover:bg-red-700 py-2 rounded text-sm font-semibold transition">
+                  Confirm Reject
+                </button>
+                <button
+                  (click)="rejectFormId = null"
+                  class="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded text-sm transition">
+                  Cancel
+                </button>
+              </div>
             </div>
-          </div>
+          }
         </div>
-      </div>
-
-      <!-- Empty State -->
-      <div *ngIf="getFilteredRequests().length === 0" class="text-center py-8">
-        <p class="text-slate-400">No {{ filterStatus }} requests</p>
-      </div>
+      }
     </div>
+  }
+
+  <!-- Empty State -->
+  @if (getFilteredRequests().length === 0) {
+    <div class="text-center py-8">
+      <p class="text-slate-400">No {{ filterStatus }} requests</p>
+    </div>
+  }
+</div>

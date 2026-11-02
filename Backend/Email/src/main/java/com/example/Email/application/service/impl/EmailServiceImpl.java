@@ -1,44 +1,35 @@
 package com.example.Email.application.service.impl;
 
+import com.example.Email.api.dto.EmailSendRequest;
 import com.example.Email.api.dto.EmailSendResponse;
+import com.example.Email.api.dto.response.EmailServiceInfoResponse;
+import com.example.Email.application.service.interfaces.IAsyncEmailSender;
 import com.example.Email.application.service.interfaces.IEmailService;
 import com.example.Email.infrastructure.persistence.document.EmailLogDocument;
 import com.example.Email.infrastructure.persistence.repository.EmailLogRepository;
 import com.example.Email.shared.enums.EmailStatus;
 import com.example.Email.shared.enums.EmailType;
+import com.example.Email.shared.exception.EmailProcessingException;
+import jakarta.mail.internet.MimeMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.thymeleaf.TemplateEngine;
 import org.thymeleaf.context.Context;
 
-import jakarta.mail.MessagingException;
-import jakarta.mail.internet.MimeMessage;
-import java.io.UnsupportedEncodingException;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
 /**
  * Concrete implementation of {@link IEmailService}.
- *
- * <p>Responsibilities:
- * <ul>
- *   <li>Render Thymeleaf HTML templates.</li>
- *   <li>Dispatch emails via SMTP through {@link JavaMailSender}.</li>
- *   <li>Persist an audit trail in MongoDB via {@link EmailLogRepository}.</li>
- * </ul>
- *
- * <p><strong>Exception strategy:</strong> SMTP failures ({@link MessagingException},
- * {@link UnsupportedEncodingException}) are <em>not</em> swallowed here. They are
- * wrapped in a {@link MessagingException} (if necessary) and propagated to the
- * {@link com.example.Email.shared.exception.GlobalExceptionHandler}, which maps them
- * to RFC-9457 {@code ProblemDetail} responses. MongoDB logging failures are still
- * silently absorbed so that a logging glitch never blocks email delivery.
  */
 @Slf4j
 @Service
@@ -48,281 +39,243 @@ public class EmailServiceImpl implements IEmailService {
     private final JavaMailSender mailSender;
     private final TemplateEngine templateEngine;
     private final EmailLogRepository emailLogRepository;
+    private final IAsyncEmailSender asyncEmailSender;
 
-    @Value("${app.email.from:noreply@sangrah.com}")
+    @Value("${app.email.from}")
     private String emailFrom;
 
-    @Value("${app.email.from.name:Sangrah Cloud Storage}")
+    @Value("${app.email.from.name}")
     private String emailFromName;
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Public API – implements IEmailService
-    // ─────────────────────────────────────────────────────────────────────────
+    @Value("${app.frontend.url}")
+    private String frontendUrl;
 
-    /**
-     * {@inheritDoc}
-     *
-     * <p>Renders the {@code payment-success} Thymeleaf template, attaches the
-     * PDF invoice (if provided), and sends the message. Logs the outcome to MongoDB.
-     */
+    @Value("${app.email.support}")
+    private String supportEmail;
+
+    @Override
+    public EmailSendResponse dispatchEmail(EmailSendRequest request) {
+        return switch (request.emailType()) {
+            case INVOICE_PAID -> sendInvoicePaidEmail(
+                    request.invoiceId(), request.userId(), request.userEmail(), request.amount(), request.pdfContent());
+            case INVOICE_CREATED -> sendInvoiceCreatedEmail(
+                    request.invoiceId(), request.userId(), request.userEmail(), request.amount(), "Invoice Due");
+            case PAYMENT_FAILED -> sendPaymentFailedEmail(
+                    request.invoiceId(), request.userId(), request.userEmail(), "Payment processing failed");
+            default -> sendNotificationEmail(
+                    request.userEmail(), request.emailType(), request.subject(), request.body());
+        };
+    }
+
     @Override
     public EmailSendResponse sendInvoicePaidEmail(
             String invoiceId,
             String userId,
             String userEmail,
-            Double amount,
+            BigDecimal amount,
             byte[] pdfContent
-    ) throws MessagingException {
-
-        log.info("📧 ═══════════════════════════════════════════════════════════════");
-        log.info("📧 [EMAIL SERVICE] Preparing invoice-paid email");
-        log.info("📧 [EMAIL SERVICE] Recipient : {}", userEmail);
-        log.info("📧 [EMAIL SERVICE] Invoice   : {}", invoiceId);
-        log.info("📧 [EMAIL SERVICE] Amount    : ${}", String.format("%.2f", amount));
-        log.info("📧 [EMAIL SERVICE] PDF Size  : {} bytes", pdfContent != null ? pdfContent.length : 0);
-        log.info("📧 [EMAIL SERVICE] Sender    : {} <{}>", emailFromName, emailFrom);
-        log.info("📧 ═══════════════════════════════════════════════════════════════");
+    ) {
+        log.info("📧 [EMAIL SERVICE] Sending payment confirmation email to: {}", userEmail);
 
         try {
             Map<String, Object> variables = new HashMap<>();
             variables.put("invoiceId", invoiceId);
-            variables.put("amount", String.format("$%.2f", amount));
-            variables.put("paidDate", Instant.now().toString());
-            variables.put("downloadLink", "https://app.sangrah.com/invoices/" + invoiceId + "/download");
+            variables.put("amount", amount != null ? String.format(Locale.US, "$%.2f", amount) : "$0.00");
+            variables.put("paymentDate", Instant.now().toString());
 
-            log.info("📝 [EMAIL SERVICE] Rendering payment-success template…");
             String htmlContent = renderTemplate("payment-success", variables);
-            log.info("✅ [EMAIL SERVICE] Template rendered successfully");
-
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-            helper.setFrom(emailFrom, emailFromName);
-            helper.setTo(userEmail);
-            helper.setSubject("Payment Confirmation - Invoice " + invoiceId);
-            helper.setText(htmlContent, true);
-
-            if (pdfContent != null && pdfContent.length > 0) {
-                helper.addAttachment("invoice_" + invoiceId + ".pdf",
-                        () -> new java.io.ByteArrayInputStream(pdfContent));
-                log.info("📎 [EMAIL SERVICE] PDF attachment added: {} bytes", pdfContent.length);
-            }
-
-            log.info("🚀 [EMAIL SERVICE] Sending email via SMTP…");
-            mailSender.send(message);
-            log.info("✅ [EMAIL SERVICE] EMAIL SENT SUCCESSFULLY!");
-
             String emailLogId = UUID.randomUUID().toString();
-            logEmailDelivery(emailLogId, userEmail, EmailType.INVOICE_PAID, EmailStatus.SENT, invoiceId);
-            log.info("✅ [EMAIL SERVICE] Email logged: {}", emailLogId);
+            String subject = "Payment Confirmation - Invoice " + invoiceId;
+            String attachmentFilename = "invoice-" + invoiceId + ".pdf";
+
+            logEmailDelivery(emailLogId, userEmail, EmailType.INVOICE_PAID, EmailStatus.PENDING, invoiceId,
+                    subject, htmlContent, attachmentFilename, pdfContent);
+
+            asyncEmailSender.sendEmailWithAttachmentAsync(
+                    emailLogId,
+                    emailFrom,
+                    emailFromName,
+                    userEmail,
+                    subject,
+                    htmlContent,
+                    attachmentFilename,
+                    pdfContent
+            );
+
+            log.info("✅ [EMAIL SERVICE] Payment confirmation email offloaded for background delivery: {}", emailLogId);
 
             return new EmailSendResponse(
-                    EmailStatus.SENT,
+                    EmailStatus.PENDING,
                     emailLogId,
                     Instant.now(),
-                    "Payment confirmation email sent successfully to: " + userEmail,
+                    "Payment confirmation email queued for delivery to: " + userEmail,
                     null
             );
 
-        } catch (UnsupportedEncodingException e) {
-            // Wrap checked UnsupportedEncodingException as MessagingException so the
-            // single exception type propagates cleanly to the GlobalExceptionHandler.
-            throw new MessagingException("Unsupported encoding while building invoice-paid email", e);
+        } catch (Exception e) {
+            throw new EmailProcessingException("Failed to send invoice-paid email", e);
         }
     }
 
-    /**
-     * {@inheritDoc}
-     *
-     * <p>Renders the {@code invoice-created} Thymeleaf template and dispatches the email.
-     */
     @Override
     public EmailSendResponse sendInvoiceCreatedEmail(
             String invoiceId,
             String userId,
             String userEmail,
-            Double amount,
+            BigDecimal amount,
             String dueDate
-    ) throws MessagingException {
-
+    ) {
         log.info("📧 [EMAIL SERVICE] Sending invoice-created email to: {}", userEmail);
 
         try {
             Map<String, Object> variables = new HashMap<>();
             variables.put("invoiceId", invoiceId);
-            variables.put("amount", String.format("$%.2f", amount));
+            variables.put("amount", amount != null ? String.format(Locale.US, "$%.2f", amount) : "$0.00");
             variables.put("dueDate", dueDate);
-            variables.put("payLink", "https://app.sangrah.com/invoices/" + invoiceId + "/pay");
+            variables.put("payLink", frontendUrl + "/invoices/" + invoiceId + "/pay");
 
             String htmlContent = renderTemplate("invoice-created", variables);
-            sendHtmlEmail(userEmail, "Invoice " + invoiceId + " - Payment Due", htmlContent);
-
             String emailLogId = UUID.randomUUID().toString();
-            log.info("✅ [EMAIL SERVICE] Invoice-created email sent: {}", emailLogId);
-            logEmailDelivery(emailLogId, userEmail, EmailType.INVOICE_CREATED, EmailStatus.SENT, invoiceId);
+            String subject = "Invoice " + invoiceId + " - Payment Due";
+            logEmailDelivery(emailLogId, userEmail, EmailType.INVOICE_CREATED, EmailStatus.PENDING, invoiceId,
+                    subject, htmlContent, null, null);
+
+            asyncEmailSender.sendHtmlEmailAsync(
+                    emailLogId,
+                    emailFrom,
+                    emailFromName,
+                    userEmail,
+                    subject,
+                    htmlContent
+            );
+
+            log.info("✅ [EMAIL SERVICE] Invoice-created email offloaded for background delivery: {}", emailLogId);
 
             return new EmailSendResponse(
-                    EmailStatus.SENT,
+                    EmailStatus.PENDING,
                     emailLogId,
                     Instant.now(),
-                    "Invoice created email sent successfully",
+                    "Invoice created email queued for delivery",
                     null
             );
 
-        } catch (UnsupportedEncodingException e) {
-            throw new MessagingException("Unsupported encoding while building invoice-created email", e);
+        } catch (Exception e) {
+            throw new EmailProcessingException("Failed to send invoice-created email", e);
         }
     }
 
-    /**
-     * {@inheritDoc}
-     *
-     * <p>Renders the {@code payment-failed} Thymeleaf template and dispatches the email.
-     */
     @Override
     public EmailSendResponse sendPaymentFailedEmail(
             String invoiceId,
             String userId,
             String userEmail,
             String failureReason
-    ) throws MessagingException {
-
-        log.info("📧 [EMAIL SERVICE] Sending payment-failed email to: {}", userEmail);
+    ) {
+        log.info("📧 [EMAIL SERVICE] Sending payment-failed alert to: {}", userEmail);
 
         try {
             Map<String, Object> variables = new HashMap<>();
             variables.put("invoiceId", invoiceId);
-            variables.put("failureReason", failureReason);
-            variables.put("retryLink", "https://app.sangrah.com/invoices/" + invoiceId + "/retry-payment");
-            variables.put("supportEmail", "support@sangrah.com");
+            variables.put("failureReason", failureReason != null ? failureReason : "Card declined");
+            variables.put("retryLink", frontendUrl + "/invoices/" + invoiceId + "/pay");
 
             String htmlContent = renderTemplate("payment-failed", variables);
-            sendHtmlEmail(userEmail, "Payment Failed - Invoice " + invoiceId, htmlContent);
-
             String emailLogId = UUID.randomUUID().toString();
-            log.info("✅ [EMAIL SERVICE] Payment-failed email sent: {}", emailLogId);
-            logEmailDelivery(emailLogId, userEmail, EmailType.PAYMENT_FAILED, EmailStatus.SENT, invoiceId);
+            String subject = "Payment Failed - Invoice " + invoiceId;
+            logEmailDelivery(emailLogId, userEmail, EmailType.PAYMENT_FAILED, EmailStatus.PENDING, invoiceId,
+                    subject, htmlContent, null, null);
+
+            asyncEmailSender.sendHtmlEmailAsync(
+                    emailLogId,
+                    emailFrom,
+                    emailFromName,
+                    userEmail,
+                    subject,
+                    htmlContent
+            );
+
+            log.info("✅ [EMAIL SERVICE] Payment-failed email offloaded for background delivery: {}", emailLogId);
 
             return new EmailSendResponse(
-                    EmailStatus.SENT,
+                    EmailStatus.PENDING,
                     emailLogId,
                     Instant.now(),
-                    "Payment failed notification sent successfully",
+                    "Payment failed notification queued for delivery",
                     null
             );
 
-        } catch (UnsupportedEncodingException e) {
-            throw new MessagingException("Unsupported encoding while building payment-failed email", e);
+        } catch (Exception e) {
+            throw new EmailProcessingException("Failed to send payment-failed email", e);
         }
     }
 
-    /**
-     * {@inheritDoc}
-     *
-     * <p>Builds a self-contained HTML notification body (no external template required)
-     * and dispatches it. The {@code notificationType} string is resolved to an
-     * {@link EmailType} enum constant; unrecognised values fall back to
-     * {@link EmailType#NOTIFICATION}.
-     */
     @Override
     public EmailSendResponse sendNotificationEmail(
             String userEmail,
-            String notificationType,
+            EmailType notificationType,
             String subject,
             String messageBody
-    ) throws MessagingException {
-
-        log.info("📧 [EMAIL SERVICE] Sending notification email to: {} | type: {}", userEmail, notificationType);
+    ) {
+        log.info("📧 [EMAIL SERVICE] Sending notification email to: {} | type: {}", userEmail, notificationType.name());
 
         try {
             String emailLogId = UUID.randomUUID().toString();
 
-            MimeMessage mimeMessage = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, true, "UTF-8");
-            helper.setFrom(emailFrom, emailFromName);
-            helper.setTo(userEmail);
-            helper.setSubject(subject);
+            Map<String, Object> variables = new HashMap<>();
+            variables.put("subject", subject);
+            variables.put("messageBody", messageBody);
 
-            String htmlBody = String.format(
-                    "<html><body style='font-family: Arial, sans-serif; line-height: 1.6; color: #333;'>"
-                    + "<div style='max-width: 600px; margin: 0 auto; padding: 20px;'>"
-                    + "<h2 style='color: #007bff;'>%s</h2>"
-                    + "<p>%s</p>"
-                    + "<p style='margin-top: 30px; font-size: 12px; color: #666;'>"
-                    + "This is an automated notification from Sangrah Cloud Storage. "
-                    + "Please do not reply to this email."
-                    + "</p>"
-                    + "</div>"
-                    + "</body></html>",
+            String htmlContent = renderTemplate("generic-notification", variables);
+            logEmailDelivery(emailLogId, userEmail, notificationType, EmailStatus.PENDING, null,
+                    subject, htmlContent, null, null);
+
+            asyncEmailSender.sendHtmlEmailAsync(
+                    emailLogId,
+                    emailFrom,
+                    emailFromName,
+                    userEmail,
                     subject,
-                    messageBody
+                    htmlContent
             );
 
-            helper.setText(htmlBody, true);
-            mailSender.send(mimeMessage);
-            log.info("✅ [EMAIL SERVICE] Notification email sent to: {}", userEmail);
-
-            // Resolve string to enum; fall back gracefully for unknown event types.
-            EmailType resolvedType = resolveEmailType(notificationType);
-            logEmailDelivery(emailLogId, userEmail, resolvedType, EmailStatus.SENT, null);
+            log.info("✅ [EMAIL SERVICE] Notification email offloaded for background delivery: {}", emailLogId);
 
             return new EmailSendResponse(
-                    EmailStatus.SENT,
+                    EmailStatus.PENDING,
                     emailLogId,
                     Instant.now(),
-                    "Notification email sent successfully",
+                    "Notification email queued for delivery to: " + userEmail,
                     null
             );
 
-        } catch (UnsupportedEncodingException e) {
-            throw new MessagingException("Unsupported encoding while building notification email", e);
+        } catch (Exception e) {
+            throw new EmailProcessingException("Failed to send notification email", e);
         }
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Private helpers
-    // ─────────────────────────────────────────────────────────────────────────
-
-    /**
-     * Send a pre-rendered HTML email without an attachment.
-     */
-    private void sendHtmlEmail(String toEmail, String subject, String htmlContent)
-            throws MessagingException, UnsupportedEncodingException {
-
-        MimeMessage message = mailSender.createMimeMessage();
-        MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-        helper.setFrom(emailFrom, emailFromName);
-        helper.setTo(toEmail);
-        helper.setSubject(subject);
-        helper.setText(htmlContent, true);
-        mailSender.send(message);
+    @Override
+    public void sendHtmlEmailAsync(String toEmail, String subject, String htmlContent) {
+        String logId = java.util.UUID.randomUUID().toString();
+        logEmailDelivery(logId, toEmail, EmailType.NOTIFICATION, EmailStatus.PENDING, null, subject, htmlContent, null, null);
+        asyncEmailSender.sendHtmlEmailAsync(logId, emailFrom, emailFromName, toEmail, subject, htmlContent);
     }
 
-    /**
-     * Render a Thymeleaf template with the supplied variable map.
-     *
-     * @param templateName logical name matching a {@code .html} file under
-     *                     {@code src/main/resources/templates/}
-     * @param variables    key-value pairs injected into the template context
-     * @return rendered HTML string
-     */
     private String renderTemplate(String templateName, Map<String, Object> variables) {
         Context context = new Context();
         variables.forEach(context::setVariable);
         return templateEngine.process(templateName, context);
     }
 
-    /**
-     * Persist an email dispatch audit record in MongoDB.
-     *
-     * <p>Logging failures are deliberately swallowed – a MongoDB outage must
-     * never prevent an email from being sent.
-     */
     private void logEmailDelivery(
             String emailId,
             String toEmail,
             EmailType emailType,
             EmailStatus status,
-            String invoiceId
+            String invoiceId,
+            String subject,
+            String htmlContent,
+            String attachmentFilename,
+            byte[] attachmentBytes
     ) {
         try {
             EmailLogDocument emailLog = EmailLogDocument.builder()
@@ -332,7 +285,12 @@ public class EmailServiceImpl implements IEmailService {
                     .emailType(emailType)
                     .invoiceId(invoiceId)
                     .status(status)
-                    .sentAt(Instant.now())
+                    .subject(subject)
+                    .htmlContent(htmlContent)
+                    .attachmentFilename(attachmentFilename)
+                    .attachmentBytes(attachmentBytes)
+                    .retryCount(0)
+                    .sentAt(status == EmailStatus.SENT ? Instant.now() : null)
                     .createdAt(Instant.now())
                     .build();
 
@@ -340,31 +298,16 @@ public class EmailServiceImpl implements IEmailService {
             log.info("📝 [EMAIL SERVICE] Email delivery logged: {}", emailId);
         } catch (Exception ex) {
             log.error("❌ [EMAIL SERVICE] Failed to log email delivery for {}: {}", emailId, ex.getMessage(), ex);
-            // Intentionally not re-thrown – logging must not block email dispatch.
         }
     }
 
-    /**
-     * Resolve a notification-type string (coming from external Event Service)
-     * to a strongly-typed {@link EmailType} enum constant.
-     *
-     * <p>The comparison is case-insensitive and underscore/hyphen agnostic.
-     * If no match is found, {@link EmailType#NOTIFICATION} is returned as the
-     * safe default so that the log entry is never {@code null}.
-     *
-     * @param notificationType raw string from the caller
-     * @return the best-matching {@link EmailType} constant
-     */
-    private EmailType resolveEmailType(String notificationType) {
-        if (notificationType == null || notificationType.isBlank()) {
-            return EmailType.NOTIFICATION;
-        }
-        String normalised = notificationType.toUpperCase().replace("-", "_");
-        try {
-            return EmailType.valueOf(normalised);
-        } catch (IllegalArgumentException ex) {
-            log.warn("⚠️ [EMAIL SERVICE] Unknown email type '{}'; defaulting to NOTIFICATION", notificationType);
-            return EmailType.NOTIFICATION;
-        }
+    @Override
+    public EmailServiceInfoResponse getServiceInfo() {
+        return EmailServiceInfoResponse.defaults();
+    }
+
+    @Override
+    public String getHealth() {
+        return "Email service is running";
     }
 }

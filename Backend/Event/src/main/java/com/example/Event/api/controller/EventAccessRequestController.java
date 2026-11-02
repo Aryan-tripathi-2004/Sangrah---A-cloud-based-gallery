@@ -1,15 +1,12 @@
 package com.example.Event.api.controller;
 
 import com.example.Event.api.annotation.CurrentUserId;
-import com.example.Event.api.dto.request.AccessApprovalRequest;
 import com.example.Event.api.dto.request.AccessMessageRequest;
-import com.example.Event.api.dto.request.AccessRejectionRequest;
-import com.example.Event.api.dto.response.AccessApprovalResponse;
-import com.example.Event.api.dto.response.AccessRejectionResponse;
+import com.example.Event.api.dto.request.AccessStatusUpdateRequest;
 import com.example.Event.api.dto.response.AccessRequestMutationResponse;
 import com.example.Event.api.dto.response.AccessRequestsResponse;
-import com.example.Event.api.dto.response.AccessRevocationResponse;
 import com.example.Event.api.dto.response.AccessStatusResponse;
+import com.example.Event.api.dto.response.AccessStatusUpdateResponse;
 import com.example.Event.application.service.interfaces.IEventAccessService;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
@@ -50,33 +47,14 @@ public class EventAccessRequestController {
         return ResponseEntity.ok(accessService.listAccessRequests(eventId, userId));
     }
 
-    @PatchMapping("/{requestId}/approve")
-    @Operation(summary = "Approve event access request (owner only)")
-    public ResponseEntity<AccessApprovalResponse> approve(
+    @PatchMapping("/{requestId}/status")
+    @Operation(summary = "Update access request status (approve / reject / revoke)")
+    public ResponseEntity<AccessStatusUpdateResponse> updateStatus(
             @PathVariable String eventId,
             @PathVariable String requestId,
-            @Valid @RequestBody(required = false) AccessApprovalRequest request,
+            @Valid @RequestBody AccessStatusUpdateRequest request,
             @CurrentUserId String userId) {
-        return ResponseEntity.ok(accessService.approveRequest(eventId, requestId, request, userId));
-    }
-
-    @PatchMapping("/{requestId}/reject")
-    @Operation(summary = "Reject event access request (owner only)")
-    public ResponseEntity<AccessRejectionResponse> reject(
-            @PathVariable String eventId,
-            @PathVariable String requestId,
-            @Valid @RequestBody(required = false) AccessRejectionRequest request,
-            @CurrentUserId String userId) {
-        return ResponseEntity.ok(accessService.rejectRequest(eventId, requestId, request, userId));
-    }
-
-    @PatchMapping("/{requestId}/revoke")
-    @Operation(summary = "Revoke approved event access (owner only)")
-    public ResponseEntity<AccessRevocationResponse> revoke(
-            @PathVariable String eventId,
-            @PathVariable String requestId,
-            @CurrentUserId String userId) {
-        return ResponseEntity.ok(accessService.revokeRequest(eventId, requestId, userId));
+        return ResponseEntity.ok(accessService.updateAccessStatus(eventId, requestId, request, userId));
     }
 
     @PatchMapping("/re-request")

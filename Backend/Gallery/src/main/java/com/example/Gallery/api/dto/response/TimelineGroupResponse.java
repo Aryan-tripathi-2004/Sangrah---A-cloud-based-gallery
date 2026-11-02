@@ -4,6 +4,7 @@ import com.example.Gallery.shared.enums.TimelineGroupType;
 import java.util.List;
 
 public record TimelineGroupResponse(
+    String type,
     TimelineGroupType groupType,
     String label,
     int count,

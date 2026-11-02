@@ -1,5 +1,7 @@
 package com.example.Billing.infrastructure.persistence.document;
 
+import java.math.BigDecimal;
+
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -36,8 +38,8 @@ public class UserBillingSettingsDocument {
     private BillingAddress billing;
     private BillingPreferences preferences;
 
-    private Double totalPaidAllTime;
-    private Double outstandingBalance;
+    private BigDecimal totalPaidAllTime;
+    private BigDecimal outstandingBalance;
 
     private Instant createdAt;
     private Instant updatedAt;
@@ -79,6 +81,6 @@ public class UserBillingSettingsDocument {
     public static class BillingPreferences {
         private Boolean autoPayEnabled;      // Auto-retry failed payments
         private Boolean invoiceEmail;        // Email invoices
-        private Double costAlertThreshold;   // Alert if monthly cost exceeds
+        private BigDecimal costAlertThreshold;   // Alert if monthly cost exceeds
     }
 }

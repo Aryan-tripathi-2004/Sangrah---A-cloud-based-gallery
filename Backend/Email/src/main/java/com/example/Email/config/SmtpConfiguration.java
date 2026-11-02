@@ -13,35 +13,38 @@ import java.util.Properties;
 @Configuration
 public class SmtpConfiguration {
 
-    @Value("${spring.mail.host:smtp.gmail.com}")
+    @Value("${spring.mail.host}")
     private String mailHost;
 
-    @Value("${spring.mail.port:587}")
+    @Value("${spring.mail.port}")
     private int mailPort;
 
-    @Value("${spring.mail.username:}")
+    @Value("${spring.mail.username}")
     private String mailUsername;
 
-    @Value("${spring.mail.password:}")
+    @Value("${spring.mail.password}")
     private String mailPassword;
 
-    @Value("${spring.mail.properties.mail.smtp.auth:true}")
+    @Value("${spring.mail.properties.mail.smtp.auth}")
     private String smtpAuth;
 
-    @Value("${spring.mail.properties.mail.smtp.starttls.enable:true}")
+    @Value("${spring.mail.properties.mail.smtp.starttls.enable}")
     private String starttlsEnable;
 
-    @Value("${spring.mail.properties.mail.smtp.starttls.required:true}")
+    @Value("${spring.mail.properties.mail.smtp.starttls.required}")
     private String starttlsRequired;
 
-    @Value("${spring.mail.properties.mail.smtp.connectiontimeout:5000}")
+    @Value("${spring.mail.properties.mail.smtp.connectiontimeout}")
     private String connectionTimeout;
 
-    @Value("${spring.mail.properties.mail.smtp.timeout:5000}")
+    @Value("${spring.mail.properties.mail.smtp.timeout}")
     private String timeout;
 
-    @Value("${spring.mail.properties.mail.smtp.writetimeout:5000}")
+    @Value("${spring.mail.properties.mail.smtp.writetimeout}")
     private String writeTimeout;
+
+    @Value("${spring.mail.properties.mail.debug}")
+    private String mailDebug;
 
     @Bean
     public JavaMailSender javaMailSender() {
@@ -66,7 +69,7 @@ public class SmtpConfiguration {
         props.put("mail.smtp.connectiontimeout", connectionTimeout);
         props.put("mail.smtp.timeout", timeout);
         props.put("mail.smtp.writetimeout", writeTimeout);
-        props.put("mail.debug", "false");
+        props.put("mail.debug", mailDebug);
 
         return mailSender;
     }

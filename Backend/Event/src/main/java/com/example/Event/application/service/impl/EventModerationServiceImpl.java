@@ -1,6 +1,6 @@
 package com.example.Event.application.service.impl;
 
-import com.example.Event.api.dto.request.MediaRejectionRequest;
+import com.example.Event.api.dto.request.MediaModerationRequest;
 import com.example.Event.api.dto.response.EventMediaCollectionResponse;
 import com.example.Event.api.dto.response.EventMediaDetailResponse;
 import com.example.Event.api.dto.response.EventMediaFileResponse;
@@ -12,28 +12,36 @@ import com.example.Event.application.service.interfaces.IEventAccessService;
 import com.example.Event.application.service.interfaces.IEventCollaboratorService;
 import com.example.Event.application.service.interfaces.IEventModerationService;
 import com.example.Event.application.service.interfaces.IEventService;
+import com.example.Event.infrastructure.persistence.repository.EventRepository;
 import com.example.Event.infrastructure.client.EmailServiceClient;
 import com.example.Event.infrastructure.client.MediaServiceClient;
-import com.example.Event.infrastructure.client.NotificationServiceClient;
-import com.example.Event.infrastructure.client.UserServiceClient;
+import com.example.Event.infrastructure.client.NotificationIntegrationService;
+import com.example.Event.infrastructure.client.UserIntegrationService;
 import com.example.Event.infrastructure.client.dto.MediaServiceResponse;
 import com.example.Event.infrastructure.mapper.EventMediaMapper;
 import com.example.Event.infrastructure.persistence.document.EventDocument;
 import com.example.Event.infrastructure.persistence.document.EventMediaApprovalDocument;
+import com.example.Event.infrastructure.persistence.document.OrphanedMediaLogDocument;
 import com.example.Event.infrastructure.persistence.repository.EventMediaApprovalRepository;
+import com.example.Event.infrastructure.persistence.repository.OrphanedMediaLogRepository;
 import com.example.Event.shared.enums.ApprovalStatus;
 import com.example.Event.shared.enums.EventVisibility;
+import com.example.Event.shared.enums.MediaDomain;
 import com.example.Event.shared.exception.DomainValidationException;
 import com.example.Event.shared.exception.ForbiddenOperationException;
 import com.example.Event.shared.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @Slf4j
@@ -46,10 +54,12 @@ public class EventModerationServiceImpl implements IEventModerationService {
     private static final ApprovalStatus STATUS_REJECTED = ApprovalStatus.REJECTED;
 
     private final EventMediaApprovalRepository approvalRepository;
-    private final NotificationServiceClient notificationServiceClient;
+    private final OrphanedMediaLogRepository orphanedMediaLogRepository;
+    private final NotificationIntegrationService notificationIntegrationService;
     private final EmailServiceClient emailServiceClient;
-    private final UserServiceClient userServiceClient;
+    private final UserIntegrationService userIntegrationService;
     private final IEventService eventService;
+    private final EventRepository eventRepository;
     private final IEventCollaboratorService collaboratorService;
     private final IEventAccessService accessService;
     private final MediaServiceClient mediaServiceClient;
@@ -57,9 +67,16 @@ public class EventModerationServiceImpl implements IEventModerationService {
 
     @Override
     public EventMediaFileResponse getMediaFile(String eventId, String mediaId, String userId) {
-        EventDocument event = eventService.getEventById(eventId);
+        EventDocument event = eventRepository.findById(eventId)
+                .orElseThrow(() -> new ResourceNotFoundException("Event not found"));
 
-        if (EventVisibility.PROTECTED == event.getVisibility() && (userId == null || !userId.equals(event.getOwnerUserId()))
+        // Visibility authorization: PRIVATE requires owner or collaborator
+        if (EventVisibility.PRIVATE == event.getVisibility() && !isOwner(event, userId) && !isDocumentCollaborator(event, userId)) {
+            throw new ForbiddenOperationException("You don't have permission to view media in this private event");
+        }
+
+        // Visibility authorization: PROTECTED requires owner, collaborator, or approved access
+        if (EventVisibility.PROTECTED == event.getVisibility() && !isOwner(event, userId)
                 && !isDocumentCollaborator(event, userId) && !accessService.isUserApproved(eventId, userId)) {
             throw new ForbiddenOperationException("You don't have permission to access this protected event");
         }
@@ -75,14 +92,16 @@ public class EventModerationServiceImpl implements IEventModerationService {
                 .orElse(approvals.get(0));
 
         if (STATUS_APPROVED != approval.getStatus()) {
-            boolean isEventOwner = userId != null && userId.equals(event.getOwnerUserId());
+            boolean isEventOwner = isOwner(event, userId);
             boolean isUploader = userId != null && userId.equals(approval.getUploaderUserId());
-            if (!isEventOwner && !isUploader) {
+            boolean isReviewer = userId != null && collaboratorService.hasPermission(eventId, userId, "canReviewMedia");
+            if (!isEventOwner && !isUploader && !isReviewer) {
                 throw new ForbiddenOperationException("Media is pending approval and you don't have permission to view it");
             }
         }
 
-        byte[] fileBytes = mediaServiceClient.getMediaFile(mediaId, userId != null ? userId : "system");
+        // Retrieve binary stream on behalf of the authorized event context
+        byte[] fileBytes = mediaServiceClient.getMediaFile(mediaId, event.getOwnerUserId());
         MediaType contentType = resolveContentType(mediaId);
         return mediaMapper.toFileResponse(fileBytes, contentType);
     }
@@ -93,13 +112,39 @@ public class EventModerationServiceImpl implements IEventModerationService {
             throw new DomainValidationException("File is empty");
         }
 
-        EventDocument event = eventService.getEventById(eventId);
+        EventDocument event = eventRepository.findById(eventId)
+                .orElseThrow(() -> new ResourceNotFoundException("Event not found"));
         ApprovalStatus approvalStatus = determineModerationStatus(event, userId, userEmail);
 
-        MediaServiceResponse mediaResponse = mediaServiceClient.uploadMedia(file, "EVENTS", eventId, userId);
+        // The storage quota and billing ledger belong to the Event Owner, not the guest/collaborator uploader
+        String storageOwnerUserId = event.getOwnerUserId();
+        MediaServiceResponse mediaResponse = mediaServiceClient.uploadMedia(file, MediaDomain.EVENTS, eventId, storageOwnerUserId);
         String mediaId = extractMediaId(mediaResponse);
         boolean isPending = STATUS_PENDING == approvalStatus;
-        createMedia(eventId, mediaId, userId, isPending);
+        try {
+            // Track the original uploader in the event approval metadata
+            createMedia(eventId, mediaId, userId, isPending);
+        } catch (Exception ex) {
+            log.error("Failed to persist event media metadata for media {}. Compensating by deleting remote media: {}", mediaId, ex.getMessage());
+            try {
+                mediaServiceClient.deleteMedia(mediaId, storageOwnerUserId, "SYSTEM");
+                log.warn("🧹 Cleaned up orphaned remote media {} after local database failure", mediaId);
+            } catch (Exception cleanupError) {
+                log.error("Compensating deleteMedia failed for media {}: {}", mediaId, cleanupError.getMessage(), cleanupError);
+                try {
+                    orphanedMediaLogRepository.save(OrphanedMediaLogDocument.builder()
+                            .eventId(eventId)
+                            .oldMediaId(mediaId)
+                            .userId(userId)
+                            .errorMessage(cleanupError.getMessage())
+                            .createdAt(Instant.now())
+                            .build());
+                } catch (Exception orphanLogError) {
+                    log.error("Failed to persist orphaned media log for {}: {}", mediaId, orphanLogError.getMessage(), orphanLogError);
+                }
+            }
+            throw ex;
+        }
 
         String message = switch (approvalStatus) {
             case APPROVED -> "Media uploaded successfully and auto-approved";
@@ -111,8 +156,16 @@ public class EventModerationServiceImpl implements IEventModerationService {
     }
 
     @Override
+    public EventMediaCollectionResponse getMediaCollection(String eventId, String userId, String view) {
+        if ("timeline".equalsIgnoreCase(view)) {
+            return getTimeline(eventId, userId);
+        }
+        return listEventMedia(eventId, userId);
+    }
+
+    @Override
     public EventMediaCollectionResponse getTimeline(String eventId, String userId) {
-        EventDocument event = eventService.getEventById(eventId);
+        EventDocument event = eventRepository.findById(eventId).orElseThrow(() -> new ResourceNotFoundException("Event not found"));
         requireTimelineAccess(event, userId);
 
         List<EventMediaItemResponse> media = approvalRepository
@@ -126,11 +179,14 @@ public class EventModerationServiceImpl implements IEventModerationService {
 
     @Override
     public EventMediaCollectionResponse listEventMedia(String eventId, String userId) {
-        EventDocument event = eventService.getEventById(eventId);
+        EventDocument event = eventRepository.findById(eventId).orElseThrow(() -> new ResourceNotFoundException("Event not found"));
         requireProtectedMediaListAccess(event, userId);
 
-        List<EventMediaItemResponse> media = approvalRepository.findByEventId(eventId).stream()
-                .map(this::toDetailedMediaItem)
+        List<EventMediaApprovalDocument> approvals = approvalRepository.findByEventId(eventId);
+        Map<String, String> uploaderNameCache = new HashMap<>();
+
+        List<EventMediaItemResponse> media = approvals.stream()
+                .map(approval -> toDetailedMediaItem(approval, uploaderNameCache))
                 .toList();
 
         return mediaMapper.toCollectionResponse(eventId, media, "Event media loaded");
@@ -144,6 +200,18 @@ public class EventModerationServiceImpl implements IEventModerationService {
     }
 
     @Override
+    public ResponseEntity<?> getMediaResponse(String eventId, String mediaId, String acceptHeader, String userId) {
+        if (acceptHeader != null && acceptHeader.contains(MediaType.APPLICATION_JSON_VALUE)) {
+            return ResponseEntity.ok(getMedia(eventId, mediaId));
+        }
+
+        EventMediaFileResponse response = getMediaFile(eventId, mediaId, userId);
+        return ResponseEntity.ok()
+                .contentType(response.contentType())
+                .body(response.content());
+    }
+
+    @Override
     public EventMediaModerationResponse approveMedia(String eventId, String mediaId, String userId) {
         requireMediaReviewer(eventId, userId, "You don't have permission to approve media");
         ApprovalStatus status = approveMediaInternal(eventId, mediaId, userId);
@@ -154,22 +222,59 @@ public class EventModerationServiceImpl implements IEventModerationService {
     public EventMediaModerationResponse rejectMedia(
             String eventId,
             String mediaId,
-            MediaRejectionRequest request,
+            String reason,
             String userId) {
-        String reason = request != null ? request.resolvedReason() : "Not specified";
+        if (reason == null || reason.isBlank()) { reason = "Not specified"; }
         requireMediaReviewer(eventId, userId, "You don't have permission to reject media");
         ApprovalStatus status = rejectMediaInternal(eventId, mediaId, userId, reason);
         return mediaMapper.toModerationResponse(status, reason, "Media rejected");
     }
 
     @Override
+    public EventMediaModerationResponse moderateMedia(
+            String eventId,
+            String mediaId,
+            MediaModerationRequest request,
+            String userId) {
+        if (request == null || request.status() == null) {
+            throw new DomainValidationException("Moderation status is required");
+        }
+        return switch (request.status()) {
+            case APPROVED -> approveMedia(eventId, mediaId, userId);
+            case REJECTED -> rejectMedia(eventId, mediaId, request.rejectionDetails(), userId);
+            default -> throw new DomainValidationException("Invalid status transition requested. Allowed: APPROVED, REJECTED");
+        };
+    }
+
+    @Override
     public MessageResponse deleteMedia(String eventId, String mediaId, String userId) {
-        mediaServiceClient.deleteMedia(mediaId, userId);
+        EventDocument event = eventRepository.findById(eventId)
+                .orElseThrow(() -> new ResourceNotFoundException("Event not found: " + eventId));
+
+        EventMediaApprovalDocument approval = approvalRepository.findByEventIdAndMediaId(eventId, mediaId)
+                .orElseThrow(() -> new ResourceNotFoundException("Media not found in event: " + mediaId));
+
+        // Collaborative Event Authorization:
+        // 1. Event Owner can delete any media in their event
+        // 2. Collaborators with 'canDeleteMedia' permission can delete media
+        // 3. The original uploader can delete their own media
+        boolean isEventOwner = isOwner(event, userId);
+        boolean isUploader = userId != null && userId.equals(approval.getUploaderUserId());
+        boolean hasDeletePermission = userId != null && collaboratorService.hasPermission(eventId, userId, "canDeleteMedia");
+
+        if (!isEventOwner && !isUploader && !hasDeletePermission) {
+            log.warn("🚨 [Event Media Delete] Unauthorized delete attempt on event {} media {} by user {}", eventId, mediaId, userId);
+            throw new ForbiddenOperationException("You do not have permission to delete media from this event");
+        }
+
+        // Delegate physical media deletion using event owner context with SYSTEM service role
+        mediaServiceClient.deleteMedia(mediaId, event.getOwnerUserId(), "SYSTEM");
         deleteMediaApproval(eventId, mediaId);
         return mediaMapper.toMessageResponse("Media deleted successfully");
     }
 
     @Override
+    @Transactional
     public ApprovalStatus createMedia(String eventId, String mediaId, String uploaderUserId, boolean moderationEnabled) {
         ApprovalStatus status = moderationEnabled ? STATUS_PENDING : STATUS_APPROVED;
 
@@ -319,7 +424,7 @@ public class EventModerationServiceImpl implements IEventModerationService {
     }
 
     private void requireMediaReviewer(String eventId, String userId, String message) {
-        EventDocument event = eventService.getEventById(eventId);
+        EventDocument event = eventRepository.findById(eventId).orElseThrow(() -> new ResourceNotFoundException("Event not found"));
         if (userId.equals(event.getOwnerUserId())) {
             return;
         }
@@ -333,7 +438,23 @@ public class EventModerationServiceImpl implements IEventModerationService {
     }
 
     private EventMediaItemResponse toDetailedMediaItem(EventMediaApprovalDocument approval) {
-        String uploaderName = userServiceClient.getUserDisplayName(approval.getUploaderUserId());
+        return toDetailedMediaItem(approval, new HashMap<>());
+    }
+
+    private EventMediaItemResponse toDetailedMediaItem(EventMediaApprovalDocument approval, Map<String, String> uploaderNameCache) {
+        String uploaderUserId = approval.getUploaderUserId();
+        String uploaderName = null;
+        if (uploaderUserId != null && !uploaderUserId.isBlank()) {
+            uploaderName = uploaderNameCache.computeIfAbsent(uploaderUserId, id -> {
+                try {
+                    return userIntegrationService.getUserDisplayName(id);
+                } catch (Exception e) {
+                    log.warn("Could not fetch display name for user {}: {}", id, e.getMessage());
+                    return "User " + id;
+                }
+            });
+        }
+
         MediaServiceResponse mediaDetails = null;
         try {
             mediaDetails = mediaServiceClient.getMediaDetails(approval.getMediaId());
@@ -397,17 +518,17 @@ public class EventModerationServiceImpl implements IEventModerationService {
     }
 
     private void sendMediaApprovedNotifications(String eventId, String mediaId, String uploaderUserId) {
-        EventDocument event = eventService.getEventById(eventId);
+        EventDocument event = eventRepository.findById(eventId).orElseThrow(() -> new ResourceNotFoundException("Event not found"));
         String mediaTitle = resolveMediaTitle(mediaId);
 
         try {
-            notificationServiceClient.notifyMediaApproved(uploaderUserId, eventId, event.getTitle(), mediaTitle);
+            notificationIntegrationService.notifyMediaApproved(uploaderUserId, eventId, event.getTitle(), mediaTitle);
         } catch (Exception e) {
             log.warn("Failed to send media approved notification: {}", e.getMessage());
         }
 
         try {
-            String uploaderEmail = userServiceClient.getUserEmail(uploaderUserId);
+            String uploaderEmail = userIntegrationService.getUserEmail(uploaderUserId);
             emailServiceClient.sendMediaApprovedEmail(uploaderEmail, event.getTitle(), mediaTitle);
         } catch (Exception e) {
             log.warn("Failed to send media approved email: {}", e.getMessage());
@@ -415,17 +536,17 @@ public class EventModerationServiceImpl implements IEventModerationService {
     }
 
     private void sendMediaRejectedNotifications(String eventId, String mediaId, String uploaderUserId, String reason) {
-        EventDocument event = eventService.getEventById(eventId);
+        EventDocument event = eventRepository.findById(eventId).orElseThrow(() -> new ResourceNotFoundException("Event not found"));
         String mediaTitle = resolveMediaTitle(mediaId);
 
         try {
-            notificationServiceClient.notifyMediaRejected(uploaderUserId, eventId, event.getTitle(), mediaTitle, reason);
+            notificationIntegrationService.notifyMediaRejected(uploaderUserId, eventId, event.getTitle(), mediaTitle, reason);
         } catch (Exception e) {
             log.warn("Failed to send media rejected notification: {}", e.getMessage());
         }
 
         try {
-            String uploaderEmail = userServiceClient.getUserEmail(uploaderUserId);
+            String uploaderEmail = userIntegrationService.getUserEmail(uploaderUserId);
             emailServiceClient.sendMediaRejectedEmail(uploaderEmail, event.getTitle(), mediaTitle, reason);
         } catch (Exception e) {
             log.warn("Failed to send media rejected email: {}", e.getMessage());

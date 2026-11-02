@@ -26,6 +26,8 @@ public class UserDocument {
 
     private String passwordHash;
     private String displayName;
+    private String bio;
+    private String avatarUrl;
 
     private UserStatus status;
 

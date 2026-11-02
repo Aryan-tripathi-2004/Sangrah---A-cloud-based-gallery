@@ -1,22 +1,18 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, ChangeDetectionStrategy, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { BillingService, CostEstimateDTO } from '../../billing.service';
-import { Observable } from 'rxjs';
 
 @Component({
   selector: 'app-billing-summary',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CommonModule],
   templateUrl: './billing-summary.component.html'
 })
-export class BillingSummaryComponent implements OnInit {
-  costEstimate$!: Observable<CostEstimateDTO | null>;
+export class BillingSummaryComponent {
+  private readonly billingService = inject(BillingService);
 
-  constructor(private billingService: BillingService) {}
-
-  ngOnInit(): void {
-    this.costEstimate$ = this.billingService.costEstimate$;
-  }
+  readonly costEstimate = this.billingService.costEstimate;
 
   getImagePercentage(estimate: CostEstimateDTO | null): number {
     if (!estimate) return 0;

@@ -18,7 +18,7 @@ import jakarta.annotation.PostConstruct;
 @Configuration
 public class EnvConfig {
 
-    @Value("${stripe.api.key:}")
+    @Value("${stripe.api.key}")
     private String stripeApiKey;
 
     /**

@@ -2,5 +2,8 @@ package com.example.Billing.shared.enums;
 
 public enum MediaDomain {
     GALLERY,
-    EVENTS
+    EVENTS,
+    EVENT_COVER,
+    PROFILE_AVATAR,
+    MESSAGING
 }
