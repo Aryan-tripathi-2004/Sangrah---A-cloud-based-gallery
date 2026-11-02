@@ -14,7 +14,7 @@ import org.mapstruct.ReportingPolicy;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
+import java.time.ZoneOffset;
 
 /**
  * MapStruct mapper for Notification Entity ↔ DTO conversions.
@@ -51,6 +51,6 @@ public interface NotificationMapper {
     NotificationPayload toPayload(NotificationPayloadDTO dto);
 
     default LocalDateTime map(Instant instant) {
-        return instant == null ? null : LocalDateTime.ofInstant(instant, ZoneId.systemDefault());
+        return instant == null ? null : LocalDateTime.ofInstant(instant, ZoneOffset.UTC);
     }
 }

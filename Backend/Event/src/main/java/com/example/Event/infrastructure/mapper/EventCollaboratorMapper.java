@@ -7,48 +7,31 @@ import com.example.Event.api.dto.response.MessageResponse;
 import com.example.Event.infrastructure.persistence.document.EventDocument;
 import org.mapstruct.InjectionStrategy;
 import org.mapstruct.Mapper;
+import org.mapstruct.Mapping;
 import org.mapstruct.MappingConstants;
 
 import java.util.List;
 
-@Mapper(componentModel = MappingConstants.ComponentModel.SPRING,
-        injectionStrategy = InjectionStrategy.CONSTRUCTOR)
-public abstract class EventCollaboratorMapper {
+@Mapper(
+    componentModel = MappingConstants.ComponentModel.SPRING,
+    injectionStrategy = InjectionStrategy.CONSTRUCTOR
+)
+public interface EventCollaboratorMapper {
 
-    public CollaboratorMutationResponse toMutationResponse(CollaboratorResponse collaborator, String message) {
-        return new CollaboratorMutationResponse(collaborator, message);
-    }
+    CollaboratorMutationResponse toMutationResponse(CollaboratorResponse collaborator, String message);
 
-    public CollaboratorsResponse toCollaboratorsResponse(String eventId, List<CollaboratorResponse> collaborators) {
-        return new CollaboratorsResponse(eventId, collaborators);
-    }
+    CollaboratorsResponse toCollaboratorsResponse(String eventId, List<CollaboratorResponse> collaborators);
 
-    public MessageResponse toMessageResponse(String message) {
-        return new MessageResponse(message);
-    }
+    MessageResponse toMessageResponse(String message);
 
-    public CollaboratorResponse toResponse(EventDocument.EventCollaborator collaborator, String email) {
-        return toResponse(collaborator, email, collaborator != null ? collaborator.getUserId() : null);
-    }
-
-    public CollaboratorResponse toResponse(
+    @Mapping(target = "email", source = "email")
+    @Mapping(target = "displayName", source = "displayName")
+    CollaboratorResponse toResponse(
             EventDocument.EventCollaborator collaborator,
             String email,
-            String displayName) {
-        if (collaborator == null) {
-            return null;
-        }
-        return new CollaboratorResponse(
-                collaborator.getUserId(),
-                collaborator.getCanUploadMedia(),
-                collaborator.getCanReviewMedia(),
-                collaborator.getCanReviewAccessRequests(),
-                collaborator.getCanDirectUpload(),
-                collaborator.getCanDeleteMedia(),
-                collaborator.getCanEditEventDetails(),
-                collaborator.getAddedAt(),
-                collaborator.getAddedByUserId(),
-                email,
-                displayName);
+            String displayName);
+
+    default CollaboratorResponse toResponse(EventDocument.EventCollaborator collaborator, String email) {
+        return toResponse(collaborator, email, collaborator != null ? collaborator.getUserId() : null);
     }
 }

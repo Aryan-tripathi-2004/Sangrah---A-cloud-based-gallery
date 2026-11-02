@@ -1,7 +1,8 @@
 import { Component, ChangeDetectionStrategy, input, output, computed, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterLink } from '@angular/router';
-import { User, StorageUsage, SangrahApiService } from '../../../../core/api/sangrah-api.service';
+import { User, StorageUsage } from '../../../../core/api/models/api.models';
+import { GalleryApiService } from '../../../../core/api/services/gallery-api.service';
 import { AvatarUploadComponent } from '../avatar-upload/avatar-upload.component';
 import { ProfileStatsComponent } from '../profile-stats/profile-stats.component';
 import { BioEditComponent } from '../bio-edit/bio-edit.component';
@@ -20,7 +21,7 @@ import { BioEditComponent } from '../bio-edit/bio-edit.component';
   templateUrl: './profile-sidebar.component.html',
 })
 export class ProfileSidebarComponent {
-  private api = inject(SangrahApiService);
+  private readonly galleryApi = inject(GalleryApiService);
 
   user = input<User | null>(null);
   eventsCount = input<number>(0);
@@ -32,7 +33,7 @@ export class ProfileSidebarComponent {
   avatarSelected = output<File>();
   bioSaved = output<string>();
 
-  avatarDisplayUrl = computed(() => this.api.getAvatarUrl(this.user()?.avatarUrl));
+  avatarDisplayUrl = computed(() => this.galleryApi.getAvatarUrl(this.user()?.avatarUrl));
 
   memberSince = computed(() => {
     const raw = this.user()?.createdAt;

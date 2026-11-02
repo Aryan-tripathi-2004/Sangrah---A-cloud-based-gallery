@@ -70,4 +70,12 @@ public interface IInvoiceLifecycleService {
      * @return updated invoice DTO
      */
     InvoiceDTO markInvoiceAsPaid(String userId, String invoiceId);
+
+    /**
+     * Processes receipt PDF generation and confirmation email dispatch for a paid invoice.
+     *
+     * @param userId user identifier
+     * @param invoiceId invoice identifier
+     */
+    void processPaidInvoiceReceiptAndNotification(String userId, String invoiceId);
 }

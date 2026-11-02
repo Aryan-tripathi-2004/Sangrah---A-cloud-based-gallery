@@ -2,9 +2,9 @@
   class="group relative break-inside-avoid bg-slate-800/50 border border-slate-700/30 rounded-lg overflow-hidden cursor-pointer transition-all hover:shadow-lg hover:bg-slate-800 hover:-translate-y-1"
   >
   <!-- Image/Video Thumbnail -->
-  @if (isImage) {
+  @if (isImage()) {
     <img
-      [src]="fileUrl"
+      [src]="fileUrl()"
       [alt]="media.originalFileName"
       class="w-full h-auto cursor-pointer"
       (click)="onPreview()"
@@ -12,9 +12,9 @@
       (error)="onImageError()"
       />
   }
-  @if (isVideo) {
+  @if (isVideo()) {
     <video
-      [src]="fileUrl"
+      [src]="fileUrl()"
       class="w-full h-auto cursor-pointer"
       (click)="onPreview()"
       (loadedmetadata)="onImageLoad()"
@@ -23,13 +23,13 @@
   }
 
   <!-- Fallback Emoji if image fails to load -->
-  @if (!imageLoaded) {
+  @if (!imageLoaded()) {
     <div class="w-full py-24 flex items-center justify-center bg-gradient-to-br from-slate-700 to-slate-800">
       <span class="text-5xl">
-        @if (isImage) {
+        @if (isImage()) {
           <span>🖼️</span>
         }
-        @if (isVideo) {
+        @if (isVideo()) {
           <span>🎬</span>
         }
       </span>

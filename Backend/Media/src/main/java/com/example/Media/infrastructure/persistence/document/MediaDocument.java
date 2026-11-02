@@ -89,4 +89,8 @@ public class MediaDocument {
     public boolean isActive() {
         return deletedAt == null;
     }
+
+    public boolean isDeleted() {
+        return deletedAt != null;
+    }
 }

@@ -62,6 +62,8 @@ export interface EventCollaborator {
   displayName?: string;
 }
 
+export type EventAccessStatus = 'owner' | 'collaborator' | 'approved' | 'pending' | 'rejected' | 'revoked' | 'expired' | 'none' | 'loading' | string;
+
 export interface Event {
   id: string;
   eventId?: string;
@@ -77,9 +79,10 @@ export interface Event {
   uploadPolicy?: string;
   moderationRequired?: boolean;
   requiresApproval?: boolean;
-  accessStatus?: string;
+  accessStatus?: EventAccessStatus;
   message?: string;
   collaborators?: EventCollaborator[];
+  pendingRequestsCount?: number;
 }
 
 export interface UpdateEventPayload {
@@ -119,23 +122,46 @@ export interface EventAccessRequest {
 
 export interface AccessRequestResponse {
   id?: string;
-  requestId?: string;
-  eventId: string;
+  requestId: string;
+  requesterUserId?: string;
   userId?: string;
+  displayName?: string;
+  eventId?: string;
   status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'REVOKED';
   message?: string;
+  requestedAt: string;
   approvalDuration?: string;
   accessExpiresAt?: string;
   reason?: string;
 }
 
-export interface AccessStatusResponse {
+export interface AccessRequestsResponse {
   eventId: string;
-  userId: string;
-  accessStatus: 'NO_ACCESS' | 'APPROVED' | 'PENDING' | 'REJECTED' | 'REVOKED';
-  requiresApproval: boolean;
-  canUpload: boolean;
-  canView: boolean;
+  requests: AccessRequestResponse[];
+}
+
+export interface PaginatedResponse<T> {
+  content: T[];
+  totalElements?: number;
+  totalPages?: number;
+  size?: number;
+  number?: number;
+}
+
+export interface AccessStatusResponse {
+  eventId?: string;
+  userId?: string;
+  status?: 'NO_ACCESS' | 'APPROVED' | 'PENDING' | 'REJECTED' | 'REVOKED' | string;
+  accessStatus?: 'NO_ACCESS' | 'APPROVED' | 'PENDING' | 'REJECTED' | 'REVOKED' | string;
+  hasAccess?: boolean;
+  showRequestButton?: boolean | string;
+  createdAt?: string;
+  expiresAt?: string;
+  rejectionReason?: string;
+  revokedAt?: string;
+  requiresApproval?: boolean;
+  canUpload?: boolean;
+  canView?: boolean;
   message?: string;
 }
 

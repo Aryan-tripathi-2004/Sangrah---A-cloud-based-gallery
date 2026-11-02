@@ -1,7 +1,8 @@
 import { Component, ChangeDetectionStrategy, input, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterLink } from '@angular/router';
-import { Event, SangrahApiService } from '../../../../core/api/sangrah-api.service';
+import { Event } from '../../../../core/api/models/api.models';
+import { EventApiService } from '../../../../core/api/services/event-api.service';
 
 @Component({
   selector: 'app-events-grid',
@@ -11,13 +12,13 @@ import { Event, SangrahApiService } from '../../../../core/api/sangrah-api.servi
   templateUrl: './events-grid.component.html',
 })
 export class EventsGridComponent {
-  private api = inject(SangrahApiService);
+  private readonly eventApi = inject(EventApiService);
 
   events = input<Event[]>([]);
 
   getCoverImageUrl(event: Event): string | null {
     if (event.coverImageId) {
-      return this.api.getMediaFileUrl(event.coverImageId);
+      return this.eventApi.getMediaFileUrl(event.coverImageId);
     }
     return null;
   }

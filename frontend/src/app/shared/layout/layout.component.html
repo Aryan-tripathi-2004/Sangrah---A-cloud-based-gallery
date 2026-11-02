@@ -17,51 +17,51 @@
 
         <!-- Desktop Navigation -->
         <div class="hidden md:flex items-center gap-1">
-          @if (!(isAuthenticated$ | async)) {
+          @if (!isAuthenticated()) {
             <a routerLink="/login" routerLinkActive="bg-slate-700"
             class="px-3 py-2 rounded-lg text-sm font-medium transition hover:bg-slate-800">Login</a>
           }
-          @if (!(isAuthenticated$ | async)) {
+          @if (!isAuthenticated()) {
             <a routerLink="/signup" routerLinkActive="bg-slate-700"
             class="px-3 py-2 rounded-lg text-sm font-medium transition hover:bg-slate-800">Sign Up</a>
           }
 
-          @if (isAuthenticated$ | async) {
+          @if (isAuthenticated()) {
             <a routerLink="/dashboard" routerLinkActive="bg-slate-700"
             class="px-3 py-2 rounded-lg text-sm font-medium transition hover:bg-slate-800">Dashboard</a>
           }
-          @if (isAuthenticated$ | async) {
+          @if (isAuthenticated()) {
             <a routerLink="/event" routerLinkActive="bg-slate-700"
             class="px-3 py-2 rounded-lg text-sm font-medium transition hover:bg-slate-800">Events</a>
           }
-          @if (isAuthenticated$ | async) {
+          @if (isAuthenticated()) {
             <a routerLink="/gallery" routerLinkActive="bg-slate-700"
             class="px-3 py-2 rounded-lg text-sm font-medium transition hover:bg-slate-800">Gallery</a>
           }
-          @if (isAuthenticated$ | async) {
+          @if (isAuthenticated()) {
             <a routerLink="/billing" routerLinkActive="bg-slate-700"
             class="px-3 py-2 rounded-lg text-sm font-medium transition hover:bg-slate-800">Billing</a>
           }
-          @if (isAuthenticated$ | async) {
+          @if (isAuthenticated()) {
             <a routerLink="/pending-requests" routerLinkActive="bg-slate-700"
             class="px-3 py-2 rounded-lg text-sm font-medium transition hover:bg-slate-800">Requests</a>
           }
-          @if (isAuthenticated$ | async) {
+          @if (isAuthenticated()) {
             <a routerLink="/profile" routerLinkActive="bg-slate-700"
             class="px-3 py-2 rounded-lg text-sm font-medium transition hover:bg-slate-800">Profile</a>
           }
-          @if (isAuthenticated$ | async) {
+          @if (isAuthenticated()) {
             <a routerLink="/about" routerLinkActive="bg-slate-700"
             class="px-3 py-2 rounded-lg text-sm font-medium transition hover:bg-slate-800">About</a>
           }
 
           <!-- Notification Bell Icon -->
-          @if (isAuthenticated$ | async) {
+          @if (isAuthenticated()) {
             <button (click)="toggleNotifications()"
               class="relative ml-2 p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition"
               title="Notifications">
               🔔
-              @if ((unreadCount$ | async); as count) {
+              @if (unreadCount(); as count) {
                 @if (count > 0) {
                   <span
                     class="absolute top-0 right-0 w-5 h-5 bg-red-600 rounded-full text-xs text-white flex items-center justify-center font-bold leading-none">
@@ -72,7 +72,7 @@
             </button>
           }
 
-          @if (isAuthenticated$ | async) {
+          @if (isAuthenticated()) {
             <button (click)="logout()"
             class="ml-4 px-4 py-2 rounded-lg bg-red-600/20 hover:bg-red-600/30 text-red-400 text-sm font-medium transition">Logout</button>
           }
@@ -82,7 +82,7 @@
   </header>
 
   <!-- Notification Panel (overlay) -->
-  @if (showNotifications && (isAuthenticated$ | async)) {
+  @if (showNotifications() && isAuthenticated()) {
     <app-notification-panel
       (closeRequested)="toggleNotifications()">
     </app-notification-panel>

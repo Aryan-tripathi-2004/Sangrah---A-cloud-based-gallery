@@ -11,7 +11,6 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -19,33 +18,30 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.IOException;
-
 @Slf4j
 @RestController
 @RequestMapping("/api/v1/gallery")
 @RequiredArgsConstructor
-@Tag(name = "Gallery Management", description = "APIs for media upload, management, and storage tracking")
+@Tag(name = "Gallery Media", description = "Gallery media management endpoints")
 public class GalleryMediaController {
 
     private final IGalleryMediaService mediaService;
 
-    @PostMapping("/media")
-    @Operation(summary = "Upload media file(s)", description = "Upload one or more images/videos. No quota limits in pay-as-you-use model.")
-    public ResponseEntity<MediaItemResponse> upload(
+    @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(summary = "Upload media file", description = "Upload image or video to personal gallery")
+    public ResponseEntity<MediaItemResponse> uploadMedia(
             @RequestParam("file") MultipartFile file,
-            @CurrentUserId String userId) throws IOException {
+            @CurrentUserId String userId) {
         
-        log.info("📤 Upload request from user: {}, file: {}", userId, file.getOriginalFilename());
-
+        log.info("📤 Upload request for user: {}, filename: {}", userId, file.getOriginalFilename());
         MediaItemResponse response = mediaService.uploadMedia(userId, file);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
     @GetMapping("/media")
-    @Operation(summary = "List user's media", description = "Get all non-deleted media files (paginated, newest first)")
+    @Operation(summary = "List media", description = "Get list of all active (non-deleted) media items for user")
     public ResponseEntity<GalleryMediaListResponse> listMedia(@CurrentUserId String userId) {
-        log.info("📋 List media request from user: {}", userId);
+        log.info("📋 List media request for user: {}", userId);
         return ResponseEntity.ok(mediaService.listUserMedia(userId));
     }
 
@@ -57,19 +53,7 @@ public class GalleryMediaController {
             @RequestHeader(value = HttpHeaders.ACCEPT, defaultValue = MediaType.APPLICATION_JSON_VALUE) String acceptHeader) {
         
         log.info("🔍 Get media {} for user: {} (Accept: {})", mediaId, userId, acceptHeader);
-        
-        if (acceptHeader.contains(MediaType.APPLICATION_JSON_VALUE)) {
-            MediaItemResponse media = mediaService.getMedia(userId, mediaId);
-            return ResponseEntity.ok(media);
-        }
-
-        Resource resource = mediaService.getMediaFile(userId, mediaId);
-        MediaItemResponse details = mediaService.getMedia(userId, mediaId);
-
-        return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + details.originalFileName() + "\"")
-                .contentType(MediaType.parseMediaType(details.mimeType()))
-                .body(resource);
+        return mediaService.getMediaResponse(userId, mediaId, acceptHeader);
     }
 
     @DeleteMapping("/media/{mediaId}")
@@ -83,15 +67,14 @@ public class GalleryMediaController {
     }
 
     @GetMapping("/usage")
-    @Operation(summary = "Get storage usage stats", description = "Get current storage usage information (informational, no quota limits)")
-    public ResponseEntity<StorageUsageResponse> getStorageUsage(@CurrentUserId String userId) {
-        log.info("📊 Storage usage request from user: {}", userId);
-        StorageUsageResponse usage = mediaService.getStorageUsage(userId);
-        return ResponseEntity.ok(usage);
+    @Operation(summary = "Get storage usage", description = "Calculate total storage used by user and quota percentage")
+    public ResponseEntity<StorageUsageResponse> getUsage(@CurrentUserId String userId) {
+        log.info("📊 Get storage usage for user: {}", userId);
+        return ResponseEntity.ok(mediaService.getStorageUsage(userId));
     }
 
     @GetMapping("/health")
-    @Operation(summary = "Health check", description = "Verify Gallery service is running")
+    @Operation(summary = "Health check")
     public ResponseEntity<HealthResponse> health() {
         return ResponseEntity.ok(new HealthResponse("UP"));
     }

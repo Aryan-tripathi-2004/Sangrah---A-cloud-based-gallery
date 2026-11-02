@@ -1,10 +1,12 @@
-import { Component, OnInit, inject, ChangeDetectorRef, ChangeDetectionStrategy } from '@angular/core';
+import { Component, OnInit, inject, ChangeDetectionStrategy, signal, DestroyRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterLink, Router, ActivatedRoute } from '@angular/router';
-import { SangrahApiService, Event } from '../../core/api/sangrah-api.service';
-import { AuthService } from '../../core/auth/auth.service';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { of } from 'rxjs';
+import { map, filter, switchMap, catchError } from 'rxjs/operators';
+import { EventApiService } from '../../core/api/services/event-api.service';
+import { Event, EventAccessStatus } from '../../core/api/models/api.models';
 import { LayoutComponent } from '../../shared/layout/layout.component';
-import { map } from 'rxjs/operators';
 import { EventAccessRequestComponent } from './components/event-access-request.component';
 
 @Component({
@@ -15,214 +17,150 @@ import { EventAccessRequestComponent } from './components/event-access-request.c
   templateUrl: './events-list.component.html',
 })
 export class EventsListComponent implements OnInit {
-  private api = inject(SangrahApiService);
-  private authService = inject(AuthService);
-  private cdr = inject(ChangeDetectorRef);
-  private router = inject(Router);
-  private activatedRoute = inject(ActivatedRoute);
+  private readonly eventApi = inject(EventApiService);
+  private readonly router = inject(Router);
+  private readonly activatedRoute = inject(ActivatedRoute);
+  private readonly destroyRef = inject(DestroyRef);
 
-  showRequestModal = false;
-  pendingRequestEvent: any = null;
-
-  events: Event[] = [];
-  isLoading = true;
-  selectedFilter: 'all' | 'public' | 'protected' | 'private' | 'myEvents' = 'all';
+  // Modern Angular 19 reactive signals
+  readonly showRequestModal = signal<boolean>(false);
+  readonly pendingRequestEvent = signal<Event | null>(null);
+  readonly events = signal<Event[]>([]);
+  readonly isLoading = signal<boolean>(true);
+  readonly selectedFilter = signal<'all' | 'public' | 'protected' | 'private' | 'myEvents'>('all');
 
   ngOnInit(): void {
     this.loadEvents();
 
     // Open request modal when redirected here with a requestEventId query param
-    try {
-      this.activatedRoute.queryParamMap.subscribe(params => {
-        const reqId = params.get('requestEventId');
-        if (reqId) {
-          this.api.getEventById(reqId).subscribe({
-            next: (ev: any) => {
-              this.pendingRequestEvent = ev;
-              this.showRequestModal = true;
-              this.cdr.detectChanges();
-            },
-            error: () => {
-              this.pendingRequestEvent = { id: reqId };
-              this.showRequestModal = true;
-              this.cdr.detectChanges();
-            }
-          });
-        }
+    this.activatedRoute.queryParamMap
+      .pipe(
+        map(params => params.get('requestEventId')),
+        filter((reqId): reqId is string => !!reqId),
+        switchMap(reqId =>
+          this.eventApi.getEventById(reqId).pipe(
+            catchError(() => of<Event>({
+              id: reqId,
+              ownerUserId: '',
+              title: '',
+              description: '',
+              eventDate: '',
+              visibility: 'PROTECTED',
+              moderationEnabled: false,
+              status: 'ACTIVE',
+              createdAt: ''
+            }))
+          )
+        ),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(ev => {
+        this.pendingRequestEvent.set(ev);
+        this.showRequestModal.set(true);
       });
-    } catch (e) { }
   }
 
   selectFilter(filter: 'all' | 'public' | 'protected' | 'private' | 'myEvents'): void {
-    this.selectedFilter = filter;
+    this.selectedFilter.set(filter);
     this.loadEvents();
   }
 
   loadEvents(): void {
-    this.isLoading = true;
+    this.isLoading.set(true);
     let request;
 
-    switch (this.selectedFilter) {
+    switch (this.selectedFilter()) {
       case 'all':
-        request = this.api.getGlobalEvents();
+        request = this.eventApi.getGlobalEvents();
         break;
       case 'public':
-        // Get global events and filter for PUBLIC visibility
-        request = this.api.getGlobalEvents().pipe(
+        request = this.eventApi.getGlobalEvents().pipe(
           map(events => events.filter(e => e.visibility === 'PUBLIC'))
         );
         break;
       case 'protected':
-        // Get global events and filter for PROTECTED visibility
-        request = this.api.getGlobalEvents().pipe(
+        request = this.eventApi.getGlobalEvents().pipe(
           map(events => events.filter(e => e.visibility === 'PROTECTED'))
         );
         break;
       case 'private':
-        // Get global events and filter for PRIVATE visibility
-        request = this.api.getGlobalEvents().pipe(
+        request = this.eventApi.getGlobalEvents().pipe(
           map(events => events.filter(e => e.visibility === 'PRIVATE'))
         );
         break;
       case 'myEvents':
-        request = this.api.getMyEvents();
+        request = this.eventApi.getMyEvents();
         break;
     }
 
-    request.subscribe({
+    request.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (events) => {
-        console.log('✅ [EventsListComponent] Successfully loaded events:', events);
-        this.events = (events || []).map((event: any) => ({
+        const mapped: Event[] = (events || []).map(event => ({
           ...event,
-          visibility: (event.visibility || '').toString().toUpperCase()
+          id: event.id || event.eventId || '',
+          visibility: (event.visibility || '').toString().toUpperCase(),
+          accessStatus: (event.accessStatus ? event.accessStatus.toLowerCase() : 'none') as EventAccessStatus
         }));
-        
-        // Get current user ID to check ownership
-        this.authService.getCurrentUserId().subscribe({
-          next: (currentUserId: string) => {
-            // Initialize accessStatus for protected events
-            this.events.forEach(event => {
-              if (event.visibility === 'PROTECTED') {
-                // Check if user is owner
-                if ((event as any).ownerUserId === currentUserId) {
-                  (event as any).accessStatus = 'owner'; // Mark as owner
-                } else {
-                  (event as any).accessStatus = 'loading'; // Default to loading state
-                }
-              }
-            });
-            
-            this.isLoading = false;
-            this.cdr.detectChanges();
-            
-            // Fetch access status for protected events in background (non-blocking)
-            this.events.forEach(event => {
-              if (event.visibility === 'PROTECTED' && (event as any).accessStatus !== 'owner') {
-                this.api.getAccessStatus(event.id).subscribe({
-                  next: (status: any) => {
-                    (event as any).accessStatus = status.status ? status.status.toLowerCase() : 'none';
-                    this.cdr.detectChanges();
-                  },
-                  error: () => {
-                    (event as any).accessStatus = 'none';
-                    this.cdr.detectChanges();
-                  }
-                });
-              }
-            });
-          },
-          error: () => {
-            // If can't get user ID, proceed without owner check
-            this.events.forEach(event => {
-              if (event.visibility === 'PROTECTED') {
-                (event as any).accessStatus = 'loading';
-              }
-            });
-            
-            this.isLoading = false;
-            this.cdr.detectChanges();
-            
-            this.events.forEach(event => {
-              if (event.visibility === 'PROTECTED') {
-                this.api.getAccessStatus(event.id).subscribe({
-                  next: (status: any) => {
-                    (event as any).accessStatus = status.status ? status.status.toLowerCase() : 'none';
-                    this.cdr.detectChanges();
-                  },
-                  error: () => {
-                    (event as any).accessStatus = 'none';
-                    this.cdr.detectChanges();
-                  }
-                });
-              }
-            });
-          }
-        });
+
+        this.events.set(mapped);
+        this.isLoading.set(false);
       },
       error: (err) => {
-        console.error('❌ [EventsListComponent] Failed to load events:', err);
-        this.events = [];
-        this.isLoading = false;
-        this.cdr.detectChanges();
+        console.error('Failed to load events:', err);
+        this.events.set([]);
+        this.isLoading.set(false);
       },
     });
   }
-getCoverImageUrl(mediaId: string): string {
-  return this.api.getMediaFileUrl(mediaId);
-}
+
+  getCoverImageUrl(mediaId: string): string {
+    return this.eventApi.getMediaFileUrl(mediaId);
+  }
+
   viewEventOrRequest(event: Event): void {
+    const status = event.accessStatus || 'none';
+
     // For protected events without access, show request modal
-    if (event.visibility === 'PROTECTED' && ['none', 'expired', 'revoked', 'rejected'].includes((event as any).accessStatus)) {
-      // Create a fresh copy of the event to avoid stale references
-      this.pendingRequestEvent = JSON.parse(JSON.stringify(event));
-      this.showRequestModal = true;
-      this.cdr.detectChanges();
+    if (event.visibility === 'PROTECTED' && ['none', 'expired', 'revoked', 'rejected'].includes(status)) {
+      this.pendingRequestEvent.set(JSON.parse(JSON.stringify(event)));
+      this.showRequestModal.set(true);
       return;
     }
-    
+
     // For owners, navigate to view event
-    if (event.visibility === 'PROTECTED' && (event as any).accessStatus === 'owner') {
+    if (event.visibility === 'PROTECTED' && status === 'owner') {
       this.router.navigate(['/event', event.id]);
       return;
     }
-    
+
     // If loading, wait and try again or just navigate (let detail page handle it)
-    if (event.visibility === 'PROTECTED' && (event as any).accessStatus === 'loading') {
-      // Navigate to event detail page; it will handle access restrictions
+    if (event.visibility === 'PROTECTED' && status === 'loading') {
       this.router.navigate(['/event', event.id]);
       return;
     }
-    
+
     // For other cases, navigate to event detail
     this.router.navigate(['/event', event.id]);
   }
-  
+
   closeRequestModal(): void {
-    this.showRequestModal = false;
-    this.pendingRequestEvent = null;
-    this.cdr.detectChanges();
+    this.showRequestModal.set(false);
+    this.pendingRequestEvent.set(null);
   }
 
   onRequestSubmitted(): void {
-    // Mark the corresponding event in the list as pending
-    if (!this.pendingRequestEvent) return;
-    const id = this.pendingRequestEvent.id || this.pendingRequestEvent.eventId;
-    const found = this.events.find(e => e.id === id);
-    if (found) {
-      (found as any).accessStatus = 'pending';
-      this.cdr.detectChanges();
-    }
+    const current = this.pendingRequestEvent();
+    if (!current) return;
+    const id = current.id || current.eventId;
+    this.events.update(list => list.map(e => e.id === id ? { ...e, accessStatus: 'pending' as EventAccessStatus } : e));
     this.closeRequestModal();
   }
 
   onRequestWithdrawn(): void {
-    if (!this.pendingRequestEvent) return;
-    const id = this.pendingRequestEvent.id || this.pendingRequestEvent.eventId;
-    const found = this.events.find(e => e.id === id);
-    if (found) {
-      (found as any).accessStatus = 'none';
-      this.cdr.detectChanges();
-    }
+    const current = this.pendingRequestEvent();
+    if (!current) return;
+    const id = current.id || current.eventId;
+    this.events.update(list => list.map(e => e.id === id ? { ...e, accessStatus: 'none' as EventAccessStatus } : e));
     this.closeRequestModal();
   }
 }

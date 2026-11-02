@@ -1,4 +1,4 @@
-@if (isOpen) {
+@if (isOpen()) {
   <div class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
     <div class="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl border border-slate-700/60 bg-slate-950 shadow-2xl shadow-black/50">
       <div class="flex items-center justify-between border-b border-slate-800 px-6 py-4">
@@ -95,14 +95,14 @@
                 <p class="mt-2 text-sm text-slate-400">Upload a new cover image to replace the current one.</p>
                 <div class="mt-4 grid gap-4 md:grid-cols-[220px,1fr]">
                   <div class="overflow-hidden rounded-xl border border-slate-700 bg-slate-900/80">
-                    @if (selectedCoverPreviewUrl || currentCoverImageUrl) {
+                    @if (selectedCoverPreviewUrl() || currentCoverImageUrl()) {
                       <img
-                        [src]="selectedCoverPreviewUrl || currentCoverImageUrl || ''"
+                        [src]="selectedCoverPreviewUrl() || currentCoverImageUrl() || ''"
                         alt="Cover image preview"
                         class="h-44 w-full object-cover"
                         />
                     }
-                    @if (!selectedCoverPreviewUrl && !currentCoverImageUrl) {
+                    @if (!selectedCoverPreviewUrl() && !currentCoverImageUrl()) {
                       <div class="flex h-44 items-center justify-center text-sm text-slate-500">
                         No cover image
                       </div>
@@ -111,7 +111,7 @@
                   <div class="rounded-xl border border-slate-700 bg-slate-900/80 p-4 text-sm text-slate-300">
                     <p class="font-semibold text-slate-100">Preview</p>
                     <p class="mt-2 text-slate-400">
-                      {{ selectedCoverFileName ? 'Selected file: ' + selectedCoverFileName : 'This is the current cover image.' }}
+                      {{ selectedCoverFileName() ? 'Selected file: ' + selectedCoverFileName() : 'This is the current cover image.' }}
                     </p>
                     <p class="mt-3 text-slate-500">If you select a new image, it will be uploaded through the Event service and the old media will be cleaned up server-side.</p>
                   </div>
@@ -127,14 +127,14 @@
                 </button>
                 <button
                   type="button"
-                  (click)="saveChanges.emit()"
+                  (click)="saveChanges()"
                   [disabled]="!canSave()"
                   class="flex-1 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-500 px-4 py-3 font-semibold text-white transition hover:from-blue-500 hover:to-cyan-400 disabled:cursor-not-allowed disabled:from-slate-700 disabled:to-slate-700"
                   >
-                  @if (!isSaving) {
+                  @if (!isSaving()) {
                     <span>Save changes</span>
                   }
-                  @if (isSaving) {
+                  @if (isSaving()) {
                     <span>Saving...</span>
                   }
                 </button>

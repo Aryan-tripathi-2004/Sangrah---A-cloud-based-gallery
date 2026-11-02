@@ -1,3 +1,10 @@
+@if (errorMessage) {
+  <div class="bg-red-500/10 border border-red-500/30 rounded-lg p-4 text-center my-4">
+    <p class="text-red-400 font-semibold">⚠️ {{ errorMessage }}</p>
+    <button (click)="checkAccessStatus()" class="mt-2 text-xs text-blue-400 hover:underline">Retry</button>
+  </div>
+}
+
 <!-- Shows if event is PROTECTED and user is not owner and doesn't have access -->
 @if (shouldShowComponent && !isModalMode) {
   <div class="space-y-4">

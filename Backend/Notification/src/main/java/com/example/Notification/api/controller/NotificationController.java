@@ -45,6 +45,15 @@ public class NotificationController {
         return ResponseEntity.ok(notificationService.updateNotificationStatus(userId, request));
     }
 
+    @DeleteMapping("/{notificationId}")
+    @Operation(summary = "Delete notification")
+    public ResponseEntity<Void> deleteNotification(
+            @CurrentUserId String userId,
+            @PathVariable String notificationId) {
+        notificationService.deleteNotification(userId, notificationId);
+        return ResponseEntity.noContent().build();
+    }
+
     @GetMapping("/health")
     @Operation(summary = "Health check")
     public ResponseEntity<HealthResponse> health() {

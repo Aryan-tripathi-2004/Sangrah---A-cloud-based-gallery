@@ -1,6 +1,7 @@
-import { Component, inject, ChangeDetectionStrategy, signal } from '@angular/core';
-import { FormBuilder, ReactiveFormsModule, Validators, AbstractControl, ValidationErrors } from '@angular/forms';
+import { Component, inject, ChangeDetectionStrategy, signal, DestroyRef } from '@angular/core';
+import { FormGroup, FormControl, ReactiveFormsModule, Validators, AbstractControl, ValidationErrors } from '@angular/forms';
 import { Router, RouterLink, ActivatedRoute } from '@angular/router';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AuthService } from '../../core/auth/auth.service';
 import { LayoutComponent } from '../../shared/layout/layout.component';
 
@@ -12,17 +13,17 @@ import { LayoutComponent } from '../../shared/layout/layout.component';
   templateUrl: './signup.component.html',
 })
 export class SignupComponent {
-  private authService = inject(AuthService);
-  private router = inject(Router);
-  private route = inject(ActivatedRoute);
-  private fb = inject(FormBuilder);
+  private readonly authService = inject(AuthService);
+  private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
+  private readonly destroyRef = inject(DestroyRef);
 
-  form = this.fb.group(
+  readonly form = new FormGroup(
     {
-      displayName: ['', [Validators.required]],
-      email: ['', [Validators.required, Validators.email]],
-      password: ['', [Validators.required, Validators.minLength(8)]],
-      confirmPassword: ['', [Validators.required]],
+      displayName: new FormControl('', { validators: [Validators.required], nonNullable: true }),
+      email: new FormControl('', { validators: [Validators.required, Validators.email], nonNullable: true }),
+      password: new FormControl('', { validators: [Validators.required, Validators.minLength(8)], nonNullable: true }),
+      confirmPassword: new FormControl('', { validators: [Validators.required], nonNullable: true }),
     },
     { validators: this.passwordsMatchValidator }
   );
@@ -48,21 +49,22 @@ export class SignupComponent {
     this.errorMessage.set('');
     this.successMessage.set('');
 
-    const { email, password, displayName } = this.form.value;
-    if (!email || !password || !displayName) return;
+    const { email, password, displayName } = this.form.getRawValue();
 
-    this.authService.register(email, password, displayName).subscribe({
-      next: () => {
-        this.successMessage.set('Account created successfully! Redirecting...');
-        const returnUrl = this.route.snapshot.queryParamMap.get('returnUrl') || '/dashboard';
-        setTimeout(() => {
-          this.router.navigateByUrl(returnUrl);
-        }, 1000);
-      },
-      error: (err) => {
-        this.isLoading.set(false);
-        this.errorMessage.set(err.message || err.error?.message || 'Signup failed. Please try again.');
-      },
-    });
+    this.authService.register(email.trim(), password, displayName.trim())
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          this.successMessage.set('Account created successfully! Redirecting...');
+          const returnUrl = this.route.snapshot.queryParamMap.get('returnUrl') || '/dashboard';
+          setTimeout(() => {
+            this.router.navigateByUrl(returnUrl);
+          }, 1000);
+        },
+        error: (err) => {
+          this.isLoading.set(false);
+          this.errorMessage.set(err.message || err.error?.message || 'Signup failed. Please try again.');
+        },
+      });
   }
 }

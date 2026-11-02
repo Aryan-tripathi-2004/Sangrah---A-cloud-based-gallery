@@ -5,6 +5,8 @@ import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
+import java.math.BigDecimal;
+
 /**
  * Immutable request record carrying the payload for all email dispatch endpoints.
  *
@@ -36,7 +38,7 @@ public record EmailSendRequest(
         @Email(message = "A valid recipient email address is required")
         String userEmail,
 
-        Double amount,
+        BigDecimal amount,
 
         byte[] pdfContent,
 

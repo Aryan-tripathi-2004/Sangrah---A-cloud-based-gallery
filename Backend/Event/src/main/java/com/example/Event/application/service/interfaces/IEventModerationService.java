@@ -8,10 +8,13 @@ import com.example.Event.api.dto.response.EventMediaModerationResponse;
 import com.example.Event.api.dto.response.EventMediaUploadResponse;
 import com.example.Event.api.dto.response.MessageResponse;
 import com.example.Event.shared.enums.ApprovalStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.multipart.MultipartFile;
 
 public interface IEventModerationService {
     EventMediaFileResponse getMediaFile(String eventId, String mediaId, String userId);
+
+    ResponseEntity<?> getMediaResponse(String eventId, String mediaId, String acceptHeader, String userId);
 
     EventMediaUploadResponse uploadMedia(String eventId, MultipartFile file, String userId, String userEmail);
 
@@ -24,6 +27,8 @@ public interface IEventModerationService {
     EventMediaModerationResponse approveMedia(String eventId, String mediaId, String userId);
 
     EventMediaModerationResponse rejectMedia(String eventId, String mediaId, String reason, String userId);
+
+    EventMediaModerationResponse moderateMedia(String eventId, String mediaId, MediaModerationRequest request, String userId);
 
     MessageResponse deleteMedia(String eventId, String mediaId, String userId);
 

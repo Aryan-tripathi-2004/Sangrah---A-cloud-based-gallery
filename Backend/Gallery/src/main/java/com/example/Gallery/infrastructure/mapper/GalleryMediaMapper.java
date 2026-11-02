@@ -12,7 +12,7 @@ import org.mapstruct.ReportingPolicy;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
+import java.time.ZoneOffset;
 
 @Mapper(componentModel = MappingConstants.ComponentModel.SPRING,
     injectionStrategy = InjectionStrategy.CONSTRUCTOR,
@@ -37,10 +37,10 @@ public interface GalleryMediaMapper {
     MediaItemResponse toMediaItemResponse(GalleryMediaDocument document);
 
     default LocalDateTime map(Instant instant) {
-        return instant == null ? null : LocalDateTime.ofInstant(instant, ZoneId.systemDefault());
+        return instant == null ? null : LocalDateTime.ofInstant(instant, ZoneOffset.UTC);
     }
 
     default Instant map(LocalDateTime localDateTime) {
-        return localDateTime == null ? null : localDateTime.atZone(ZoneId.systemDefault()).toInstant();
+        return localDateTime == null ? null : localDateTime.toInstant(ZoneOffset.UTC);
     }
 }

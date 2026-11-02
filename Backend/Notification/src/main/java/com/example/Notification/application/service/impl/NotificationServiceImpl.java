@@ -11,7 +11,6 @@ import com.example.Notification.api.dto.response.NotificationResponse;
 import com.example.Notification.application.service.interfaces.INotificationService;
 import com.example.Notification.infrastructure.mapper.NotificationMapper;
 import com.example.Notification.infrastructure.persistence.document.NotificationDocument;
-
 import com.example.Notification.infrastructure.persistence.document.NotificationPreferenceDocument;
 import com.example.Notification.infrastructure.persistence.repository.NotificationPreferenceRepository;
 import com.example.Notification.infrastructure.persistence.repository.NotificationRepository;
@@ -24,6 +23,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
@@ -54,21 +54,14 @@ public class NotificationServiceImpl implements INotificationService {
     private boolean defaultEmailEnabled;
 
     @Override
+    @Transactional
     public NotificationActionResponse createNotification(InternalNotificationRequest request) {
-        log.info("ðŸ”” [Notification Service] Creating notification - Type: {}, Recipient: {}", request.type(), request.recipientUserId());
+        log.info("[Notification Service] Creating notification - Type: {}, Recipient: {}", request.type(), request.recipientUserId());
 
         NotificationDocument notification = notificationMapper.toDocument(request);
-
-
-
-
-
-
-
-
         NotificationDocument saved = notificationRepository.save(notification);
-        log.info("âœ… [Notification Service] Notification created successfully - ID: {}, Type: {}", saved.getId(), request.type());
-        
+        log.info("[Notification Service] Notification created successfully - ID: {}, Type: {}", saved.getId(), request.type());
+
         return new NotificationActionResponse(
                 saved.getId(),
                 saved.isRead(),
@@ -78,7 +71,7 @@ public class NotificationServiceImpl implements INotificationService {
 
     @Override
     public NotificationListResponse getUserNotifications(String userId, int skip, int limit) {
-        log.info("ðŸ“‹ [Notification Service] Fetching notifications for user: {} - Skip: {}, Limit: {}", userId, skip, limit);
+        log.info("[Notification Service] Fetching notifications for user: {} - Skip: {}, Limit: {}", userId, skip, limit);
 
         if (skip < minSkip || limit < minLimit || limit > maxLimit) {
             throw new IllegalArgumentException("Invalid pagination parameters. Limit must be " + minLimit + "-" + maxLimit);
@@ -96,8 +89,8 @@ public class NotificationServiceImpl implements INotificationService {
         long unreadCount = getUnreadCount(userId);
         long totalCount = paginated.getTotalElements();
 
-        log.info("âœ… [Notification Service] Retrieved {} notifications for user: {}", dtos.size(), userId);
-        
+        log.info("[Notification Service] Retrieved {} notifications for user: {}", dtos.size(), userId);
+
         return new NotificationListResponse(
                 dtos,
                 unreadCount,
@@ -109,33 +102,34 @@ public class NotificationServiceImpl implements INotificationService {
 
     @Override
     public List<NotificationResponse> getUnreadNotifications(String userId) {
-        log.info("ðŸ“¬ [Notification Service] Fetching unread notifications for user: {}", userId);
+        log.info("[Notification Service] Fetching unread notifications for user: {}", userId);
         List<NotificationDocument> unread = notificationRepository.findByRecipientUserIdAndReadFalse(userId);
-        log.info("âœ… [Notification Service] Found {} unread notifications for user: {}", unread.size(), userId);
+        log.info("[Notification Service] Found {} unread notifications for user: {}", unread.size(), userId);
         return unread.stream()
                 .map(notificationMapper::toResponse)
                 .collect(Collectors.toList());
     }
 
     @Override
+    @Transactional
     public NotificationActionResponse markAsRead(String userId, String notificationId) {
-        log.info("âœï¸ [Notification Service] Marking notification as read - ID: {}", notificationId);
+        log.info("[Notification Service] Marking notification as read - ID: {}", notificationId);
 
         NotificationDocument notification = notificationRepository.findById(notificationId)
                 .orElseThrow(() -> {
-                    log.warn("âš ï¸ [Notification Service] Notification not found - ID: {}", notificationId);
+                    log.warn("[Notification Service] Notification not found - ID: {}", notificationId);
                     return new ResourceNotFoundException("Notification not found with ID: " + notificationId);
                 });
 
         if (!notification.getRecipientUserId().equals(userId)) {
-            log.warn("âš ï¸ [Notification Service] User {} tried to read notification of user {}", userId, notification.getRecipientUserId());
+            log.warn("[Notification Service] User {} tried to read notification of user {}", userId, notification.getRecipientUserId());
             throw new PermissionDeniedException("Permission denied");
         }
 
         notification.setRead(true);
         NotificationDocument updated = notificationRepository.save(notification);
-        log.info("âœ… [Notification Service] Notification marked as read - ID: {}", notificationId);
-        
+        log.info("[Notification Service] Notification marked as read - ID: {}", notificationId);
+
         return new NotificationActionResponse(
                 updated.getId(),
                 updated.isRead(),
@@ -145,12 +139,11 @@ public class NotificationServiceImpl implements INotificationService {
 
     @Override
     public BulkActionResponse markAllAsRead(String userId) {
-        log.info("âœï¸ [Notification Service] Marking all notifications as read for user: {}", userId);
+        log.info("[Notification Service] Marking all notifications as read for user: {}", userId);
 
-        // Execute bulk update entirely within the database engine
         long count = notificationRepository.markAllAsReadByUserId(userId);
 
-        log.info("âœ… [Notification Service] Marked {} notifications as read for user: {}", count, userId);
+        log.info("[Notification Service] Marked {} notifications as read for user: {}", count, userId);
         return new BulkActionResponse(
                 count,
                 "All notifications marked as read"
@@ -158,16 +151,15 @@ public class NotificationServiceImpl implements INotificationService {
     }
 
     @Override
+    @Transactional
     public BulkActionResponse updateNotificationStatus(String userId, NotificationStatusUpdateRequest request) {
-        log.info("âœï¸ [Notification Service] Bulk updating notification status for user: {}", userId);
-        
+        log.info("[Notification Service] Bulk updating notification status for user: {}", userId);
+
         if (request.notificationIds() == null || request.notificationIds().isEmpty()) {
             if (request.read()) {
                 return markAllAsRead(userId);
             } else {
-                // If they pass an empty array and read=false, that would mean mark ALL as unread, 
-                // but typically we only support bulk mark as read. For safety:
-                log.info("â„¹ï¸ [Notification Service] Bulk mark as unread not supported via empty list");
+                log.info("[Notification Service] Bulk mark as unread not supported via empty list");
                 return new BulkActionResponse(0, "No notifications updated");
             }
         }
@@ -187,25 +179,38 @@ public class NotificationServiceImpl implements INotificationService {
     }
 
     @Override
-    public void deleteNotification(String notificationId) {
-        log.info("ðŸ—‘ï¸ [Notification Service] Deleting notification - ID: {}", notificationId);
-        notificationRepository.deleteById(notificationId);
-        log.info("âœ… [Notification Service] Notification deleted successfully - ID: {}", notificationId);
+    @Transactional
+    public void deleteNotification(String userId, String notificationId) {
+        log.info("[Notification Service] Deleting notification - ID: {} for user: {}", notificationId, userId);
+
+        if (userId == null || userId.isBlank()) {
+            throw new PermissionDeniedException("Authentication context is required to delete a notification");
+        }
+
+        NotificationDocument notification = notificationRepository.findById(notificationId)
+                .orElseThrow(() -> new ResourceNotFoundException("Notification not found with ID: " + notificationId));
+
+        if (!userId.equals(notification.getRecipientUserId())) {
+            throw new PermissionDeniedException("Permission denied: You do not own this notification");
+        }
+
+        notificationRepository.delete(notification);
+        log.info("[Notification Service] Notification deleted successfully - ID: {}", notificationId);
     }
 
     @Override
     public long getTotalCount(String userId) {
-        log.info("ðŸ“Š [Notification Service] Getting total notification count for user: {}", userId);
+        log.info("[Notification Service] Getting total notification count for user: {}", userId);
         long count = notificationRepository.countByRecipientUserId(userId);
-        log.info("âœ… [Notification Service] Total notification count for user {}: {}", userId, count);
+        log.info("[Notification Service] Total notification count for user {}: {}", userId, count);
         return count;
     }
 
     @Override
     public long getUnreadCount(String userId) {
-        log.info("ðŸ”” [Notification Service] Getting unread notification count for user: {}", userId);
+        log.info("[Notification Service] Getting unread notification count for user: {}", userId);
         long count = notificationRepository.countByRecipientUserIdAndReadFalse(userId);
-        log.info("âœ… [Notification Service] Unread notification count for user {}: {}", userId, count);
+        log.info("[Notification Service] Unread notification count for user {}: {}", userId, count);
         return count;
     }
 
@@ -235,18 +240,11 @@ public class NotificationServiceImpl implements INotificationService {
 
         NotificationPreferenceDocument saved = preferenceRepository.save(preference);
         return new NotificationPreferenceResponse(saved.isInAppEnabled(), saved.isEmailEnabled());
-
-
     }
-
-
-
-
-
 
     @Override
     public HealthResponse getHealth() {
-        log.info("âœ… [Notification Service] Health check requested");
+        log.info("[Notification Service] Health check requested");
         return new HealthResponse(
                 "UP",
                 "Notification Service",

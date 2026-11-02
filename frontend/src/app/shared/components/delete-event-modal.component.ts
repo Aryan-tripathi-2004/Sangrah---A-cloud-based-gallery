@@ -1,5 +1,4 @@
-
-import { Component, EventEmitter, Input, OnChanges, Output, SimpleChanges, ChangeDetectionStrategy } from '@angular/core';
+import { Component, input, output, ChangeDetectionStrategy, signal, effect } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 
 @Component({
@@ -9,25 +8,34 @@ import { FormsModule } from '@angular/forms';
   imports: [FormsModule],
   templateUrl: './delete-event-modal.component.html',
 })
-export class DeleteEventModalComponent implements OnChanges {
-  @Input() isOpen = false;
-  @Input() eventTitle = '';
-  @Input() mediaCount = 0;
-  @Input() collaboratorCount = 0;
-  @Input() isDeleting = false;
+export class DeleteEventModalComponent {
+  readonly isOpen = input<boolean>(false);
+  readonly eventTitle = input<string>('');
+  readonly mediaCount = input<number>(0);
+  readonly collaboratorCount = input<number>(0);
+  readonly isDeleting = input<boolean>(false);
 
-  @Output() closeModal = new EventEmitter<void>();
-  @Output() confirmDelete = new EventEmitter<void>();
+  readonly closeModal = output<void>();
+  readonly confirmDelete = output<void>();
 
-  confirmed = false;
+  readonly confirmed = signal<boolean>(false);
 
-  ngOnChanges(changes: SimpleChanges): void {
-    if (changes['isOpen']?.currentValue) {
-      this.confirmed = false;
-    }
+  get confirmedVal(): boolean {
+    return this.confirmed();
+  }
+  set confirmedVal(val: boolean) {
+    this.confirmed.set(val);
+  }
+
+  constructor() {
+    effect(() => {
+      if (this.isOpen()) {
+        this.confirmed.set(false);
+      }
+    });
   }
 
   canDelete(): boolean {
-    return this.confirmed && !this.isDeleting;
+    return this.confirmed() && !this.isDeleting();
   }
 }

@@ -18,7 +18,12 @@ public interface EventRepository extends MongoRepository<EventDocument, String> 
     List<EventDocument> findByOwnerUserId(String ownerUserId);
 
     /**
-     * Find public events
+     * Find events by visibility
      */
     List<EventDocument> findByVisibility(EventVisibility visibility);
+
+    /**
+     * Find events matching any of the specified visibilities using a single MongoDB $in query.
+     */
+    List<EventDocument> findByVisibilityIn(List<EventVisibility> visibilities);
 }

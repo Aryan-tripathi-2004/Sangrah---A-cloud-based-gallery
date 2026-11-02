@@ -46,6 +46,8 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Map;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -109,6 +111,7 @@ public class EventServiceImpl implements IEventService, IEventInternalService {
                     try {
                         orphanedMediaLogRepository.save(OrphanedMediaLogDocument.builder()
                                 .oldMediaId(coverMediaId)
+                                .userId(userId)
                                 .errorMessage(cleanupError.getMessage())
                                 .createdAt(Instant.now())
                                 .build());
@@ -130,8 +133,9 @@ public class EventServiceImpl implements IEventService, IEventInternalService {
 
     @Override
     public List<EventSummaryResponse> getGlobalEvents(String userId) {
-        List<EventDocument> allEvents = new ArrayList<>(eventRepository.findByVisibility(EventVisibility.PUBLIC));
-        allEvents.addAll(eventRepository.findByVisibility(EventVisibility.PROTECTED));
+        List<EventDocument> allEvents = new ArrayList<>(eventRepository.findByVisibilityIn(List.of(EventVisibility.PUBLIC, EventVisibility.PROTECTED)));
+
+        Map<String, String> statusByEventId = Collections.emptyMap();
 
         if (hasText(userId)) {
             List<EventDocument> userEvents = eventRepository.findByOwnerUserId(userId);
@@ -144,10 +148,36 @@ public class EventServiceImpl implements IEventService, IEventInternalService {
                     allEvents.add(event);
                 }
             }
+
+            // Single batch lookup for all access requests made by this requester
+            statusByEventId = eventAccessRequestRepository.findByRequesterUserId(userId).stream()
+                    .collect(Collectors.toMap(
+                            EventAccessRequestDocument::getEventId,
+                            r -> r.getStatus() != null ? r.getStatus().name() : "NONE",
+                            (existing, replacement) -> existing
+                    ));
         }
 
+        final Map<String, String> finalStatusMap = statusByEventId;
+        final boolean isAuthenticated = hasText(userId);
+
         return allEvents.stream()
-                .map(eventMapper::toPublicSummary)
+                .map(event -> {
+                    String status;
+                    boolean isOwner = isAuthenticated && userId.equals(event.getOwnerUserId());
+                    if (isOwner) {
+                        status = "OWNER";
+                    } else if (isAuthenticated && collaboratorService.isCollaborator(event.getId(), userId)) {
+                        status = "COLLABORATOR";
+                    } else if (event.getVisibility() == EventVisibility.PUBLIC) {
+                        status = "APPROVED";
+                    } else if (finalStatusMap.containsKey(event.getId())) {
+                        status = finalStatusMap.get(event.getId());
+                    } else {
+                        status = "NONE";
+                    }
+                    return eventMapper.toSummaryWithAccess(event, status, isOwner);
+                })
                 .toList();
     }
 
@@ -280,15 +310,21 @@ public class EventServiceImpl implements IEventService, IEventInternalService {
         List<String> eventIds = userEvents.stream().map(EventDocument::getId).toList();
 
         // Fetch all pending requests for all relevant events in exactly ONE batched query
-        Set<String> eventsWithPendingIds = eventAccessRequestRepository
+        Map<String, Long> pendingCountByEventId = eventAccessRequestRepository
                 .findByEventIdInAndStatus(eventIds, ApprovalStatus.PENDING)
                 .stream()
-                .map(EventAccessRequestDocument::getEventId)
-                .collect(Collectors.toSet());
+
+                .collect(Collectors.groupingBy(
+                        EventAccessRequestDocument::getEventId,
+                        Collectors.counting()
+                ));
 
         return userEvents.stream()
-                .filter(event -> eventsWithPendingIds.contains(event.getId()))
-                .map(eventMapper::toOwnerSummary)
+                .filter(event -> pendingCountByEventId.containsKey(event.getId()))
+                .map(event -> eventMapper.toOwnerSummaryWithPendingCount(
+                        event,
+                        pendingCountByEventId.get(event.getId()).intValue()
+                ))
                 .toList();
     }
 
@@ -335,7 +371,6 @@ public class EventServiceImpl implements IEventService, IEventInternalService {
         event.setEventDate(parseEventDate(eventDetails.eventDate(), false));
         event.setVisibility(eventDetails.visibility());
         event.setModerationEnabled(Boolean.TRUE.equals(eventDetails.moderationEnabled()));
-
         if (newMediaId != null && !newMediaId.isBlank()) {
             event.setCoverImageId(newMediaId);
         }
@@ -399,6 +434,7 @@ public class EventServiceImpl implements IEventService, IEventInternalService {
                 orphanedMediaLogRepository.save(OrphanedMediaLogDocument.builder()
                         .eventId(eventId)
                         .oldMediaId(oldMediaId)
+                        .userId(userId)
                         .errorMessage(deleteError.getMessage())
                         .createdAt(Instant.now())
                         .build());

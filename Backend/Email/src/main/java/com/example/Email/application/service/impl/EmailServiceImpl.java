@@ -1,7 +1,9 @@
 package com.example.Email.application.service.impl;
 
+import com.example.Email.api.dto.EmailSendRequest;
 import com.example.Email.api.dto.EmailSendResponse;
 import com.example.Email.api.dto.response.EmailServiceInfoResponse;
+import com.example.Email.application.service.interfaces.IAsyncEmailSender;
 import com.example.Email.application.service.interfaces.IEmailService;
 import com.example.Email.infrastructure.persistence.document.EmailLogDocument;
 import com.example.Email.infrastructure.persistence.repository.EmailLogRepository;
@@ -19,27 +21,15 @@ import org.springframework.stereotype.Service;
 import org.thymeleaf.TemplateEngine;
 import org.thymeleaf.context.Context;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
 /**
  * Concrete implementation of {@link IEmailService}.
- *
- * <p>Responsibilities:
- * <ul>
- *   <li>Render Thymeleaf HTML templates.</li>
- *   <li>Dispatch emails via SMTP through {@link JavaMailSender}.</li>
- *   <li>Persist an audit trail in MongoDB via {@link EmailLogRepository}.</li>
- * </ul>
- *
- * <p><strong>Exception strategy:</strong> SMTP failures ({@link MessagingException},
- * {@link UnsupportedEncodingException}) are <em>not</em> swallowed here. They are
- * wrapped in a {@link MessagingException} (if necessary) and propagated to the
- * {@link com.example.Email.shared.exception.GlobalExceptionHandler}, which maps them
- * to RFC-9457 {@code ProblemDetail} responses. MongoDB logging failures are still
- * silently absorbed so that a logging glitch never blocks email delivery.
  */
 @Slf4j
 @Service
@@ -49,7 +39,7 @@ public class EmailServiceImpl implements IEmailService {
     private final JavaMailSender mailSender;
     private final TemplateEngine templateEngine;
     private final EmailLogRepository emailLogRepository;
-    private final AsyncEmailSender asyncEmailSender;
+    private final IAsyncEmailSender asyncEmailSender;
 
     @Value("${app.email.from}")
     private String emailFrom;
@@ -63,48 +53,41 @@ public class EmailServiceImpl implements IEmailService {
     @Value("${app.email.support}")
     private String supportEmail;
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Public API – implements IEmailService
-    // ─────────────────────────────────────────────────────────────────────────
+    @Override
+    public EmailSendResponse dispatchEmail(EmailSendRequest request) {
+        return switch (request.emailType()) {
+            case INVOICE_PAID -> sendInvoicePaidEmail(
+                    request.invoiceId(), request.userId(), request.userEmail(), request.amount(), request.pdfContent());
+            case INVOICE_CREATED -> sendInvoiceCreatedEmail(
+                    request.invoiceId(), request.userId(), request.userEmail(), request.amount(), "Invoice Due");
+            case PAYMENT_FAILED -> sendPaymentFailedEmail(
+                    request.invoiceId(), request.userId(), request.userEmail(), "Payment processing failed");
+            default -> sendNotificationEmail(
+                    request.userEmail(), request.emailType(), request.subject(), request.body());
+        };
+    }
 
-    /**
-     * {@inheritDoc}
-     *
-     * <p>Renders the {@code payment-success} Thymeleaf template, attaches the
-     * PDF invoice (if provided), and sends the message. Logs the outcome to MongoDB.
-     */
     @Override
     public EmailSendResponse sendInvoicePaidEmail(
             String invoiceId,
             String userId,
             String userEmail,
-            Double amount,
+            BigDecimal amount,
             byte[] pdfContent
     ) {
-
-        log.info("📧 ═══════════════════════════════════════════════════════════════");
-        log.info("📧 [EMAIL SERVICE] Preparing invoice-paid email");
-        log.info("📧 [EMAIL SERVICE] Recipient : {}", userEmail);
-        log.info("📧 [EMAIL SERVICE] Invoice   : {}", invoiceId);
-        log.info("📧 [EMAIL SERVICE] Amount    : ${}", String.format("%.2f", amount));
-        log.info("📧 [EMAIL SERVICE] PDF Size  : {} bytes", pdfContent != null ? pdfContent.length : 0);
-        log.info("📧 [EMAIL SERVICE] Sender    : {} <{}>", emailFromName, emailFrom);
-        log.info("📧 ═══════════════════════════════════════════════════════════════");
+        log.info("📧 [EMAIL SERVICE] Sending payment confirmation email to: {}", userEmail);
 
         try {
             Map<String, Object> variables = new HashMap<>();
             variables.put("invoiceId", invoiceId);
-            variables.put("amount", String.format("$%.2f", amount));
-            variables.put("paidDate", Instant.now().toString());
-            variables.put("downloadLink", frontendUrl + "/invoices/" + invoiceId + "/download");
+            variables.put("amount", amount != null ? String.format(Locale.US, "$%.2f", amount) : "$0.00");
+            variables.put("paymentDate", Instant.now().toString());
 
-            log.info("📝 [EMAIL SERVICE] Rendering payment-success template…");
             String htmlContent = renderTemplate("payment-success", variables);
-            log.info("✅ [EMAIL SERVICE] Template rendered successfully");
-
             String emailLogId = UUID.randomUUID().toString();
             String subject = "Payment Confirmation - Invoice " + invoiceId;
-            String attachmentFilename = "invoice_" + invoiceId + ".pdf";
+            String attachmentFilename = "invoice-" + invoiceId + ".pdf";
+
             logEmailDelivery(emailLogId, userEmail, EmailType.INVOICE_PAID, EmailStatus.PENDING, invoiceId,
                     subject, htmlContent, attachmentFilename, pdfContent);
 
@@ -122,10 +105,10 @@ public class EmailServiceImpl implements IEmailService {
             log.info("✅ [EMAIL SERVICE] Payment confirmation email offloaded for background delivery: {}", emailLogId);
 
             return new EmailSendResponse(
-                    EmailStatus.SENT,
+                    EmailStatus.PENDING,
                     emailLogId,
                     Instant.now(),
-                    "Payment confirmation email sent successfully to: " + userEmail,
+                    "Payment confirmation email queued for delivery to: " + userEmail,
                     null
             );
 
@@ -134,26 +117,20 @@ public class EmailServiceImpl implements IEmailService {
         }
     }
 
-    /**
-     * {@inheritDoc}
-     *
-     * <p>Renders the {@code invoice-created} Thymeleaf template and dispatches the email.
-     */
     @Override
     public EmailSendResponse sendInvoiceCreatedEmail(
             String invoiceId,
             String userId,
             String userEmail,
-            Double amount,
+            BigDecimal amount,
             String dueDate
     ) {
-
         log.info("📧 [EMAIL SERVICE] Sending invoice-created email to: {}", userEmail);
 
         try {
             Map<String, Object> variables = new HashMap<>();
             variables.put("invoiceId", invoiceId);
-            variables.put("amount", String.format("$%.2f", amount));
+            variables.put("amount", amount != null ? String.format(Locale.US, "$%.2f", amount) : "$0.00");
             variables.put("dueDate", dueDate);
             variables.put("payLink", frontendUrl + "/invoices/" + invoiceId + "/pay");
 
@@ -175,10 +152,10 @@ public class EmailServiceImpl implements IEmailService {
             log.info("✅ [EMAIL SERVICE] Invoice-created email offloaded for background delivery: {}", emailLogId);
 
             return new EmailSendResponse(
-                    EmailStatus.SENT,
+                    EmailStatus.PENDING,
                     emailLogId,
                     Instant.now(),
-                    "Invoice created email sent successfully",
+                    "Invoice created email queued for delivery",
                     null
             );
 
@@ -187,11 +164,6 @@ public class EmailServiceImpl implements IEmailService {
         }
     }
 
-    /**
-     * {@inheritDoc}
-     *
-     * <p>Renders the {@code payment-failed} Thymeleaf template and dispatches the email.
-     */
     @Override
     public EmailSendResponse sendPaymentFailedEmail(
             String invoiceId,
@@ -199,15 +171,13 @@ public class EmailServiceImpl implements IEmailService {
             String userEmail,
             String failureReason
     ) {
-
-        log.info("📧 [EMAIL SERVICE] Sending payment-failed email to: {}", userEmail);
+        log.info("📧 [EMAIL SERVICE] Sending payment-failed alert to: {}", userEmail);
 
         try {
             Map<String, Object> variables = new HashMap<>();
             variables.put("invoiceId", invoiceId);
-            variables.put("failureReason", failureReason);
-            variables.put("retryLink", frontendUrl + "/invoices/" + invoiceId + "/retry-payment");
-            variables.put("supportEmail", supportEmail);
+            variables.put("failureReason", failureReason != null ? failureReason : "Card declined");
+            variables.put("retryLink", frontendUrl + "/invoices/" + invoiceId + "/pay");
 
             String htmlContent = renderTemplate("payment-failed", variables);
             String emailLogId = UUID.randomUUID().toString();
@@ -227,10 +197,10 @@ public class EmailServiceImpl implements IEmailService {
             log.info("✅ [EMAIL SERVICE] Payment-failed email offloaded for background delivery: {}", emailLogId);
 
             return new EmailSendResponse(
-                    EmailStatus.SENT,
+                    EmailStatus.PENDING,
                     emailLogId,
                     Instant.now(),
-                    "Payment failed notification sent successfully",
+                    "Payment failed notification queued for delivery",
                     null
             );
 
@@ -239,14 +209,6 @@ public class EmailServiceImpl implements IEmailService {
         }
     }
 
-    /**
-     * {@inheritDoc}
-     *
-     * <p>Builds a self-contained HTML notification body (no external template required)
-     * and dispatches it. The {@code notificationType} string is resolved to an
-     * {@link EmailType} enum constant; unrecognised values fall back to
-     * {@link EmailType#NOTIFICATION}.
-     */
     @Override
     public EmailSendResponse sendNotificationEmail(
             String userEmail,
@@ -276,13 +238,13 @@ public class EmailServiceImpl implements IEmailService {
                     htmlContent
             );
 
-            log.info("✅ [EMAIL SERVICE] Notification email offloaded for background delivery: {}", userEmail);
+            log.info("✅ [EMAIL SERVICE] Notification email offloaded for background delivery: {}", emailLogId);
 
             return new EmailSendResponse(
-                    EmailStatus.SENT,
+                    EmailStatus.PENDING,
                     emailLogId,
                     Instant.now(),
-                    "Notification email sent successfully",
+                    "Notification email queued for delivery to: " + userEmail,
                     null
             );
 
@@ -291,64 +253,17 @@ public class EmailServiceImpl implements IEmailService {
         }
     }
 
-    /**
-     * Offloads execution to a dedicated background thread pool.
-     */
     @Override
-    @Async("emailTaskExecutor")
     public void sendHtmlEmailAsync(String toEmail, String subject, String htmlContent) {
-        try {
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-            helper.setFrom(emailFrom, emailFromName);
-            helper.setTo(toEmail);
-            helper.setSubject(subject);
-            helper.setText(htmlContent, true);
-            mailSender.send(message);
-        } catch (Exception e) {
-            log.error("Asynchronous email dispatch failed for {}: {}", toEmail, e.getMessage());
-        }
+        String logId = java.util.UUID.randomUUID().toString();
+        logEmailDelivery(logId, toEmail, EmailType.NOTIFICATION, EmailStatus.PENDING, null, subject, htmlContent, null, null);
+        asyncEmailSender.sendHtmlEmailAsync(logId, emailFrom, emailFromName, toEmail, subject, htmlContent);
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Private helpers
-    // ─────────────────────────────────────────────────────────────────────────
-
-    /**
-     * Send a pre-rendered HTML email without an attachment (delegates asynchronously).
-     */
-    private void sendHtmlEmail(String toEmail, String subject, String htmlContent) {
-        asyncEmailSender.sendHtmlEmailAsync(null, emailFrom, emailFromName, toEmail, subject, htmlContent);
-    }
-
-    /**
-     * Render a Thymeleaf template with the supplied variable map.
-     *
-     * @param templateName logical name matching a {@code .html} file under
-     *                     {@code src/main/resources/templates/}
-     * @param variables    key-value pairs injected into the template context
-     * @return rendered HTML string
-     */
     private String renderTemplate(String templateName, Map<String, Object> variables) {
         Context context = new Context();
         variables.forEach(context::setVariable);
         return templateEngine.process(templateName, context);
-    }
-
-    /**
-     * Persist an email dispatch audit record in MongoDB.
-     *
-     * <p>Logging failures are deliberately swallowed – a MongoDB outage must
-     * never prevent an email from being sent.
-     */
-    private void logEmailDelivery(
-            String emailId,
-            String toEmail,
-            EmailType emailType,
-            EmailStatus status,
-            String invoiceId
-    ) {
-        logEmailDelivery(emailId, toEmail, emailType, status, invoiceId, null, null, null, null);
     }
 
     private void logEmailDelivery(
@@ -383,7 +298,6 @@ public class EmailServiceImpl implements IEmailService {
             log.info("📝 [EMAIL SERVICE] Email delivery logged: {}", emailId);
         } catch (Exception ex) {
             log.error("❌ [EMAIL SERVICE] Failed to log email delivery for {}: {}", emailId, ex.getMessage(), ex);
-            // Intentionally not re-thrown – logging must not block email dispatch.
         }
     }
 

@@ -70,11 +70,7 @@ public class EventController {
             @RequestHeader(value = "X-User-Id", required = false) String userId,
             @RequestParam(defaultValue = "GLOBAL") EventScope scope) {
 
-        return switch (scope) {
-            case MY_EVENTS -> ResponseEntity.ok(eventService.getMyEvents(userId));
-            case PENDING_REQUESTS -> ResponseEntity.ok(eventService.getEventsWithPendingRequests(userId));
-            default -> ResponseEntity.ok(eventService.getGlobalEvents(userId));
-        };
+        return ResponseEntity.ok(eventService.getEvents(userId, scope));
     }
 
     @GetMapping("/{eventId}")

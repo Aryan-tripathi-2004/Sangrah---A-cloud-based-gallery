@@ -59,6 +59,7 @@ export class SangrahApiService {
   private readonly billingApi = inject(BillingApiService);
   private readonly notificationApi = inject(NotificationApiService);
 
+  public readonly currentUser = this.authApi.currentUser;
   public readonly currentUser$ = this.authApi.currentUser$;
 
   // ===== AUTH DOMAIN =====
@@ -202,11 +203,11 @@ export class SangrahApiService {
     return this.eventApi.getPendingAccessRequests();
   }
 
-  getEventAccessRequests(eventId: string): Observable<EventAccessRequest[]> {
+  getEventAccessRequests(eventId: string): Observable<AccessRequestResponse[]> {
     return this.eventApi.getEventAccessRequests(eventId);
   }
 
-  listAccessRequests(eventId: string): Observable<EventAccessRequest[]> {
+  listAccessRequests(eventId: string): Observable<AccessRequestResponse[]> {
     return this.eventApi.listAccessRequests(eventId);
   }
 

@@ -72,7 +72,7 @@ public class AuthServiceImpl implements IAuthService {
         user = userRepository.save(user);
         log.info("✅ User saved successfully with ID: {}", user.getId());
 
-        String accessToken = jwtService.generateAccessToken(user.getId(), user.getEmail());
+        String accessToken = jwtService.generateAccessToken(user.getId(), user.getEmail(), user.getRoles());
         String refreshToken = jwtService.generateRefreshToken(user.getId());
         log.info("🎫 JWT tokens generated for user: {}", request.email());
 
@@ -114,7 +114,7 @@ public class AuthServiceImpl implements IAuthService {
         evictExcessActiveSessions(user.getId());
 
         log.info("✅ Generating JWT tokens");
-        String accessToken = jwtService.generateAccessToken(user.getId(), user.getEmail());
+        String accessToken = jwtService.generateAccessToken(user.getId(), user.getEmail(), user.getRoles());
         String refreshToken = jwtService.generateRefreshToken(user.getId());
 
         RefreshTokenDocument refreshTokenDoc = RefreshTokenDocument.builder()
@@ -162,7 +162,6 @@ public class AuthServiceImpl implements IAuthService {
         }
     }
 
-
     @Override
     @Transactional
     public AuthTokenResponse refreshAccessToken(String refreshToken) {
@@ -195,7 +194,7 @@ public class AuthServiceImpl implements IAuthService {
                 log.info("🔄 Refresh token was rotated within 30s grace window (concurrent refresh). Returning active token.");
                 UserDocument user = userRepository.findById(refreshTokenDoc.getUserId())
                         .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-                String newAccessToken = jwtService.generateAccessToken(user.getId(), user.getEmail());
+                String newAccessToken = jwtService.generateAccessToken(user.getId(), user.getEmail(), user.getRoles());
                 return new AuthTokenResponse(newAccessToken, refreshTokenDoc.getReplacedByToken(), authMapper.toUserDTO(user));
             }
             log.warn("❌ Refresh token has been revoked");
@@ -210,7 +209,7 @@ public class AuthServiceImpl implements IAuthService {
                     return new ResourceNotFoundException("User not found");
                 });
 
-        String newAccessToken = jwtService.generateAccessToken(user.getId(), user.getEmail());
+        String newAccessToken = jwtService.generateAccessToken(user.getId(), user.getEmail(), user.getRoles());
         log.info("🎫 New access token generated");
 
         String newRefreshToken = jwtService.generateRefreshToken(user.getId());
@@ -230,7 +229,6 @@ public class AuthServiceImpl implements IAuthService {
         log.info("✅ Token refresh successful");
         return new AuthTokenResponse(newAccessToken, newRefreshToken, authMapper.toUserDTO(user));
     }
-
 
     private static final String BEARER_PREFIX = "Bearer ";
 
@@ -282,6 +280,10 @@ public class AuthServiceImpl implements IAuthService {
         log.info("🔍 Token validation request");
         if (authHeader == null || !authHeader.startsWith(BEARER_PREFIX)) {
             throw new AuthenticationException("Authorization header missing or invalid");
+        }
+        String token = authHeader.substring(BEARER_PREFIX.length());
+        if (tokenBlacklistRepository.existsByToken(token) || !jwtService.isTokenValid(token)) {
+            throw new AuthenticationException("Token is invalid, expired, or revoked");
         }
         return new TokenValidationResponse(true);
     }

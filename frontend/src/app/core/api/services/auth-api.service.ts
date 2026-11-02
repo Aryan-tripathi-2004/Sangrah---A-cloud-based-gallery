@@ -1,6 +1,8 @@
 import { HttpClient } from '@angular/common/http';
-import { Injectable, inject } from '@angular/core';
-import { Observable, BehaviorSubject, throwError } from 'rxjs';
+import { Injectable, inject, PLATFORM_ID, signal } from '@angular/core';
+import { toObservable } from '@angular/core/rxjs-interop';
+import { isPlatformBrowser } from '@angular/common';
+import { Observable, throwError } from 'rxjs';
 import { tap, catchError } from 'rxjs/operators';
 import { AuthResponse, LoginPayload, RegisterPayload, User } from '../models/api.models';
 
@@ -8,27 +10,33 @@ import { AuthResponse, LoginPayload, RegisterPayload, User } from '../models/api
 export class AuthApiService {
   private readonly http = inject(HttpClient);
   private readonly baseUrl = 'http://localhost:8080/api/v1';
-  private readonly currentUserSubject = new BehaviorSubject<User | null>(null);
-  public readonly currentUser$ = this.currentUserSubject.asObservable();
+  private readonly platformId = inject(PLATFORM_ID);
+
+  private isBrowser(): boolean {
+    return isPlatformBrowser(this.platformId);
+  }
+  private readonly currentUserSignal = signal<User | null>(null);
+  public readonly currentUser = this.currentUserSignal.asReadonly();
+  public readonly currentUser$ = toObservable(this.currentUserSignal);
 
   public getCurrentUser(): User | null {
-    return this.currentUserSubject.value;
+    return this.currentUserSignal();
   }
 
   public setCurrentUser(user: User | null): void {
-    this.currentUserSubject.next(user);
+    this.currentUserSignal.set(user);
   }
 
   login(payload: LoginPayload): Observable<AuthResponse> {
     return this.http.post<AuthResponse>(`${this.baseUrl}/auth/login`, payload).pipe(
       tap(response => {
-        if (typeof window !== 'undefined') {
+        if (this.isBrowser()) {
           localStorage.setItem('token', response.token);
           if (response.refreshToken) {
             localStorage.setItem('refreshToken', response.refreshToken);
           }
         }
-        this.currentUserSubject.next(response.user);
+        this.currentUserSignal.set(response.user);
       })
     );
   }
@@ -36,19 +44,19 @@ export class AuthApiService {
   register(payload: RegisterPayload): Observable<AuthResponse> {
     return this.http.post<AuthResponse>(`${this.baseUrl}/auth/register`, payload).pipe(
       tap(response => {
-        if (typeof window !== 'undefined') {
+        if (this.isBrowser()) {
           localStorage.setItem('token', response.token);
           if (response.refreshToken) {
             localStorage.setItem('refreshToken', response.refreshToken);
           }
         }
-        this.currentUserSubject.next(response.user);
+        this.currentUserSignal.set(response.user);
       })
     );
   }
 
   logout(): void {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    const token = this.isBrowser() ? localStorage.getItem('token') : null;
 
     if (token) {
       this.http.post(`${this.baseUrl}/auth/logout`, {}, {
@@ -59,15 +67,15 @@ export class AuthApiService {
       });
     }
 
-    if (typeof window !== 'undefined') {
+    if (this.isBrowser()) {
       localStorage.removeItem('token');
       localStorage.removeItem('refreshToken');
     }
-    this.currentUserSubject.next(null);
+    this.currentUserSignal.set(null);
   }
 
   refreshAccessToken(): Observable<AuthResponse> {
-    const refreshToken = typeof window !== 'undefined' ? localStorage.getItem('refreshToken') : null;
+    const refreshToken = this.isBrowser() ? localStorage.getItem('refreshToken') : null;
     if (!refreshToken) {
       console.error('❌ No refresh token available in localStorage');
       return throwError(() => new Error('No refresh token available'));
@@ -75,7 +83,7 @@ export class AuthApiService {
 
     return this.http.post<AuthResponse>(`${this.baseUrl}/auth/token/refresh`, { refreshToken }).pipe(
       tap(response => {
-        if (typeof window !== 'undefined') {
+        if (this.isBrowser()) {
           localStorage.setItem('token', response.token);
           if (response.refreshToken) {
             localStorage.setItem('refreshToken', response.refreshToken);

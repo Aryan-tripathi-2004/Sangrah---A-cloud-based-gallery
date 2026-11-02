@@ -1,8 +1,11 @@
-import { Component, OnInit, inject, signal, ChangeDetectionStrategy } from '@angular/core';
+import { Component, OnInit, inject, signal, ChangeDetectionStrategy, DestroyRef } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
-import { FormBuilder, ReactiveFormsModule, FormsModule, Validators } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
-import { SangrahApiService, User } from '../../core/api/sangrah-api.service';
+import { FormGroup, FormControl, ReactiveFormsModule, FormsModule, Validators } from '@angular/forms';
+import { RouterLink } from '@angular/router';
+import { User } from '../../core/api/models/api.models';
+import { UserApiService } from '../../core/api/services/user-api.service';
+import { AuthService } from '../../core/auth/auth.service';
 import { LayoutComponent } from '../../shared/layout/layout.component';
 
 @Component({
@@ -13,9 +16,9 @@ import { LayoutComponent } from '../../shared/layout/layout.component';
   templateUrl: './settings.component.html',
 })
 export class SettingsComponent implements OnInit {
-  private api = inject(SangrahApiService);
-  private fb = inject(FormBuilder);
-  private router = inject(Router);
+  private readonly userApi = inject(UserApiService);
+  private readonly authService = inject(AuthService);
+  private readonly destroyRef = inject(DestroyRef);
 
   user = signal<User | null>(null);
   isLoading = signal(false);
@@ -27,9 +30,12 @@ export class SettingsComponent implements OnInit {
   isDeleting = signal(false);
   deleteError = signal('');
 
-  form = this.fb.group({
-    email: [{ value: '', disabled: true }],
-    displayName: ['', [Validators.required, Validators.maxLength(50)]],
+  readonly form = new FormGroup({
+    email: new FormControl({ value: '', disabled: true }, { nonNullable: true }),
+    displayName: new FormControl('', {
+      validators: [Validators.required, Validators.maxLength(50)],
+      nonNullable: true,
+    }),
   });
 
   ngOnInit(): void {
@@ -37,18 +43,20 @@ export class SettingsComponent implements OnInit {
   }
 
   loadProfile(): void {
-    this.api.getProfile().subscribe({
-      next: (userData) => {
-        this.user.set(userData);
-        this.form.patchValue({
-          email: userData.email,
-          displayName: userData.displayName,
-        });
-      },
-      error: (err) => {
-        this.errorMessage.set(err.message || err.error?.message || 'Failed to load profile');
-      },
-    });
+    this.userApi.getProfile()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (userData) => {
+          this.user.set(userData);
+          this.form.patchValue({
+            email: userData.email,
+            displayName: userData.displayName,
+          });
+        },
+        error: (err) => {
+          this.errorMessage.set(err.message || err.error?.message || 'Failed to load profile');
+        },
+      });
   }
 
   onSubmit(): void {
@@ -58,19 +66,21 @@ export class SettingsComponent implements OnInit {
     this.errorMessage.set('');
     this.successMessage.set('');
 
-    const formValue = this.form.value as Partial<User>;
-    this.api.updateProfile(formValue).subscribe({
-      next: (updated) => {
-        this.user.set(updated);
-        this.successMessage.set('Account settings updated successfully!');
-        this.isLoading.set(false);
-        setTimeout(() => this.successMessage.set(''), 3000);
-      },
-      error: (err) => {
-        this.isLoading.set(false);
-        this.errorMessage.set(err.message || err.error?.message || 'Failed to update account settings');
-      },
-    });
+    const formValue = this.form.getRawValue();
+    this.userApi.updateProfile({ displayName: formValue.displayName.trim() })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (updated) => {
+          this.user.set(updated);
+          this.successMessage.set('Account settings updated successfully!');
+          this.isLoading.set(false);
+          setTimeout(() => this.successMessage.set(''), 3000);
+        },
+        error: (err) => {
+          this.isLoading.set(false);
+          this.errorMessage.set(err.message || err.error?.message || 'Failed to update account settings');
+        },
+      });
   }
 
   openDeleteConfirm(): void {
@@ -90,15 +100,16 @@ export class SettingsComponent implements OnInit {
       return;
     }
     this.isDeleting.set(true);
-    this.api.deleteAccount().subscribe({
-      next: () => {
-        this.api.logout();
-        this.router.navigate(['/']);
-      },
-      error: (err) => {
-        this.isDeleting.set(false);
-        this.deleteError.set(err.message || err.error?.message || 'Failed to delete account. Please try again.');
-      },
-    });
+    this.userApi.deleteAccount()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          this.authService.logout();
+        },
+        error: (err) => {
+          this.isDeleting.set(false);
+          this.deleteError.set(err.message || err.error?.message || 'Failed to delete account. Please try again.');
+        },
+      });
   }
 }

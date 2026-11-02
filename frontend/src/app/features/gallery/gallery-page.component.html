@@ -187,8 +187,10 @@
 </app-layout>
 
 <!-- Media Preview Modal -->
-<app-media-preview-modal
-  [isOpen]="isPreviewOpen()"
-  [media]="selectedMedia()"
-  (closeModal)="closePreview()"
-></app-media-preview-modal>
+@if (isPreviewOpen()) {
+  <app-media-preview-modal
+    [isOpen]="isPreviewOpen()"
+    [media]="selectedMedia()"
+    (closeModal)="closePreview()"
+  ></app-media-preview-modal>
+}

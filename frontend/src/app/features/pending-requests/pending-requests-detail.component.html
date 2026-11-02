@@ -21,17 +21,20 @@
 
       @if (accessRequests().length > 0) {
         <div class="space-y-3">
-          @for (request of accessRequests(); track request.id || request) {
+          @for (request of accessRequests(); track request.requestId || request.id || request) {
             <div class="p-4 rounded-lg bg-slate-800/30 border border-slate-700/50 flex items-center justify-between gap-4">
               <div class="flex-1">
-                <p class="font-semibold">User Request</p>
+                <p class="font-semibold">{{ request.displayName || 'User Request' }}</p>
                 <p class="text-sm text-slate-400">Requested on {{ request.requestedAt | date:'MMM d, y' }}</p>
+                @if (request.message) {
+                  <p class="text-sm text-slate-300 mt-1 italic">"{{ request.message }}"</p>
+                }
               </div>
               <div class="flex gap-2">
-                <button (click)="approveRequest(request.id)" class="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg text-sm font-semibold transition">
+                <button (click)="approveRequest(request.requestId || request.id!)" class="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg text-sm font-semibold transition">
                   Approve
                 </button>
-                <button (click)="rejectRequest(request.id)" class="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg text-sm font-semibold transition">
+                <button (click)="rejectRequest(request.requestId || request.id!)" class="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg text-sm font-semibold transition">
                   Reject
                 </button>
               </div>

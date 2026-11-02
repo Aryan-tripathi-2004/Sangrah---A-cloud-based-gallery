@@ -31,22 +31,32 @@ public interface MediaServiceClient {
     MediaServiceResponse getMediaDetails(@PathVariable("mediaId") String mediaId);
 
     /**
-     * Delete media
+     * Delete media with role delegation
      */
     @DeleteMapping("/api/v1/media/{mediaId}")
     MediaDeleteResponse deleteMedia(
             @PathVariable("mediaId") String mediaId,
-            @RequestHeader("X-User-Id") String userId
+            @RequestHeader("X-User-Id") String userId,
+            @RequestHeader(value = "X-User-Role", defaultValue = "SYSTEM") String role
     );
 
+    default MediaDeleteResponse deleteMedia(String mediaId, String userId) {
+        return deleteMedia(mediaId, userId, "SYSTEM");
+    }
+
     /**
-     * Bulk delete media files
+     * Bulk delete media files with role delegation
      */
     @DeleteMapping("/api/v1/media/bulk")
     MediaDeleteResponse deleteMediaBulk(
             @RequestBody List<String> mediaIds,
-            @RequestHeader("X-User-Id") String userId
+            @RequestHeader("X-User-Id") String userId,
+            @RequestHeader(value = "X-User-Role", defaultValue = "SYSTEM") String role
     );
+
+    default MediaDeleteResponse deleteMediaBulk(List<String> mediaIds, String userId) {
+        return deleteMediaBulk(mediaIds, userId, "SYSTEM");
+    }
 
     /**
      * Get storage ledger for billing

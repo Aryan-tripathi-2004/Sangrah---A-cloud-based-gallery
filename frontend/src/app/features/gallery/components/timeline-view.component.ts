@@ -1,8 +1,9 @@
-import { Component, Input, Output, EventEmitter, OnInit, inject, ChangeDetectionStrategy } from '@angular/core';
+import { Component, input, output, OnInit, inject, ChangeDetectionStrategy, signal, DestroyRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { MediaItemComponent } from './media-item.component';
 import { GalleryService } from '../gallery.service';
-import { TimelineResponse, MediaItem } from '../../../core/api/sangrah-api.service';
+import { TimelineResponse, MediaItem } from '../../../core/api/models/api.models';
 
 @Component({
   selector: 'app-timeline-view',
@@ -12,31 +13,34 @@ import { TimelineResponse, MediaItem } from '../../../core/api/sangrah-api.servi
   templateUrl: './timeline-view.component.html',
 })
 export class TimelineViewComponent implements OnInit {
-  private gallery = inject(GalleryService);
+  private readonly gallery = inject(GalleryService);
+  private readonly destroyRef = inject(DestroyRef);
 
-  @Input() media: MediaItem[] = [];
-  @Output() preview = new EventEmitter<MediaItem>();
-  @Output() delete = new EventEmitter<string>();
+  readonly media = input<MediaItem[]>([]);
+  readonly preview = output<MediaItem>();
+  readonly delete = output<string>();
 
-  timeline$ = this.gallery.timeline$;
-  loading$ = this.gallery.loading$;
-  currentView: 'daily' | 'monthly' | 'yearly' = 'monthly';
+  readonly timeline = this.gallery.timeline;
+  readonly loading = this.gallery.loading;
+  readonly currentView = signal<'daily' | 'monthly' | 'yearly'>('monthly');
 
   ngOnInit(): void {
     this.loadTimeline();
   }
 
   onChangeView(view: 'daily' | 'monthly' | 'yearly'): void {
-    this.currentView = view;
+    this.currentView.set(view);
     this.loadTimeline();
   }
 
   private loadTimeline(): void {
-    this.gallery.loadTimeline(this.currentView).subscribe({
-      error: (error) => {
-        console.error('Failed to load timeline:', error);
-      },
-    });
+    this.gallery.loadTimeline(this.currentView())
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        error: (error) => {
+          console.error('Failed to load timeline:', error);
+        },
+      });
   }
 
   onPreview(item: MediaItem): void {
@@ -44,16 +48,17 @@ export class TimelineViewComponent implements OnInit {
   }
 
   onDelete(mediaId: string): void {
-    this.gallery.deleteMedia(mediaId).subscribe({
-      next: () => {
-        this.delete.emit(mediaId);
-        // Reload timeline after deletion
-        this.loadTimeline();
-      },
-      error: (error) => {
-        console.error('Failed to delete media:', error);
-        alert('Failed to delete media. Please try again.');
-      },
-    });
+    this.gallery.deleteMedia(mediaId)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          this.delete.emit(mediaId);
+          // Reload timeline after deletion
+          this.loadTimeline();
+        },
+        error: (error) => {
+          console.error('Failed to delete media:', error);
+        },
+      });
   }
 }

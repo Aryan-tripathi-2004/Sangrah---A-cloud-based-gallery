@@ -44,8 +44,8 @@
           class="w-2.5 h-2.5 rounded-full mt-1.5 flex-shrink-0 transition"></div>
           <!-- Message Content -->
           <div class="flex-1 min-w-0">
-            <p class="text-sm font-semibold text-white" [title]="getTitle(notif.type)">
-              {{ getTitle(notif.type) }}
+            <p class="text-sm font-semibold text-white" [title]="notif.type | notificationTitle">
+              {{ notif.type | notificationTitle }}
             </p>
             <p class="text-xs text-slate-300 mt-1 line-clamp-2">
               {{ $any(notif.payload)?.message || 'Notification' }}

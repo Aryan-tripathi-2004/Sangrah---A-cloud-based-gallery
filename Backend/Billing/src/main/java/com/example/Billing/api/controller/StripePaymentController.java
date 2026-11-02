@@ -27,7 +27,7 @@ public class StripePaymentController {
     @Operation(summary = "Create payment intent for invoice")
     public ResponseEntity<CheckoutSessionResponse> createCheckoutSession(
             @PathVariable String invoiceId,
-            @CurrentUserId String userId) throws Exception {
+            @CurrentUserId String userId) {
         log.info("💳 Creating checkout session for invoice: {}", invoiceId);
         return ResponseEntity.ok(stripePaymentService.createCheckoutSession(userId, invoiceId));
     }

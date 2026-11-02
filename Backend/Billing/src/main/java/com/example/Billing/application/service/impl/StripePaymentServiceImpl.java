@@ -99,50 +99,54 @@ public class StripePaymentServiceImpl implements IStripePaymentService {
      * @param amount Amount in dollars
      * @return Client secret for Stripe payment submission
      */
-    public String createPaymentIntent(String userId, String invoiceId, BigDecimal amount)
-            throws StripeException {
+    public String createPaymentIntent(String userId, String invoiceId, BigDecimal amount) {
         log.info("💳 Creating payment intent for invoice: {}, amount: ${}", invoiceId, amount);
 
-        // Get or create Stripe customer
-        UserBillingSettingsDocument settings = settingsRepository.findByUserId(userId)
-            .orElseGet(() -> createDefaultUserSettings(userId));
+        try {
+            // Get or create Stripe customer
+            UserBillingSettingsDocument settings = settingsRepository.findByUserId(userId)
+                .orElseGet(() -> createDefaultUserSettings(userId));
 
-        if (settings.getStripeCustomerId() == null) {
-            String customerId = createStripeCustomer(userId, settings.getBilling().getEmail());
-            settings.setStripeCustomerId(customerId);
-            settingsRepository.save(settings);
-            log.info("✅ Created new Stripe customer: {}", customerId);
+            if (settings.getStripeCustomerId() == null) {
+                String customerId = createStripeCustomer(userId, settings.getBilling().getEmail());
+                settings.setStripeCustomerId(customerId);
+                settingsRepository.save(settings);
+                log.info("✅ Created new Stripe customer: {}", customerId);
+            }
+
+            // Create payment intent with automatic payment methods
+            // Billing details will be collected by frontend payment element (required for India compliance)
+            PaymentIntentCreateParams params = PaymentIntentCreateParams.builder()
+                .setAmount(amount.multiply(BigDecimal.valueOf(100)).longValue())  // Convert to cents
+                .setCurrency(billingCurrency)
+                .setCustomer(settings.getStripeCustomerId())
+                .setDescription("Invoice " + invoiceId)
+                .setAutomaticPaymentMethods(
+                    PaymentIntentCreateParams.AutomaticPaymentMethods.builder()
+                        .setEnabled(true)
+                        .build()
+                )
+                .build();
+
+            log.info("📋 Payment intent created for customer: {}, amount: {}",
+                settings.getStripeCustomerId(), amount);
+
+            PaymentIntent intent = PaymentIntent.create(params);
+
+            // Store payment intent ID in invoice
+            Optional<InvoiceDocument> invoiceOpt = invoiceRepository.findByInvoiceId(invoiceId);
+            if (invoiceOpt.isPresent()) {
+                InvoiceDocument invoice = invoiceOpt.get();
+                invoice.setPaymentIntentId(intent.getId());
+                invoiceRepository.save(invoice);
+                log.info("💳 Payment intent created: {}", intent.getId());
+            }
+
+            return intent.getClientSecret();
+        } catch (StripeException e) {
+            log.error("Failed to create Stripe payment intent for invoice {}: {}", invoiceId, e.getMessage(), e);
+            throw new BillingProcessingException("Stripe payment intent creation failed: " + e.getMessage(), e);
         }
-
-        // Create payment intent with automatic payment methods
-        // Billing details will be collected by frontend payment element (required for India compliance)
-        PaymentIntentCreateParams params = PaymentIntentCreateParams.builder()
-            .setAmount(amount.multiply(BigDecimal.valueOf(100)).longValue())  // Convert to cents
-            .setCurrency(billingCurrency)
-            .setCustomer(settings.getStripeCustomerId())
-            .setDescription("Invoice " + invoiceId)
-            .setAutomaticPaymentMethods(
-                PaymentIntentCreateParams.AutomaticPaymentMethods.builder()
-                    .setEnabled(true)
-                    .build()
-            )
-            .build();
-
-        log.info("📋 Payment intent created for customer: {}, amount: {}",
-            settings.getStripeCustomerId(), amount);
-
-        PaymentIntent intent = PaymentIntent.create(params);
-
-        // Store payment intent ID in invoice
-        Optional<InvoiceDocument> invoiceOpt = invoiceRepository.findByInvoiceId(invoiceId);
-        if (invoiceOpt.isPresent()) {
-            InvoiceDocument invoice = invoiceOpt.get();
-            invoice.setPaymentIntentId(intent.getId());
-            invoiceRepository.save(invoice);
-            log.info("💳 Payment intent created: {}", intent.getId());
-        }
-
-        return intent.getClientSecret();
     }
 
     /**
@@ -484,7 +488,7 @@ public class StripePaymentServiceImpl implements IStripePaymentService {
      * Fetches the invoice amount internally and delegates to createPaymentIntent.
      */
     @Override
-    public CheckoutSessionResponse createCheckoutSession(String userId, String invoiceId) throws StripeException {
+    public CheckoutSessionResponse createCheckoutSession(String userId, String invoiceId) {
         log.info("💳 [createCheckoutSession] Fetching invoice {} for user {}", invoiceId, userId);
         InvoiceDocument invoice = invoiceRepository.findByInvoiceId(invoiceId)
                 .orElseThrow(() -> new ResourceNotFoundException("Invoice not found: " + invoiceId));

@@ -25,7 +25,7 @@ public interface INotificationService {
 
     BulkActionResponse updateNotificationStatus(String userId, NotificationStatusUpdateRequest request);
 
-    void deleteNotification(String notificationId);
+    void deleteNotification(String userId, String notificationId);
 
     long getTotalCount(String userId);
 

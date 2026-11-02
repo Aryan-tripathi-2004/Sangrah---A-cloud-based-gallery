@@ -32,6 +32,7 @@ import com.example.Event.shared.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
@@ -57,6 +58,7 @@ public class EventAccessServiceImpl implements IEventAccessService {
     private final EventAccessMapper accessMapper;
 
     @Override
+    @Transactional
     public AccessRequestMutationResponse requestAccess(
             String eventId,
             AccessMessageRequest request,
@@ -155,6 +157,7 @@ public class EventAccessServiceImpl implements IEventAccessService {
     }
 
     @Override
+    @Transactional
     public AccessStatusUpdateResponse updateAccessStatus(
             String eventId,
             String requestId,
@@ -189,6 +192,7 @@ public class EventAccessServiceImpl implements IEventAccessService {
     }
 
     @Override
+    @Transactional
     public AccessRequestMutationResponse reRequestAccess(
             String eventId,
             AccessMessageRequest request,

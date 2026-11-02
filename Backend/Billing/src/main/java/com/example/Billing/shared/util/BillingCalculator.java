@@ -1,5 +1,6 @@
 package com.example.Billing.shared.util;
 
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -13,6 +14,7 @@ import java.time.YearMonth;
 import java.time.temporal.ChronoUnit;
 
 @Slf4j
+@Getter
 @Component
 public class BillingCalculator {
 

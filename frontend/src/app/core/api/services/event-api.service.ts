@@ -1,5 +1,6 @@
 import { HttpClient } from '@angular/common/http';
-import { Injectable, inject } from '@angular/core';
+import { Injectable, inject, PLATFORM_ID } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
 import { Observable, throwError } from 'rxjs';
 import { map, catchError } from 'rxjs/operators';
 import {
@@ -12,6 +13,7 @@ import {
   UpdateCollaboratorPermissionsPayload,
   EventAccessRequest,
   AccessRequestResponse,
+  AccessRequestsResponse,
   AccessStatusResponse,
   EventPolicies
 } from '../models/api.models';
@@ -20,9 +22,10 @@ import {
 export class EventApiService {
   private readonly http = inject(HttpClient);
   private readonly baseUrl = 'http://localhost:8080/api/v1';
+  private readonly platformId = inject(PLATFORM_ID);
 
   private getTokenFromStorage(): string | null {
-    if (typeof window === 'undefined') {
+    if (!isPlatformBrowser(this.platformId)) {
       return null;
     }
     return localStorage.getItem('token');
@@ -114,6 +117,12 @@ export class EventApiService {
     return this.http.delete<{ message: string }>(`${this.baseUrl}/events/${eventId}/media/${mediaId}`);
   }
 
+  getMediaFileUrl(mediaId: string): string {
+    const token = this.getTokenFromStorage();
+    const url = `${this.baseUrl}/media/${mediaId}`;
+    return token ? `${url}?token=${encodeURIComponent(token)}` : url;
+  }
+
   getEventMediaFile(eventId: string, mediaId: string): string {
     const token = this.getTokenFromStorage();
     const url = `${this.baseUrl}/events/${eventId}/media/${mediaId}`;
@@ -130,12 +139,19 @@ export class EventApiService {
     return this.http.get<Event[]>(`${this.baseUrl}/events?scope=PENDING_REQUESTS`);
   }
 
-  getEventAccessRequests(eventId: string): Observable<EventAccessRequest[]> {
-    return this.http.get<EventAccessRequest[]>(`${this.baseUrl}/events/${eventId}/access-requests`);
+  getEventAccessRequests(eventId: string): Observable<AccessRequestResponse[]> {
+    return this.http.get<AccessRequestsResponse | AccessRequestResponse[]>(`${this.baseUrl}/events/${eventId}/access-requests`).pipe(
+      map(response => {
+        if (Array.isArray(response)) {
+          return response;
+        }
+        return response?.requests || [];
+      })
+    );
   }
 
-  listAccessRequests(eventId: string): Observable<EventAccessRequest[]> {
-    return this.http.get<EventAccessRequest[]>(`${this.baseUrl}/events/${eventId}/access-requests`);
+  listAccessRequests(eventId: string): Observable<AccessRequestResponse[]> {
+    return this.getEventAccessRequests(eventId);
   }
 
   updateAccessRequestStatus(

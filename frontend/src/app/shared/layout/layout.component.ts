@@ -1,8 +1,8 @@
-import { Component, inject, ViewChild, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
+import { Component, inject, ViewChild, ChangeDetectionStrategy, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import { AuthService } from '../../core/auth/auth.service';
-import { NotificationPanelComponent } from '../../core/notifications/notification-panel.component';
+import { NotificationPanelComponent } from '../components/notification-panel.component';
 import { NotificationService } from '../../core/notifications/notification.service';
 
 @Component({
@@ -13,26 +13,24 @@ import { NotificationService } from '../../core/notifications/notification.servi
   templateUrl: './layout.component.html',
 })
 export class LayoutComponent {
-  private authService = inject(AuthService);
-  private notificationService = inject(NotificationService);
-  private cdr = inject(ChangeDetectorRef);
+  private readonly authService = inject(AuthService);
+  private readonly notificationService = inject(NotificationService);
 
   @ViewChild(NotificationPanelComponent) notificationPanel: NotificationPanelComponent | undefined;
 
-  isAuthenticated$ = this.authService.isAuthenticated$;
-  unreadCount$ = this.notificationService.unreadCount$;
-
-  showNotifications = false;
+  readonly isAuthenticated$ = this.authService.isAuthenticated$;
+  readonly isAuthenticated = this.authService.isAuthenticated;
+  readonly unreadCount = this.notificationService.unreadCount;
+  readonly showNotifications = signal<boolean>(false);
 
   /**
    * Toggle notification panel visibility
    * When opening, explicitly trigger notification load
    */
   toggleNotifications(): void {
-    this.showNotifications = !this.showNotifications;
-    this.cdr.markForCheck();
+    this.showNotifications.update(s => !s);
 
-    if (this.showNotifications) {
+    if (this.showNotifications()) {
       setTimeout(() => {
         this.notificationPanel?.ensureLoaded();
       }, 50);

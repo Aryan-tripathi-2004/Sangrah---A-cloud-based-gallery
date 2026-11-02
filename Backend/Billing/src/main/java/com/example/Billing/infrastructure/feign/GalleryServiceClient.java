@@ -12,12 +12,6 @@ import java.time.Instant;
  * Feign Client for Gallery Service
  * Provides inter-service communication with the Gallery microservice
  * to query storage usage ledger data without direct database access
- *
- * This follows microservice principles:
- * - Gallery owns its own data store (sangrah_gallery)
- * - Billing queries Gallery via REST API (not direct DB access)
- * - Loose coupling between services
- * - Easy to scale/deploy independently
  */
 @FeignClient(
     name = "gallery-service",
@@ -33,7 +27,7 @@ public interface GalleryServiceClient {
      * @param size Page size
      * @return Paginated storage usage ledger entries
      */
-    @GetMapping("/api/v1/gallery/ledger")
+    @GetMapping("/internal/api/v1/gallery/ledger")
     Page<StorageUsageLedgerDTO> getLedgerEntries(
         @RequestParam("startDate") Instant startDate,
         @RequestParam("endDate") Instant endDate,

@@ -1,8 +1,8 @@
 import { Injectable, inject, signal, computed } from '@angular/core';
-import { toObservable } from '@angular/core/rxjs-interop';
-import { Observable, throwError } from 'rxjs';
-import { tap, catchError } from 'rxjs/operators';
-import { SangrahApiService } from '../../core/api/sangrah-api.service';
+import { Observable, throwError, of } from 'rxjs';
+import { map, tap, catchError, switchMap } from 'rxjs/operators';
+import { EventApiService } from '../../core/api/services/event-api.service';
+import { Event, EventMediaUploadResponse } from '../../core/api/models/api.models';
 
 export interface EventMediaStatus {
   mediaId: string;
@@ -22,9 +22,28 @@ export interface UploadProgress {
   message?: string;
 }
 
+export interface EventMediaApprovalResponse {
+  status: string;
+  reason?: string;
+}
+
+interface EventMediaPayloadItem {
+  id?: string;
+  mediaId?: string;
+  originalFileName?: string;
+  fileName?: string;
+  mimeType?: string;
+  mime_type?: string;
+  status?: 'PENDING' | 'APPROVED' | 'REJECTED';
+  uploadedAt: string;
+  uploaderUserId?: string;
+  uploaderId?: string;
+  uploaderName?: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class EventService {
-  private api = inject(SangrahApiService);
+  private api = inject(EventApiService);
 
   // Modern Angular Signals state
   public readonly eventMedia = signal<EventMediaStatus[]>([]);
@@ -37,10 +56,6 @@ export class EventService {
   public readonly approvedCount = computed(() => this.eventMedia().filter(m => m.status === 'APPROVED').length);
   public readonly rejectedCount = computed(() => this.eventMedia().filter(m => m.status === 'REJECTED').length);
 
-  // Backwards-compatible RxJS observables via interop
-  public readonly eventMedia$: Observable<EventMediaStatus[]> = toObservable(this.eventMedia);
-  public readonly uploadProgress$: Observable<UploadProgress[]> = toObservable(this.uploadProgress);
-  public readonly loading$: Observable<boolean> = toObservable(this.loading);
 
   /**
    * Load all media for an event
@@ -48,26 +63,29 @@ export class EventService {
   loadEventMedia(eventId: string): Observable<EventMediaStatus[]> {
     this.loading.set(true);
     return this.api.getEventMedia(eventId).pipe(
-      tap((response: any) => {
-        // Handle response format: either direct array or { media: [...] }
-        const mediaList = Array.isArray(response) ? response : (response?.media || []);
+      map((response: unknown): EventMediaStatus[] => {
+        const mediaList: EventMediaPayloadItem[] = Array.isArray(response)
+          ? (response as EventMediaPayloadItem[])
+          : ((response as { media?: EventMediaPayloadItem[] })?.media || []);
 
-        const statusList: EventMediaStatus[] = mediaList.map((m: any) => {
+        return mediaList.map((m: EventMediaPayloadItem): EventMediaStatus => {
           const uploaderId = m.uploaderUserId || m.uploaderId;
           const uploaderName = m.uploaderName && m.uploaderName !== uploaderId 
             ? m.uploaderName 
             : undefined;
-          
+
           return {
-            mediaId: m.id || m.mediaId,
-            fileName: m.originalFileName || m.fileName || m.id || m.mediaId,
-            mimeType: m.mimeType || m.mime_type || null,
+            mediaId: m.id || m.mediaId || '',
+            fileName: m.originalFileName || m.fileName || m.id || m.mediaId || 'media',
+            mimeType: m.mimeType || m.mime_type || undefined,
             status: m.status || 'PENDING',
-            uploadedAt: m.uploadedAt,
+            uploadedAt: m.uploadedAt || new Date().toISOString(),
             uploaderId: uploaderId,
             uploaderName: uploaderName,
           };
         });
+      }),
+      tap((statusList: EventMediaStatus[]) => {
         this.eventMedia.set(statusList);
         this.loading.set(false);
       }),
@@ -82,7 +100,7 @@ export class EventService {
   /**
    * Upload a single file to event
    */
-  uploadEventMedia(eventId: string, file: File): Observable<any> {
+  uploadEventMedia(eventId: string, file: File): Observable<EventMediaUploadResponse> {
     const progress: UploadProgress = {
       fileName: file.name,
       progress: 0,
@@ -93,7 +111,7 @@ export class EventService {
     this.uploadProgress.update(current => [...current, progress]);
 
     return this.api.uploadEventMedia(eventId, file).pipe(
-      tap(() => {
+      switchMap((response) => {
         // Update progress to success
         this.uploadProgress.update(current =>
           current.map((p) =>
@@ -103,15 +121,11 @@ export class EventService {
           )
         );
 
-        // Auto remove after 2 seconds
-        setTimeout(() => {
-          this.uploadProgress.update(current =>
-            current.filter((p) => p.fileName !== file.name)
-          );
-        }, 2000);
-
-        // Reload media list
-        this.loadEventMedia(eventId).subscribe();
+        // Reload media list within reactive stream
+        return this.loadEventMedia(eventId).pipe(
+          map(() => response),
+          catchError(() => of(response))
+        );
       }),
       catchError((error) => {
         // Update progress to error
@@ -136,7 +150,7 @@ export class EventService {
   /**
    * Update event media status (APPROVED or REJECTED)
    */
-  updateEventMediaStatus(eventId: string, mediaId: string, status: 'APPROVED' | 'REJECTED', reason?: string): Observable<any> {
+  updateEventMediaStatus(eventId: string, mediaId: string, status: 'APPROVED' | 'REJECTED', reason?: string): Observable<EventMediaApprovalResponse> {
     return this.api.updateEventMediaStatus(eventId, mediaId, status, reason).pipe(
       tap(() => {
         // Update local state
@@ -156,21 +170,21 @@ export class EventService {
   /**
    * Approve media for event
    */
-  approveEventMedia(eventId: string, mediaId: string): Observable<any> {
+  approveEventMedia(eventId: string, mediaId: string): Observable<EventMediaApprovalResponse> {
     return this.updateEventMediaStatus(eventId, mediaId, 'APPROVED');
   }
 
   /**
    * Reject media for event
    */
-  rejectEventMedia(eventId: string, mediaId: string, reason: string): Observable<any> {
+  rejectEventMedia(eventId: string, mediaId: string, reason: string): Observable<EventMediaApprovalResponse> {
     return this.updateEventMediaStatus(eventId, mediaId, 'REJECTED', reason);
   }
 
   /**
    * Delete media from event
    */
-  deleteEventMedia(eventId: string, mediaId: string): Observable<any> {
+  deleteEventMedia(eventId: string, mediaId: string): Observable<{ message: string }> {
     return this.api.deleteEventMedia(eventId, mediaId).pipe(
       tap(() => {
         // Remove from local state
@@ -197,7 +211,7 @@ export class EventService {
   /**
    * Create an event with optional cover media via a single multipart request
    */
-  createEvent(eventData: any, coverMediaFile?: File): Observable<any> {
+  createEvent(eventData: FormData | Partial<Event>, coverMediaFile?: File): Observable<Event & { id: string }> {
     if (eventData instanceof FormData) {
       return this.api.createEvent(eventData);
     }
@@ -210,6 +224,13 @@ export class EventService {
       formData.append('coverMedia', coverMediaFile);
     }
     return this.api.createEvent(formData);
+  }
+
+  /**
+   * Remove a specific upload progress entry by filename
+   */
+  removeProgress(fileName: string): void {
+    this.uploadProgress.update(current => current.filter(p => p.fileName !== fileName));
   }
 
   /**

@@ -1,14 +1,13 @@
 import { Injectable, inject, PLATFORM_ID, NgZone, OnDestroy, signal, computed } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
-import { toObservable } from '@angular/core/rxjs-interop';
-import { Observable, Subscription, interval, of } from 'rxjs';
-import { distinctUntilChanged, catchError, map } from 'rxjs/operators';
-import { SangrahApiService } from '../api/sangrah-api.service';
+import { Observable, Subscription, timer, of } from 'rxjs';
+import { distinctUntilChanged, catchError, map, switchMap, filter } from 'rxjs/operators';
+import { NotificationApiService } from '../api/services/notification-api.service';
 import { AuthService } from '../auth/auth.service';
 
 @Injectable({ providedIn: 'root' })
 export class NotificationService implements OnDestroy {
-  private readonly api = inject(SangrahApiService);
+  private readonly api = inject(NotificationApiService);
   private readonly authService = inject(AuthService);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly ngZone = inject(NgZone);
@@ -16,17 +15,13 @@ export class NotificationService implements OnDestroy {
   // Modern Angular Signals state
   public readonly unreadCount = signal<number>(0);
   public readonly hasUnread = computed(() => this.unreadCount() > 0);
-  public readonly unreadCount$: Observable<number> = toObservable(this.unreadCount);
 
   private pollSubscription: Subscription | null = null;
   private authSubscription: Subscription | null = null;
 
   private isPolling = false;
-  private isFetching = false;
-  private lastFetchTimestamp = 0;
 
   private readonly POLL_INTERVAL_MS = 30000; // 30 seconds
-  private readonly MIN_FETCH_GAP_MS = 5000;   // Throttle: at least 5s between explicit network fetches
 
   constructor() {
     this.initAuthTracking();
@@ -50,7 +45,7 @@ export class NotificationService implements OnDestroy {
   }
 
   /**
-   * Start polling for unread notifications.
+   * Start polling for unread notifications using a single declarative stream.
    * Managed centrally so only ONE polling interval exists across the entire application.
    */
   public startPolling(): void {
@@ -60,15 +55,16 @@ export class NotificationService implements OnDestroy {
 
     this.isPolling = true;
 
-    // Fetch immediately on authentication / activation
-    this.refreshUnreadCount(true);
-
-    // Schedule interval outside Angular Zone to avoid triggering unnecessary change detection ticks
+    // Schedule declarative pipeline outside Angular Zone to prevent change detection thrashing
     this.ngZone.runOutsideAngular(() => {
-      this.pollSubscription = interval(this.POLL_INTERVAL_MS).subscribe(() => {
-        this.ngZone.run(() => {
-          this.refreshUnreadCount(false);
-        });
+      this.pollSubscription = timer(0, this.POLL_INTERVAL_MS).pipe(
+        filter(() => this.authService.isAuthenticated()),
+        switchMap(() => this.fetchCountObservable())
+      ).subscribe({
+        next: (count: number) => {
+          this.ngZone.run(() => this.unreadCount.set(count));
+        },
+        error: (err) => console.warn('⚠️ [NotificationService] Polling failed', err)
       });
     });
   }
@@ -85,35 +81,19 @@ export class NotificationService implements OnDestroy {
   }
 
   /**
-   * Refresh unread notification count from backend.
-   * Includes in-flight deduplication and throttling to prevent flood loops.
+   * Refresh unread notification count from backend explicitly.
    */
   public refreshUnreadCount(force = false): void {
     if (!isPlatformBrowser(this.platformId) || !this.authService.isAuthenticated()) {
       return;
     }
 
-    const now = Date.now();
-    if (!force && (now - this.lastFetchTimestamp < this.MIN_FETCH_GAP_MS)) {
-      return;
-    }
-
-    if (this.isFetching) {
-      return;
-    }
-
-    this.isFetching = true;
-
-    // Prefer dedicated unread-count endpoint; gracefully fallback to getNotifications(0, 1)
     this.fetchCountObservable().subscribe({
       next: (count: number) => {
-        this.lastFetchTimestamp = Date.now();
-        this.isFetching = false;
         this.unreadCount.set(count);
       },
       error: (err) => {
         console.warn('⚠️ [NotificationService] Failed to fetch unread notification count:', err);
-        this.isFetching = false;
       }
     });
   }

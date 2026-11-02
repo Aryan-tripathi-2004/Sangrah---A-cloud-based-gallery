@@ -1,16 +1,9 @@
-import { Component, Input, OnInit, ChangeDetectorRef, inject, ChangeDetectionStrategy } from '@angular/core';
+import { Component, OnInit, inject, ChangeDetectionStrategy, DestroyRef, input, signal, computed } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { SangrahApiService } from '../../../core/api/sangrah-api.service';
-
-interface AccessRequest {
-  requestId: string;
-  requesterUserId: string;
-  displayName?: string;
-  message: string;
-  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'REVOKED';
-  requestedAt: string;
-}
+import { EventApiService } from '../../../core/api/services/event-api.service';
+import { AccessRequestResponse, AccessRequestsResponse } from '../../../core/api/models/api.models';
 
 @Component({
   selector: 'app-event-access-requests',
@@ -21,25 +14,58 @@ interface AccessRequest {
   styles: []
 })
 export class EventAccessRequestsComponent implements OnInit {
-  @Input() eventId!: string;
+  readonly eventId = input.required<string>();
 
-  private api = inject(SangrahApiService);
-  private cdr = inject(ChangeDetectorRef);
+  private readonly api = inject(EventApiService);
+  private readonly destroyRef = inject(DestroyRef);
 
-  requests: AccessRequest[] = [];
-  filterStatus: 'PENDING' | 'APPROVED' = 'PENDING';
-  processingId: string | null = null;
+  readonly requests = signal<AccessRequestResponse[]>([]);
 
-  approveFormId: string | null = null;
-  approveDuration: 'FOREVER' | 'UNTIL_DATE' = 'FOREVER';
-  approveUntilDate: string = '';
-  minDate: string = '';
+  readonly filterStatusSignal = signal<'PENDING' | 'APPROVED'>('PENDING');
+  get filterStatus(): 'PENDING' | 'APPROVED' { return this.filterStatusSignal(); }
+  set filterStatus(val: 'PENDING' | 'APPROVED') { this.filterStatusSignal.set(val); }
 
-  rejectFormId: string | null = null;
-  rejectionReason = '';
+  readonly processingIdSignal = signal<string | null>(null);
+  get processingId(): string | null { return this.processingIdSignal(); }
+  set processingId(val: string | null) { this.processingIdSignal.set(val); }
+
+  readonly approveFormIdSignal = signal<string | null>(null);
+  get approveFormId(): string | null { return this.approveFormIdSignal(); }
+  set approveFormId(val: string | null) { this.approveFormIdSignal.set(val); }
+
+  readonly approveDurationSignal = signal<'FOREVER' | 'UNTIL_DATE'>('FOREVER');
+  get approveDuration(): 'FOREVER' | 'UNTIL_DATE' { return this.approveDurationSignal(); }
+  set approveDuration(val: 'FOREVER' | 'UNTIL_DATE') { this.approveDurationSignal.set(val); }
+
+  readonly approveUntilDateSignal = signal<string>('');
+  get approveUntilDate(): string { return this.approveUntilDateSignal(); }
+  set approveUntilDate(val: string) { this.approveUntilDateSignal.set(val); }
+
+  readonly minDateSignal = signal<string>('');
+  get minDate(): string { return this.minDateSignal(); }
+  set minDate(val: string) { this.minDateSignal.set(val); }
+
+  readonly rejectFormIdSignal = signal<string | null>(null);
+  get rejectFormId(): string | null { return this.rejectFormIdSignal(); }
+  set rejectFormId(val: string | null) { this.rejectFormIdSignal.set(val); }
+
+  readonly rejectionReasonSignal = signal<string>('');
+  get rejectionReason(): string { return this.rejectionReasonSignal(); }
+  set rejectionReason(val: string) { this.rejectionReasonSignal.set(val); }
+
+  readonly filteredRequests = computed(() =>
+    this.requests().filter(r => r.status === this.filterStatusSignal())
+  );
+
+  readonly pendingCount = computed(() =>
+    this.requests().filter(r => r.status === 'PENDING').length
+  );
+
+  readonly approvedCount = computed(() =>
+    this.requests().filter(r => r.status === 'APPROVED').length
+  );
 
   ngOnInit() {
-    // set minimum selectable date (today) for expiry inputs
     const d = new Date();
     const yyyy = d.getFullYear();
     const mm = String(d.getMonth() + 1).padStart(2, '0');
@@ -49,20 +75,18 @@ export class EventAccessRequestsComponent implements OnInit {
   }
 
   loadRequests() {
-    this.api.listAccessRequests(this.eventId).subscribe({
-      next: (data: any) => {
-        // Normalize status values to uppercase so filtering works reliably
-        // Handle both array response and object response structures
-        let requests = data.requests || data || [];
-        if (!Array.isArray(requests)) {
-          requests = [];
-        }
-        this.requests = requests.map((r: any) => ({
+    const id = this.eventId();
+    if (!id) return;
+    this.api.listAccessRequests(id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (data: unknown) => {
+        const obj = data as AccessRequestsResponse | null;
+        const rawList: AccessRequestResponse[] = Array.isArray(data)
+          ? (data as AccessRequestResponse[])
+          : (obj?.requests || []);
+        this.requests.set(rawList.map((r: AccessRequestResponse) => ({
           ...r,
-          status: (r.status || '').toString().toUpperCase()
-        }));
-        console.log('✅ Loaded access requests:', this.requests);
-        this.cdr.detectChanges();
+          status: (r.status || '').toString().toUpperCase() as AccessRequestResponse['status']
+        })));
       },
       error: (err) => {
         console.error('❌ Failed to load requests:', err);
@@ -70,23 +94,16 @@ export class EventAccessRequestsComponent implements OnInit {
     });
   }
 
-  getFilteredRequests(): AccessRequest[] {
-    return this.requests.filter(r => r.status === this.filterStatus);
+  getFilteredRequests(): AccessRequestResponse[] {
+    return this.filteredRequests();
   }
 
   getPendingCount(): number {
-    return this.requests.filter(r => r.status === 'PENDING').length;
+    return this.pendingCount();
   }
 
   getApprovedCount(): number {
-    return this.requests.filter(r => r.status === 'APPROVED').length;
-  }
-
-  private updateRequestStatus(requestId: string, status: AccessRequest['status']): void {
-    const request = this.requests.find(r => r.requestId === requestId);
-    if (request) {
-      request.status = status;
-    }
+    return this.approvedCount();
   }
 
   openApproveForm(requestId: string) {
@@ -97,11 +114,10 @@ export class EventAccessRequestsComponent implements OnInit {
 
   confirmApprove(requestId: string) {
     this.processingId = requestId;
-    const payload: any = {
+    const payload: { approvalDuration: string; accessExpiresAt?: string } = {
       approvalDuration: this.approveDuration
     };
     if (this.approveDuration === 'UNTIL_DATE' && this.approveUntilDate) {
-      // Prevent past dates and set to end-of-day to avoid immediate expiry due to timezone
       const selected = new Date(this.approveUntilDate);
       const today = new Date();
       const selStart = new Date(selected.getFullYear(), selected.getMonth(), selected.getDate());
@@ -111,24 +127,23 @@ export class EventAccessRequestsComponent implements OnInit {
         this.processingId = null;
         return;
       }
-      // Set expiry to end of selected day (23:59:59)
       const endOfDay = new Date(selected.getFullYear(), selected.getMonth(), selected.getDate(), 23, 59, 59, 999);
       payload.accessExpiresAt = endOfDay.toISOString();
     }
 
-    this.api.updateAccessRequestStatus(this.eventId, requestId, 'APPROVED', payload).subscribe({
-      next: () => {
-        console.log('✅ Request approved');
-        this.approveFormId = null;
-        this.processingId = null;
-        this.loadRequests();
-        this.cdr.detectChanges();
-      },
-      error: (err) => {
-        console.error('❌ Failed to approve:', err);
-        this.processingId = null;
-      }
-    });
+    this.api.updateAccessRequestStatus(this.eventId(), requestId, 'APPROVED', payload)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          this.approveFormId = null;
+          this.processingId = null;
+          this.loadRequests();
+        },
+        error: (err) => {
+          console.error('Failed to approve request:', err);
+          this.processingId = null;
+        }
+      });
   }
 
   openRejectForm(requestId: string) {
@@ -142,38 +157,34 @@ export class EventAccessRequestsComponent implements OnInit {
       reason: this.rejectionReason || 'Request denied'
     };
 
-    this.api.updateAccessRequestStatus(this.eventId, requestId, 'REJECTED', payload).subscribe({
-      next: () => {
-        console.log('✅ Request rejected');
-        this.rejectFormId = null;
-        this.processingId = null;
-        this.loadRequests();
-        this.cdr.detectChanges();
-      },
-      error: (err) => {
-        console.error('❌ Failed to reject:', err);
-        this.processingId = null;
-      }
-    });
+    this.api.updateAccessRequestStatus(this.eventId(), requestId, 'REJECTED', payload)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          this.rejectFormId = null;
+          this.processingId = null;
+          this.loadRequests();
+        },
+        error: (err) => {
+          console.error('Failed to reject request:', err);
+          this.processingId = null;
+        }
+      });
   }
 
-  // Allow owner to revoke an approved access
   openRevoke(requestId: string) {
-    if (!confirm('Are you sure you want to revoke access for this user?')) return;
     this.processingId = requestId;
-    this.api.updateAccessRequestStatus(this.eventId, requestId, 'REVOKED').subscribe({
-      next: () => {
-        this.updateRequestStatus(requestId, 'REVOKED');
-        this.processingId = null;
-        this.loadRequests();
-        this.cdr.detectChanges();
-      },
-      error: (err) => {
-        console.error('❌ Failed to revoke access:', err);
-        alert('Error: ' + (err.error?.error || 'Failed to revoke access'));
-        this.processingId = null;
-        this.cdr.detectChanges();
-      }
-    });
+    this.api.updateAccessRequestStatus(this.eventId(), requestId, 'REVOKED')
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          this.processingId = null;
+          this.loadRequests();
+        },
+        error: (err) => {
+          console.error('Failed to revoke request:', err);
+          this.processingId = null;
+        }
+      });
   }
 }

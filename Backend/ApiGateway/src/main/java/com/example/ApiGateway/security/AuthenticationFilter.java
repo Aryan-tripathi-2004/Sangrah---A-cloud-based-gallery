@@ -55,6 +55,9 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
     @Value("${gateway.security.header.user-email}")
     private String headerUserEmail = "X-User-Email";
 
+    @Value("${gateway.security.header.user-role:X-User-Role}")
+    private String headerUserRole = "X-User-Role";
+
     @Value("${gateway.security.auth.bearer-prefix}")
     private String bearerPrefix = "Bearer ";
 
@@ -80,6 +83,7 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
                 .headers(headers -> {
                     headers.remove(headerUserId);
                     headers.remove(headerUserEmail);
+                    headers.remove(headerUserRole);
                 })
                 .build();
 
@@ -165,6 +169,7 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
             ServerHttpRequest enrichedRequest = sanitizedRequest.mutate()
                     .header(headerUserId, userId != null ? userId : "")
                     .header(headerUserEmail, email != null ? email : "")
+                    .header(headerUserRole, role != null ? role : "")
                     .build();
 
             ServerWebExchange enrichedExchange = sanitizedExchange.mutate()
@@ -225,12 +230,15 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
             return true;
         }
 
-        for (Map.Entry<String, List<String>> entry : routeRoles.entrySet()) {
+        // Sort entries by route length descending to evaluate most specific prefixes first
+        List<Map.Entry<String, List<String>>> sortedRoutes = routeRoles.entrySet().stream()
+                .filter(e -> e.getKey() != null && !e.getKey().isBlank())
+                .sorted((a, b) -> Integer.compare(b.getKey().trim().length(), a.getKey().trim().length()))
+                .toList();
+
+        for (Map.Entry<String, List<String>> entry : sortedRoutes) {
             String route = entry.getKey();
             List<String> allowedRoles = entry.getValue();
-            if (route == null || route.isBlank()) {
-                continue;
-            }
             String cleanRoute = route.trim().replaceAll("/+$", "");
             if (path.equals(cleanRoute) || path.startsWith(cleanRoute + "/")) {
                 return allowedRoles != null && allowedRoles.contains(role.toUpperCase());

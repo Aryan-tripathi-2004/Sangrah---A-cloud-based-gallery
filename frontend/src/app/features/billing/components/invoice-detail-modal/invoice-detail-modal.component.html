@@ -109,8 +109,9 @@
       }
       <button
         (click)="downloadPDF()"
-        class="flex-1 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-100 rounded-lg font-semibold transition-colors">
-        📥 Download PDF
+        [disabled]="isDownloadingPDF()"
+        class="flex-1 px-4 py-2 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed text-slate-100 rounded-lg font-semibold transition-colors">
+        {{ isDownloadingPDF() ? '⏳ Downloading PDF...' : '📥 Download PDF' }}
       </button>
       <button
         (click)="closeModal.emit()"

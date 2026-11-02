@@ -2,6 +2,7 @@ package com.example.Billing.application.service;
 
 import java.math.BigDecimal;
 
+import com.example.Billing.application.service.interfaces.IPDFGenerationService;
 import com.example.Billing.infrastructure.persistence.document.InvoiceDocument;
 import com.example.Billing.infrastructure.persistence.repository.InvoiceRepository;
 import com.example.Billing.shared.exception.BillingProcessingException;
@@ -21,17 +22,18 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayOutputStream;
-import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
-public class PDFGenerationService {
+public class PDFGenerationService implements IPDFGenerationService {
 
     private final InvoiceRepository invoiceRepository;
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("dd-MMM-yyyy");
 
+    @Override
     public byte[] generateInvoicePDF(String invoiceId) {
         try {
             log.info("📝 Starting PDF generation for invoice: {}", invoiceId);
@@ -98,75 +100,67 @@ public class PDFGenerationService {
         // Invoice title
         Paragraph invoiceTitle = new Paragraph("INVOICE")
                 .setFont(boldFont)
-                .setFontSize(16);
+                .setFontSize(18)
+                .setTextAlignment(TextAlignment.CENTER);
         doc.add(invoiceTitle);
+
+        doc.add(new Paragraph(""));
     }
 
     private void addInvoiceDetails(Document doc, InvoiceDocument invoice, PdfFont boldFont, PdfFont font) throws Exception {
-        // Invoice details table
         Table detailsTable = new Table(new float[]{1, 1});
         detailsTable.setWidth(UnitValue.createPercentValue(100));
 
-        // Left column
+        // Left column - Invoice Info
         Cell leftCell = new Cell();
-        leftCell.add(new Paragraph("Invoice Number:").setFont(boldFont).setFontSize(10));
-        leftCell.add(new Paragraph(invoice.getInvoiceId()).setFont(font).setFontSize(9));
-        leftCell.add(new Paragraph(""));
-        leftCell.add(new Paragraph("Invoice Date:").setFont(boldFont).setFontSize(10));
-        leftCell.add(new Paragraph(invoice.getIssuedDate().atZone(ZoneId.systemDefault()).toLocalDate().format(DATE_FORMATTER)).setFont(font).setFontSize(9));
-        leftCell.add(new Paragraph(""));
-        leftCell.add(new Paragraph("Due Date:").setFont(boldFont).setFontSize(10));
-        leftCell.add(new Paragraph(invoice.getDueDate().atZone(ZoneId.systemDefault()).toLocalDate().format(DATE_FORMATTER)).setFont(font).setFontSize(9));
-
-        // Right column
-        Cell rightCell = new Cell();
-        rightCell.add(new Paragraph("User ID:").setFont(boldFont).setFontSize(10));
-        rightCell.add(new Paragraph(invoice.getUserId()).setFont(font).setFontSize(9));
-        rightCell.add(new Paragraph(""));
-        rightCell.add(new Paragraph("Billing Period:").setFont(boldFont).setFontSize(10));
-        rightCell.add(new Paragraph(
-                invoice.getBillingPeriod().getStartDate().atZone(ZoneId.systemDefault()).toLocalDate().format(DATE_FORMATTER) +
-                        " to " +
-                        invoice.getBillingPeriod().getEndDate().atZone(ZoneId.systemDefault()).toLocalDate().format(DATE_FORMATTER)
-        ).setFont(font).setFontSize(9));
-
+        leftCell.add(new Paragraph("Invoice Number:").setFont(boldFont));
+        leftCell.add(new Paragraph(invoice.getInvoiceId()).setFont(font));
+        leftCell.add(new Paragraph("Issue Date:").setFont(boldFont));
+        leftCell.add(new Paragraph(invoice.getIssuedDate().atZone(ZoneOffset.UTC).toLocalDate().format(DATE_FORMATTER)).setFont(font));
+        leftCell.add(new Paragraph("Due Date:").setFont(boldFont));
+        leftCell.add(new Paragraph(invoice.getDueDate().atZone(ZoneOffset.UTC).toLocalDate().format(DATE_FORMATTER)).setFont(font));
         detailsTable.addCell(leftCell);
+
+        // Right column - Customer Info
+        Cell rightCell = new Cell();
+        rightCell.add(new Paragraph("Bill To:").setFont(boldFont));
+        rightCell.add(new Paragraph("User ID: " + invoice.getUserId()).setFont(font));
+        rightCell.add(new Paragraph("Email: " + (invoice.getUserEmail() != null ? invoice.getUserEmail() : "N/A")).setFont(font));
+        rightCell.add(new Paragraph("Billing Period:").setFont(boldFont));
+        String period = invoice.getBillingPeriod().getStartDate().atZone(ZoneOffset.UTC).toLocalDate().format(DATE_FORMATTER) +
+                " to " + invoice.getBillingPeriod().getEndDate().atZone(ZoneOffset.UTC).toLocalDate().format(DATE_FORMATTER);
+        rightCell.add(new Paragraph(period).setFont(font));
         detailsTable.addCell(rightCell);
+
         doc.add(detailsTable);
+        doc.add(new Paragraph(""));
     }
 
     private void addChargesTable(Document doc, InvoiceDocument invoice, PdfFont boldFont, PdfFont font) throws Exception {
-        doc.add(new Paragraph(""));
-
-        // Storage metrics
-        Paragraph storageTitle = new Paragraph("Storage Usage")
-                .setFont(boldFont)
-                .setFontSize(12);
-        doc.add(storageTitle);
-
-        Table storageTable = new Table(new float[]{1, 1, 1, 1});
+        Table storageTable = new Table(new float[]{2, 1, 1, 1});
         storageTable.setWidth(UnitValue.createPercentValue(100));
 
-        // Header row
-        storageTable.addHeaderCell(new Cell().add(new Paragraph("Type").setFont(boldFont)));
-        storageTable.addHeaderCell(new Cell().add(new Paragraph("GB-Days").setFont(boldFont)));
-        storageTable.addHeaderCell(new Cell().add(new Paragraph("Rate").setFont(boldFont)));
+        // Header
+        storageTable.addHeaderCell(new Cell().add(new Paragraph("Storage Type").setFont(boldFont)));
+        storageTable.addHeaderCell(new Cell().add(new Paragraph("Usage (GB-Days)").setFont(boldFont)));
+        storageTable.addHeaderCell(new Cell().add(new Paragraph("Rate/GB-Day").setFont(boldFont)));
         storageTable.addHeaderCell(new Cell().add(new Paragraph("Amount").setFont(boldFont)));
 
-        // Data rows
-        InvoiceDocument.StorageMetrics metrics = invoice.getStorageMetrics();
-        storageTable.addCell(new Paragraph("Images").setFont(font));
-        storageTable.addCell(new Paragraph(String.format("%.2f", metrics.getImageGBDays())).setFont(font));
-        storageTable.addCell(new Paragraph(String.format("$%.4f", invoice.getCharges().getStorageRate())).setFont(font));
-        storageTable.addCell(new Paragraph(String.format("$%.2f", metrics.getImageCost())).setFont(font));
+        // Images row
+        storageTable.addCell(new Paragraph("Gallery & Event Images").setFont(font));
+        storageTable.addCell(new Paragraph(String.format("%.2f", invoice.getStorageMetrics().getImageGBDays())).setFont(font));
+        storageTable.addCell(new Paragraph(String.format("$%.2f", invoice.getCharges().getStorageRate())).setFont(font));
+        storageTable.addCell(new Paragraph(String.format("$%.2f", invoice.getStorageMetrics().getImageCost())).setFont(font));
 
-        storageTable.addCell(new Paragraph("Videos").setFont(font));
-        storageTable.addCell(new Paragraph(String.format("%.2f", metrics.getVideoGBDays())).setFont(font));
-        storageTable.addCell(new Paragraph(String.format("$%.4f", invoice.getCharges().getStorageRate())).setFont(font));
-        storageTable.addCell(new Paragraph(String.format("$%.2f", metrics.getVideoCost())).setFont(font));
+        // Videos row
+        storageTable.addCell(new Paragraph("Gallery & Event Videos").setFont(font));
+        storageTable.addCell(new Paragraph(String.format("%.2f", invoice.getStorageMetrics().getVideoGBDays())).setFont(font));
+        storageTable.addCell(new Paragraph(String.format("$%.2f", invoice.getCharges().getStorageRate())).setFont(font));
+        storageTable.addCell(new Paragraph(String.format("$%.2f", invoice.getStorageMetrics().getVideoCost())).setFont(font));
 
-        storageTable.addCell(new Paragraph(""));
-        storageTable.addCell(new Paragraph(""));
+        // Subtotal row
+        storageTable.addCell(new Paragraph("Total Storage Usage").setFont(boldFont));
+        storageTable.addCell(new Paragraph(String.format("%.2f", invoice.getStorageMetrics().getTotalGBDays())).setFont(boldFont));
         storageTable.addCell(new Paragraph(""));
         storageTable.addCell(new Paragraph(""));
 
@@ -197,7 +191,7 @@ public class PDFGenerationService {
 
         // Payment status
         String status = "PAID".equals(invoice.getStatus().name()) ?
-                "✓ PAID on " + invoice.getPaidDate().atZone(ZoneId.systemDefault()).toLocalDate().format(DATE_FORMATTER) :
+                "✓ PAID on " + invoice.getPaidDate().atZone(ZoneOffset.UTC).toLocalDate().format(DATE_FORMATTER) :
                 invoice.getStatus().name();
 
         Paragraph footerStatus = new Paragraph("Status: " + status)

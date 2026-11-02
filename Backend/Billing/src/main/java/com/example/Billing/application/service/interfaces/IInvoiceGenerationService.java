@@ -7,4 +7,8 @@ public interface IInvoiceGenerationService {
     InvoiceGenerationResultResponse processMonthlyInvoiceGeneration();
 
     InvoiceGenerationResultResponse processCurrentMonthInvoiceGeneration();
+
+    InvoiceGenerationResultResponse triggerMonthlyInvoiceGenerationForAdmin(String role);
+
+    InvoiceGenerationResultResponse triggerCurrentMonthInvoiceGenerationForAdmin(String role);
 }

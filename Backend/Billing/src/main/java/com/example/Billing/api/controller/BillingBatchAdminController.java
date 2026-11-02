@@ -19,32 +19,27 @@ public class BillingBatchAdminController {
     private final IInvoiceGenerationService invoiceGenerationService;
     private final IInvoiceJobService invoiceJobService;
 
-    /**
-     * Manually trigger the monthly billing invoice generation job
-     */
     @PostMapping("/monthly-invoices")
     @Operation(summary = "Run monthly billing job")
-    public ResponseEntity<InvoiceGenerationResultResponse> runMonthly() {
-        log.info("  Manual trigger: Monthly billing job");
-        return ResponseEntity.ok(invoiceGenerationService.processMonthlyInvoiceGeneration());
+    public ResponseEntity<InvoiceGenerationResultResponse> runMonthly(
+            @RequestHeader(value = "X-User-Role", required = false) String role) {
+        log.info("Manual trigger: Monthly billing job");
+        return ResponseEntity.ok(invoiceGenerationService.triggerMonthlyInvoiceGenerationForAdmin(role));
     }
 
-    /**
-     * Manually trigger the current month billing invoice generation job (TEST only)
-     */
     @PostMapping("/monthly-invoices/current")
     @Operation(summary = "Run current month billing job (TEST)")
-    public ResponseEntity<InvoiceGenerationResultResponse> runCurrentMonth() {
-        log.info("  Manual trigger: Current month billing job (TEST)");
-        return ResponseEntity.ok(invoiceGenerationService.processCurrentMonthInvoiceGeneration());
+    public ResponseEntity<InvoiceGenerationResultResponse> runCurrentMonth(
+            @RequestHeader(value = "X-User-Role", required = false) String role) {
+        log.info("Manual trigger: Current month billing job (TEST)");
+        return ResponseEntity.ok(invoiceGenerationService.triggerCurrentMonthInvoiceGenerationForAdmin(role));
     }
 
-    /**
-     * Get billing job execution status by execution ID
-     */
     @GetMapping("/{executionId}")
     @Operation(summary = "Get billing job execution status")
-    public ResponseEntity<JobStatusResponse> status(@PathVariable String executionId) {
-        return ResponseEntity.ok(invoiceJobService.getJobStatus(executionId));
+    public ResponseEntity<JobStatusResponse> status(
+            @PathVariable String executionId,
+            @RequestHeader(value = "X-User-Role", required = false) String role) {
+        return ResponseEntity.ok(invoiceJobService.getAuthorizedJobStatus(executionId, role));
     }
 }

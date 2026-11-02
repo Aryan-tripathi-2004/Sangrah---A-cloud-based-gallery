@@ -1,6 +1,6 @@
 package com.example.Event.application.service.impl;
 
-
+import com.example.Event.api.dto.request.MediaModerationRequest;
 import com.example.Event.api.dto.response.EventMediaCollectionResponse;
 import com.example.Event.api.dto.response.EventMediaDetailResponse;
 import com.example.Event.api.dto.response.EventMediaFileResponse;
@@ -33,12 +33,15 @@ import com.example.Event.shared.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @Slf4j
@@ -64,9 +67,16 @@ public class EventModerationServiceImpl implements IEventModerationService {
 
     @Override
     public EventMediaFileResponse getMediaFile(String eventId, String mediaId, String userId) {
-        EventDocument event = eventRepository.findById(eventId).orElseThrow(() -> new ResourceNotFoundException("Event not found"));
+        EventDocument event = eventRepository.findById(eventId)
+                .orElseThrow(() -> new ResourceNotFoundException("Event not found"));
 
-        if (EventVisibility.PROTECTED == event.getVisibility() && (userId == null || !userId.equals(event.getOwnerUserId()))
+        // Visibility authorization: PRIVATE requires owner or collaborator
+        if (EventVisibility.PRIVATE == event.getVisibility() && !isOwner(event, userId) && !isDocumentCollaborator(event, userId)) {
+            throw new ForbiddenOperationException("You don't have permission to view media in this private event");
+        }
+
+        // Visibility authorization: PROTECTED requires owner, collaborator, or approved access
+        if (EventVisibility.PROTECTED == event.getVisibility() && !isOwner(event, userId)
                 && !isDocumentCollaborator(event, userId) && !accessService.isUserApproved(eventId, userId)) {
             throw new ForbiddenOperationException("You don't have permission to access this protected event");
         }
@@ -82,7 +92,7 @@ public class EventModerationServiceImpl implements IEventModerationService {
                 .orElse(approvals.get(0));
 
         if (STATUS_APPROVED != approval.getStatus()) {
-            boolean isEventOwner = userId != null && userId.equals(event.getOwnerUserId());
+            boolean isEventOwner = isOwner(event, userId);
             boolean isUploader = userId != null && userId.equals(approval.getUploaderUserId());
             boolean isReviewer = userId != null && collaboratorService.hasPermission(eventId, userId, "canReviewMedia");
             if (!isEventOwner && !isUploader && !isReviewer) {
@@ -90,7 +100,8 @@ public class EventModerationServiceImpl implements IEventModerationService {
             }
         }
 
-        byte[] fileBytes = mediaServiceClient.getMediaFile(mediaId, userId != null ? userId : "system");
+        // Retrieve binary stream on behalf of the authorized event context
+        byte[] fileBytes = mediaServiceClient.getMediaFile(mediaId, event.getOwnerUserId());
         MediaType contentType = resolveContentType(mediaId);
         return mediaMapper.toFileResponse(fileBytes, contentType);
     }
@@ -101,18 +112,22 @@ public class EventModerationServiceImpl implements IEventModerationService {
             throw new DomainValidationException("File is empty");
         }
 
-        EventDocument event = eventRepository.findById(eventId).orElseThrow(() -> new ResourceNotFoundException("Event not found"));
+        EventDocument event = eventRepository.findById(eventId)
+                .orElseThrow(() -> new ResourceNotFoundException("Event not found"));
         ApprovalStatus approvalStatus = determineModerationStatus(event, userId, userEmail);
 
-        MediaServiceResponse mediaResponse = mediaServiceClient.uploadMedia(file, MediaDomain.EVENTS, eventId, userId);
+        // The storage quota and billing ledger belong to the Event Owner, not the guest/collaborator uploader
+        String storageOwnerUserId = event.getOwnerUserId();
+        MediaServiceResponse mediaResponse = mediaServiceClient.uploadMedia(file, MediaDomain.EVENTS, eventId, storageOwnerUserId);
         String mediaId = extractMediaId(mediaResponse);
         boolean isPending = STATUS_PENDING == approvalStatus;
         try {
+            // Track the original uploader in the event approval metadata
             createMedia(eventId, mediaId, userId, isPending);
         } catch (Exception ex) {
             log.error("Failed to persist event media metadata for media {}. Compensating by deleting remote media: {}", mediaId, ex.getMessage());
             try {
-                mediaServiceClient.deleteMedia(mediaId, userId);
+                mediaServiceClient.deleteMedia(mediaId, storageOwnerUserId, "SYSTEM");
                 log.warn("🧹 Cleaned up orphaned remote media {} after local database failure", mediaId);
             } catch (Exception cleanupError) {
                 log.error("Compensating deleteMedia failed for media {}: {}", mediaId, cleanupError.getMessage(), cleanupError);
@@ -120,6 +135,7 @@ public class EventModerationServiceImpl implements IEventModerationService {
                     orphanedMediaLogRepository.save(OrphanedMediaLogDocument.builder()
                             .eventId(eventId)
                             .oldMediaId(mediaId)
+                            .userId(userId)
                             .errorMessage(cleanupError.getMessage())
                             .createdAt(Instant.now())
                             .build());
@@ -146,6 +162,7 @@ public class EventModerationServiceImpl implements IEventModerationService {
         }
         return listEventMedia(eventId, userId);
     }
+
     @Override
     public EventMediaCollectionResponse getTimeline(String eventId, String userId) {
         EventDocument event = eventRepository.findById(eventId).orElseThrow(() -> new ResourceNotFoundException("Event not found"));
@@ -165,8 +182,11 @@ public class EventModerationServiceImpl implements IEventModerationService {
         EventDocument event = eventRepository.findById(eventId).orElseThrow(() -> new ResourceNotFoundException("Event not found"));
         requireProtectedMediaListAccess(event, userId);
 
-        List<EventMediaItemResponse> media = approvalRepository.findByEventId(eventId).stream()
-                .map(this::toDetailedMediaItem)
+        List<EventMediaApprovalDocument> approvals = approvalRepository.findByEventId(eventId);
+        Map<String, String> uploaderNameCache = new HashMap<>();
+
+        List<EventMediaItemResponse> media = approvals.stream()
+                .map(approval -> toDetailedMediaItem(approval, uploaderNameCache))
                 .toList();
 
         return mediaMapper.toCollectionResponse(eventId, media, "Event media loaded");
@@ -177,6 +197,18 @@ public class EventModerationServiceImpl implements IEventModerationService {
         MediaServiceResponse mediaDetails = mediaServiceClient.getMediaDetails(mediaId);
         ApprovalStatus moderationStatus = getMediaStatus(eventId, mediaId);
         return mediaMapper.toDetailResponse(mediaId, eventId, mediaDetails, moderationStatus);
+    }
+
+    @Override
+    public ResponseEntity<?> getMediaResponse(String eventId, String mediaId, String acceptHeader, String userId) {
+        if (acceptHeader != null && acceptHeader.contains(MediaType.APPLICATION_JSON_VALUE)) {
+            return ResponseEntity.ok(getMedia(eventId, mediaId));
+        }
+
+        EventMediaFileResponse response = getMediaFile(eventId, mediaId, userId);
+        return ResponseEntity.ok()
+                .contentType(response.contentType())
+                .body(response.content());
     }
 
     @Override
@@ -199,8 +231,44 @@ public class EventModerationServiceImpl implements IEventModerationService {
     }
 
     @Override
+    public EventMediaModerationResponse moderateMedia(
+            String eventId,
+            String mediaId,
+            MediaModerationRequest request,
+            String userId) {
+        if (request == null || request.status() == null) {
+            throw new DomainValidationException("Moderation status is required");
+        }
+        return switch (request.status()) {
+            case APPROVED -> approveMedia(eventId, mediaId, userId);
+            case REJECTED -> rejectMedia(eventId, mediaId, request.rejectionDetails(), userId);
+            default -> throw new DomainValidationException("Invalid status transition requested. Allowed: APPROVED, REJECTED");
+        };
+    }
+
+    @Override
     public MessageResponse deleteMedia(String eventId, String mediaId, String userId) {
-        mediaServiceClient.deleteMedia(mediaId, userId);
+        EventDocument event = eventRepository.findById(eventId)
+                .orElseThrow(() -> new ResourceNotFoundException("Event not found: " + eventId));
+
+        EventMediaApprovalDocument approval = approvalRepository.findByEventIdAndMediaId(eventId, mediaId)
+                .orElseThrow(() -> new ResourceNotFoundException("Media not found in event: " + mediaId));
+
+        // Collaborative Event Authorization:
+        // 1. Event Owner can delete any media in their event
+        // 2. Collaborators with 'canDeleteMedia' permission can delete media
+        // 3. The original uploader can delete their own media
+        boolean isEventOwner = isOwner(event, userId);
+        boolean isUploader = userId != null && userId.equals(approval.getUploaderUserId());
+        boolean hasDeletePermission = userId != null && collaboratorService.hasPermission(eventId, userId, "canDeleteMedia");
+
+        if (!isEventOwner && !isUploader && !hasDeletePermission) {
+            log.warn("🚨 [Event Media Delete] Unauthorized delete attempt on event {} media {} by user {}", eventId, mediaId, userId);
+            throw new ForbiddenOperationException("You do not have permission to delete media from this event");
+        }
+
+        // Delegate physical media deletion using event owner context with SYSTEM service role
+        mediaServiceClient.deleteMedia(mediaId, event.getOwnerUserId(), "SYSTEM");
         deleteMediaApproval(eventId, mediaId);
         return mediaMapper.toMessageResponse("Media deleted successfully");
     }
@@ -370,7 +438,23 @@ public class EventModerationServiceImpl implements IEventModerationService {
     }
 
     private EventMediaItemResponse toDetailedMediaItem(EventMediaApprovalDocument approval) {
-        String uploaderName = userIntegrationService.getUserDisplayName(approval.getUploaderUserId());
+        return toDetailedMediaItem(approval, new HashMap<>());
+    }
+
+    private EventMediaItemResponse toDetailedMediaItem(EventMediaApprovalDocument approval, Map<String, String> uploaderNameCache) {
+        String uploaderUserId = approval.getUploaderUserId();
+        String uploaderName = null;
+        if (uploaderUserId != null && !uploaderUserId.isBlank()) {
+            uploaderName = uploaderNameCache.computeIfAbsent(uploaderUserId, id -> {
+                try {
+                    return userIntegrationService.getUserDisplayName(id);
+                } catch (Exception e) {
+                    log.warn("Could not fetch display name for user {}: {}", id, e.getMessage());
+                    return "User " + id;
+                }
+            });
+        }
+
         MediaServiceResponse mediaDetails = null;
         try {
             mediaDetails = mediaServiceClient.getMediaDetails(approval.getMediaId());

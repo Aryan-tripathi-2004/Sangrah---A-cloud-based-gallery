@@ -1,5 +1,4 @@
-
-import { Component, EventEmitter, Input, Output, ChangeDetectionStrategy } from '@angular/core';
+import { Component, input, output, ChangeDetectionStrategy } from '@angular/core';
 
 @Component({
   selector: 'app-success-modal',
@@ -9,12 +8,12 @@ import { Component, EventEmitter, Input, Output, ChangeDetectionStrategy } from 
   templateUrl: './success-modal.component.html',
 })
 export class SuccessModalComponent {
-  @Input() isOpen = false;
-  @Input() title = 'Success';
-  @Input() message = '';
-  @Input() icon = '✅';
-  @Input() countdownSeconds: number | null = null;
-  @Input() closeLabel = 'Close';
+  readonly isOpen = input<boolean>(false);
+  readonly title = input<string>('Success');
+  readonly message = input<string>('');
+  readonly icon = input<string>('✅');
+  readonly countdownSeconds = input<number | null>(null);
+  readonly closeLabel = input<string>('Close');
 
-  @Output() closeModal = new EventEmitter<void>();
+  readonly closeModal = output<void>();
 }

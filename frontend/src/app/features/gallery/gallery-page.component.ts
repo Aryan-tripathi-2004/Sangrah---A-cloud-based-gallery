@@ -1,11 +1,12 @@
-import { Component, OnInit, inject, ChangeDetectionStrategy, signal, computed } from '@angular/core';
+import { Component, OnInit, inject, ChangeDetectionStrategy, signal, computed, DestroyRef } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 import { LayoutComponent } from '../../shared/layout/layout.component';
 import { MediaUploadComponent } from './components/media-upload.component';
 import { TimelineViewComponent } from './components/timeline-view.component';
 import { MediaPreviewModalComponent } from './components/media-preview-modal.component';
 import { GalleryService } from './gallery.service';
-import { MediaItem, StorageUsage } from '../../core/api/sangrah-api.service';
+import { MediaItem, StorageUsage } from '../../core/api/models/api.models';
 
 @Component({
   selector: 'app-gallery-page',
@@ -15,11 +16,12 @@ import { MediaItem, StorageUsage } from '../../core/api/sangrah-api.service';
   templateUrl: './gallery-page.component.html',
 })
 export class GalleryPageComponent implements OnInit {
-  private gallery = inject(GalleryService);
+  public readonly gallery = inject(GalleryService);
+  private readonly destroyRef = inject(DestroyRef);
 
-  // Modern Angular Signals for local state
+  // Modern Angular Signals for state
   activeTab = signal<'timeline' | 'upload' | 'stats'>('timeline');
-  storageUsage = signal<StorageUsage | null>(null);
+  readonly storageUsage = this.gallery.storageUsage;
   isPreviewOpen = signal<boolean>(false);
   selectedMedia = signal<MediaItem | null>(null);
 
@@ -36,10 +38,7 @@ export class GalleryPageComponent implements OnInit {
   }
 
   loadStorageUsage(): void {
-    this.gallery.loadStorageUsage().subscribe({
-      next: (usage) => {
-        this.storageUsage.set(usage);
-      },
+    this.gallery.loadStorageUsage().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       error: (error) => {
         console.error('Failed to load storage usage:', error);
       },
@@ -57,14 +56,6 @@ export class GalleryPageComponent implements OnInit {
   onMediaPreview(media: MediaItem): void {
     this.selectedMedia.set(media);
     this.isPreviewOpen.set(true);
-
-    const handleEscKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        this.closePreview();
-        document.removeEventListener('keydown', handleEscKey);
-      }
-    };
-    document.addEventListener('keydown', handleEscKey);
   }
 
   closePreview(): void {

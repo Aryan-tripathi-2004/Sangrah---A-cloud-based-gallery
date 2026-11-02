@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 @FeignClient(name = "auth-service", url = "${auth.service.url:http://localhost:8081}")
 public interface UserServiceClient {
 
-    @GetMapping("/api/v1/users")
+    @GetMapping("/internal/api/v1/users")
     AuthUserLookupResponse findUser(
             @RequestParam(value = "id", required = false) String id,
             @RequestParam(value = "email", required = false) String email

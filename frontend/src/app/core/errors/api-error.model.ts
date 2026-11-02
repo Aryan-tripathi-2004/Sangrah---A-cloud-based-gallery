@@ -67,6 +67,20 @@ export class NormalizedApiError extends Error {
         instance = body.instance;
         if (body.errors && typeof body.errors === 'object' && !Array.isArray(body.errors)) {
           validationErrors = body.errors;
+        } else if (Array.isArray(body.violations)) {
+          validationErrors = {};
+          for (const v of body.violations) {
+            if (typeof v === 'object' && v !== null && v.field && v.message) {
+              validationErrors[v.field] = v.message;
+            } else if (typeof v === 'string') {
+              const colonIdx = v.indexOf(':');
+              if (colonIdx > 0) {
+                validationErrors[v.substring(0, colonIdx).trim()] = v.substring(colonIdx + 1).trim();
+              } else {
+                validationErrors[v.trim()] = v.trim();
+              }
+            }
+          }
         }
       } else if (httpError.message) {
         detail = httpError.message;
@@ -92,4 +106,31 @@ export class NormalizedApiError extends Error {
     // Set the prototype explicitly for ES5/ES6 inheritance
     Object.setPrototypeOf(this, NormalizedApiError.prototype);
   }
+}
+
+/**
+ * Safely extracts a user-readable error message using instanceof type guards
+ * rather than blind type assertions.
+ */
+export function extractErrorMessage(error: unknown, fallbackMessage = 'An unexpected error occurred'): string {
+  if (error instanceof NormalizedApiError) {
+    return error.detail || error.message || fallbackMessage;
+  }
+  if (error instanceof HttpErrorResponse) {
+    if (typeof error.error === 'string' && error.error.trim()) {
+      return error.error;
+    }
+    if (error.error && typeof error.error === 'object') {
+      const body = error.error as { error?: string; message?: string; detail?: string };
+      return body.detail || body.message || body.error || error.message || fallbackMessage;
+    }
+    return error.message || fallbackMessage;
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (typeof error === 'string' && error.trim()) {
+    return error;
+  }
+  return fallbackMessage;
 }

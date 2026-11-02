@@ -1,6 +1,7 @@
 package com.example.Auth.application.service.impl;
 
 import com.example.Auth.application.service.interfaces.IJwtService;
+import com.example.Auth.shared.enums.Role;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
@@ -11,6 +12,7 @@ import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Date;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -32,11 +34,20 @@ public class JwtServiceImpl implements IJwtService {
 
     @Override
     public String generateAccessToken(String userId, String email) {
+        return generateAccessToken(userId, email, Set.of());
+    }
+
+    @Override
+    public String generateAccessToken(String userId, String email, Set<Role> roles) {
         Instant now = Instant.now();
+        String resolvedRole = (roles != null && roles.contains(Role.ADMIN))
+                ? Role.ADMIN.name()
+                : defaultRole;
+
         return Jwts.builder()
                 .subject(userId)
                 .claim("email", email)
-                .claim("role", defaultRole)
+                .claim("role", resolvedRole)
                 .claim("type", "ACCESS")
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plusSeconds(accessTokenExpirySeconds)))
@@ -73,6 +84,16 @@ public class JwtServiceImpl implements IJwtService {
                     .getSubject();
         } catch (ExpiredJwtException e) {
             return e.getClaims() != null ? e.getClaims().getSubject() : null;
+        }
+    }
+
+    @Override
+    public boolean isTokenValid(String token) {
+        try {
+            Jwts.parser().verifyWith(secretKey).build().parseSignedClaims(token);
+            return true;
+        } catch (Exception e) {
+            return false;
         }
     }
 }

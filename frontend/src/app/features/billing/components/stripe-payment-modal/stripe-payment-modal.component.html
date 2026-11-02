@@ -17,10 +17,10 @@
       <div class="mb-6 p-4 bg-slate-800/30 rounded-lg border border-slate-700/30">
         <div class="text-slate-400 text-sm mb-2">Amount Due</div>
         <div class="text-3xl font-bold text-blue-400">
-          {{ (paymentIntent$ | async)?.amount | currency }}
+          {{ paymentIntent()?.amount | currency }}
         </div>
         <div class="text-sm text-slate-500 mt-2">
-          {{ (paymentIntent$ | async)?.currency | uppercase }}
+          {{ paymentIntent()?.currency | uppercase }}
         </div>
       </div>
 
@@ -78,7 +78,7 @@
                    disabled:from-slate-600 disabled:to-slate-600 text-white py-3 rounded-lg font-semibold
                    transition-all duration-200 flex items-center justify-center gap-2">
         @if (!processing) {
-          <span>💳 Pay {{ (paymentIntent$ | async)?.amount | currency }}</span>
+          <span>💳 Pay {{ paymentIntent()?.amount | currency }}</span>
         }
         @if (processing) {
           <span>

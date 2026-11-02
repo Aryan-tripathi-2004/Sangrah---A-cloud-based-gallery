@@ -15,9 +15,13 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Instant;
 
+/**
+ * Internal-only endpoint for inter-service storage ledger queries.
+ * External access is blocked by the API Gateway perimeter guard (/internal/**).
+ */
 @Slf4j
 @RestController
-@RequestMapping("/api/v1/gallery")
+@RequestMapping("/internal/api/v1/gallery")
 @RequiredArgsConstructor
 @Tag(name = "Gallery Ledger", description = "Storage ledger endpoints for inter-service communication")
 public class GalleryLedgerController {
@@ -32,7 +36,7 @@ public class GalleryLedgerController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "500") int size) {
 
-        log.info("📋 Ledger query from {} to {} (page: {}, size: {})", startDate, endDate, page, size);
+        log.info("📋 [INTERNAL] Ledger query from {} to {} (page: {}, size: {})", startDate, endDate, page, size);
         Page<StorageUsageLedgerDTO> entries = mediaService.getLedgerEntriesBetweenDates(startDate, endDate, page, size);
         log.info("✅ Returned {} ledger entries (page {}/{})", entries.getNumberOfElements(), page, entries.getTotalPages());
         return ResponseEntity.ok(entries);

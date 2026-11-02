@@ -5,8 +5,11 @@ import com.example.Billing.api.dto.response.InvoiceGenerationResultResponse;
 import com.example.Billing.api.dto.response.StorageUsageLedgerDTO;
 import com.example.Billing.application.service.interfaces.IBillingService;
 import com.example.Billing.application.service.interfaces.IInvoiceGenerationService;
+import com.example.Billing.application.service.interfaces.ISequenceGeneratorService;
+import com.example.Billing.infrastructure.client.MediaServiceClient;
 import com.example.Billing.infrastructure.event.InvoiceCreatedEvent;
 import com.example.Billing.infrastructure.feign.GalleryServiceClient;
+import com.example.Billing.shared.exception.ForbiddenOperationException;
 import com.example.Billing.shared.util.BillingCalculator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,17 +26,11 @@ import java.util.HashSet;
 import java.util.Set;
 
 /**
- * Service for generating monthly invoices in batch
- * Runs on the 1st of each month at 00:00 UTC
+ * Service for generating monthly invoices in batch.
+ * Runs on the 1st of each month at 00:00 UTC.
  *
- * Example: Scheduled at April 1, 2026 00:00 UTC
- *          Generates invoices for March 2026 usage
- *
- * ARCHITECTURE: Uses Feign client to query Gallery service REST API
- * instead of direct database access. This follows microservice principles:
- * - Gallery owns its own data (sangrah_gallery)
- * - Billing queries Gallery via REST API (loose coupling)
- * - Independent scaling and deployment
+ * Uses MediaServiceClient as primary source of truth for storage usage ledgers,
+ * with graceful fallback to GalleryServiceClient.
  */
 @Slf4j
 @Service
@@ -42,16 +39,16 @@ public class InvoiceGenerationService implements IInvoiceGenerationService {
 
     private static final int LEDGER_PAGE_SIZE = 500;
 
+    private final MediaServiceClient mediaServiceClient;
     private final GalleryServiceClient galleryServiceClient;
     private final IBillingService billingService;
     private final BillingCalculator billingCalculator;
     private final ApplicationEventPublisher eventPublisher;
-
-    private final SequenceGeneratorService sequenceGeneratorService;
+    private final ISequenceGeneratorService sequenceGeneratorService;
 
     /**
-     * Main job: Generates monthly invoices for all users with storage usage
-     * Scheduled to run on the 1st of each month at 00:00 UTC
+     * Main job: Generates monthly invoices for all users with storage usage.
+     * Scheduled to run on the 1st of each month at 00:00 UTC.
      */
     @Scheduled(cron = "0 0 1 * * *")  // 1st of each month, 00:00 UTC
     public void generateMonthlyInvoices() {
@@ -70,9 +67,10 @@ public class InvoiceGenerationService implements IInvoiceGenerationService {
     }
 
     /**
-     * Core logic for monthly invoice generation
-     * Separated for testability and manual triggering
+     * Core logic for monthly invoice generation.
+     * Separated for testability and manual triggering.
      */
+    @Override
     public InvoiceGenerationResultResponse processMonthlyInvoiceGeneration() {
         // Step 1: Get previous month boundaries
         Instant[] monthRange = billingCalculator.getPreviousMonthRange();
@@ -82,7 +80,7 @@ public class InvoiceGenerationService implements IInvoiceGenerationService {
         log.info("📅 Generating invoices for period: {} to {}",
             startOfPreviousMonth, endOfPreviousMonth);
 
-        // Step 2: Query Gallery service for unique active users via paginated API
+        // Step 2: Query storage service for unique active users via paginated API
         Set<String> userIds = fetchUserIdsWithStorageUsage(startOfPreviousMonth, endOfPreviousMonth);
 
         log.info("👥 Found {} unique users with storage usage", userIds.size());
@@ -112,6 +110,25 @@ public class InvoiceGenerationService implements IInvoiceGenerationService {
         );
     }
 
+    @Override
+    public InvoiceGenerationResultResponse triggerMonthlyInvoiceGenerationForAdmin(String role) {
+        verifyAdminAccess(role);
+        return processMonthlyInvoiceGeneration();
+    }
+
+    @Override
+    public InvoiceGenerationResultResponse triggerCurrentMonthInvoiceGenerationForAdmin(String role) {
+        verifyAdminAccess(role);
+        return processCurrentMonthInvoiceGeneration();
+    }
+
+    private void verifyAdminAccess(String role) {
+        if (role == null || (!role.equalsIgnoreCase("ROLE_ADMIN") && !role.equalsIgnoreCase("ADMIN"))) {
+            throw new ForbiddenOperationException(
+                    "Administrative privileges required to access billing job operations");
+        }
+    }
+
     /**
      * Helper method to iterate through ledger entries in bounded pages
      * to avoid OutOfMemoryError when dealing with massive datasets.
@@ -123,7 +140,13 @@ public class InvoiceGenerationService implements IInvoiceGenerationService {
         Page<StorageUsageLedgerDTO> ledgerPage;
 
         do {
-            ledgerPage = galleryServiceClient.getLedgerEntries(startDate, endDate, page, LEDGER_PAGE_SIZE);
+            try {
+                ledgerPage = mediaServiceClient.getLedgerEntries(startDate, endDate, page, LEDGER_PAGE_SIZE);
+            } catch (Exception e) {
+                log.warn("⚠️ Failed to fetch ledger from MediaService, falling back to Gallery: {}", e.getMessage());
+                ledgerPage = galleryServiceClient.getLedgerEntries(startDate, endDate, page, LEDGER_PAGE_SIZE);
+            }
+
             if (ledgerPage != null && ledgerPage.hasContent()) {
                 for (StorageUsageLedgerDTO entry : ledgerPage.getContent()) {
                     if (entry.userId() != null && !entry.userId().isBlank()) {
@@ -140,7 +163,7 @@ public class InvoiceGenerationService implements IInvoiceGenerationService {
     }
 
     /**
-     * Generate a single user's invoice for a billing period
+     * Generate a single user's invoice for a billing period.
      */
     private void generateInvoiceForUser(String userId, Instant startDate, Instant endDate) {
         log.info("📄 Generating invoice for user: {} from {} to {}",
@@ -150,15 +173,11 @@ public class InvoiceGenerationService implements IInvoiceGenerationService {
         String invoiceId = billingCalculator.generateInvoiceId((int) sequenceGeneratorService.generateSequence("invoice_sequence"));
 
         // Call BillingService to create invoice
-        // This handles:
-        // - Duplicate checking
-        // - Cost calculation via CostEstimationService
-        // - Invoice document persistence
         InvoiceDTO createdInvoice = billingService.createInvoice(userId, invoiceId, startDate, endDate);
 
         log.info("✅ Invoice created successfully: {}", invoiceId);
 
-        // ✨ NEW: Publish event for listeners (notification service sends email)
+        // Publish event for listeners (notification service sends email)
         eventPublisher.publishEvent(new InvoiceCreatedEvent(
             this,
             createdInvoice.id(),
@@ -170,70 +189,70 @@ public class InvoiceGenerationService implements IInvoiceGenerationService {
     }
 
     /**
-     * TEST METHOD: Generate invoices for current month (for testing with recent uploads)
-     * This is useful for verification before 1st of next month
+     * TEST METHOD: Generate invoices for current month (for testing with recent uploads).
+     * This is useful for verification before 1st of next month.
      */
+    @Override
     public InvoiceGenerationResultResponse processCurrentMonthInvoiceGeneration() {
         log.info("📊 ===== GENERATING INVOICES FOR CURRENT MONTH (TEST) =====");
 
         // Get current month boundaries
         LocalDate today = LocalDate.now(ZoneId.of("UTC"));
-        YearMonth currentMonth = YearMonth.from(today);
+        YearMonth currentYearMonth = YearMonth.from(today);
+        Instant startOfMonth = currentYearMonth.atDay(1).atStartOfDay(ZoneId.of("UTC")).toInstant();
+        Instant now = Instant.now();
 
-        Instant startOfCurrentMonth = currentMonth.atDay(1)
-            .atStartOfDay(ZoneId.of("UTC"))
-            .toInstant();
+        log.info("📅 Generating test invoices for period: {} to {}", startOfMonth, now);
 
-        Instant endOfCurrentMonth = currentMonth.atEndOfMonth()
-            .atStartOfDay(ZoneId.of("UTC"))
-            .plusSeconds(86400)
-            .toInstant();
-
-        log.info("📅 Generating invoices for CURRENT month: {} to {}",
-            startOfCurrentMonth, endOfCurrentMonth);
-
-        // Step 2: Query Gallery service for unique active users via paginated API
-        Set<String> userIds = fetchUserIdsWithStorageUsage(startOfCurrentMonth, endOfCurrentMonth);
-
+        Set<String> userIds = fetchUserIdsWithStorageUsage(startOfMonth, now);
         log.info("👥 Found {} unique users with storage usage in current month", userIds.size());
 
-        // Generate invoices for each user
         int generatedCount = 0;
         int failureCount = 0;
 
         for (String userId : userIds) {
             try {
-                generateInvoiceForUser(userId, startOfCurrentMonth, endOfCurrentMonth);
+                generateInvoiceForUser(userId, startOfMonth, now);
                 generatedCount++;
-                log.debug("✅ Invoice generated for user: {}", userId);
-
+                log.info("✅ Test invoice generated for user: {}", userId);
             } catch (Exception e) {
-                log.error("❌ Failed to generate invoice for user: {}", userId, e);
+                log.error("❌ Failed to generate test invoice for user: {}", userId, e);
                 failureCount++;
             }
         }
-
-        log.info("✅ ===== CURRENT MONTH INVOICE GENERATION COMPLETED =====");
-        log.info("📈 Summary: Generated {} invoices, {} failures",
-            generatedCount, failureCount);
 
         return new InvoiceGenerationResultResponse(
             Instant.now(),
             generatedCount,
             failureCount,
-            startOfCurrentMonth,
-            endOfCurrentMonth
+            startOfMonth,
+            now
         );
     }
 
     /**
-     * Optional: Retry failed invoices (for future enhancement)
-     * Could be scheduled daily to retry failed generations
+     * Single user test method: Generate invoice for current month for specific user.
      */
-    @Scheduled(cron = "0 0 2 * * *")  // Daily at 02:00 UTC
-    public void retryFailedInvoices() {
-        log.info("🔄 Checking for failed invoices to retry...");
-        // TODO: Implement retry logic for failed invoice generations
-        log.info("✅ Retry check complete");
+    public InvoiceDTO generateCurrentMonthInvoiceForUser(String userId) {
+        log.info("👤 Generating current month test invoice for user: {}", userId);
+
+        LocalDate today = LocalDate.now(ZoneId.of("UTC"));
+        YearMonth currentYearMonth = YearMonth.from(today);
+        Instant startOfMonth = currentYearMonth.atDay(1).atStartOfDay(ZoneId.of("UTC")).toInstant();
+        Instant now = Instant.now();
+
+        String invoiceId = billingCalculator.generateInvoiceId((int) sequenceGeneratorService.generateSequence("invoice_sequence"));
+
+        InvoiceDTO invoice = billingService.createInvoice(userId, invoiceId, startOfMonth, now);
+
+        eventPublisher.publishEvent(new InvoiceCreatedEvent(
+            this,
+            invoice.id(),
+            userId,
+            invoice.invoiceId(),
+            invoice.charges().totalAmount()
+        ));
+
+        return invoice;
     }
 }

@@ -1,22 +1,28 @@
-import { Injectable, inject, PLATFORM_ID } from '@angular/core';
+import { Injectable, inject, PLATFORM_ID, signal } from '@angular/core';
+import { toObservable } from '@angular/core/rxjs-interop';
 import { isPlatformBrowser, DOCUMENT } from '@angular/common';
 import { Router } from '@angular/router';
-import { BehaviorSubject, Observable, throwError, of } from 'rxjs';
+import { Observable, throwError } from 'rxjs';
 import { map, catchError, tap, shareReplay, finalize } from 'rxjs/operators';
-import { SangrahApiService, AuthResponse } from '../api/sangrah-api.service';
+import { AuthApiService } from '../api/services/auth-api.service';
+import { UserApiService } from '../api/services/user-api.service';
+import { AuthResponse } from '../api/models/api.models';
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
-  private readonly api = inject(SangrahApiService);
+  private readonly authApi = inject(AuthApiService);
+  private readonly userApi = inject(UserApiService);
   private readonly router = inject(Router);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly document = inject(DOCUMENT);
 
-  private readonly isAuthenticatedSubject = new BehaviorSubject<boolean>(this.hasToken());
-  public readonly isAuthenticated$ = this.isAuthenticatedSubject.asObservable();
+  private readonly isAuthenticatedSignal = signal<boolean>(this.hasToken());
+  public readonly isAuthenticated = this.isAuthenticatedSignal.asReadonly();
+  public readonly isAuthenticated$ = toObservable(this.isAuthenticatedSignal);
 
-  private readonly tokenSubject = new BehaviorSubject<string | null>(this.getStoredToken());
-  public readonly token$ = this.tokenSubject.asObservable();
+  private readonly tokenSignal = signal<string | null>(this.getStoredToken());
+  public readonly token = this.tokenSignal.asReadonly();
+  public readonly token$ = toObservable(this.tokenSignal);
 
   private refreshInProgress$: Observable<string> | null = null;
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
@@ -26,11 +32,28 @@ export class AuthService {
     return isPlatformBrowser(this.platformId);
   }
 
+  public isTokenExpired(token: string | null): boolean {
+    if (!token) return true;
+    const expiry = this.getTokenExpiryMillis(token);
+    if (!expiry) return true;
+    return expiry <= Date.now();
+  }
+
   private hasToken(): boolean {
     if (!this.isBrowser()) {
       return false;
     }
-    return !!localStorage.getItem('token');
+    const token = localStorage.getItem('token');
+    if (!token) {
+      return false;
+    }
+    if (this.isTokenExpired(token)) {
+      const refreshToken = localStorage.getItem('refreshToken');
+      if (!refreshToken || this.isTokenExpired(refreshToken)) {
+        return false;
+      }
+    }
+    return true;
   }
 
   private getStoredToken(): string | null {
@@ -48,7 +71,7 @@ export class AuthService {
   }
 
   login(email: string, password: string): Observable<AuthResponse> {
-    return this.api.login({ email, password }).pipe(
+    return this.authApi.login({ email, password }).pipe(
       tap((response) => {
         this.handleAuthSuccess(response.token, response.refreshToken);
       })
@@ -56,7 +79,7 @@ export class AuthService {
   }
 
   register(email: string, password: string, displayName: string): Observable<AuthResponse> {
-    return this.api.register({ email, password, displayName }).pipe(
+    return this.authApi.register({ email, password, displayName }).pipe(
       tap((response) => {
         this.handleAuthSuccess(response.token, response.refreshToken);
       })
@@ -70,60 +93,89 @@ export class AuthService {
         localStorage.setItem('refreshToken', refreshToken);
       }
     }
-    this.tokenSubject.next(token);
-    this.isAuthenticatedSubject.next(true);
+    this.tokenSignal.set(token);
+    this.isAuthenticatedSignal.set(true);
     this.initVisibilityAndNetworkListeners();
     this.scheduleProactiveRefresh(token);
   }
 
-  logout(): void {
+  clearLocalSession(): void {
     this.cancelProactiveRefresh();
-    this.api.logout();
     if (this.isBrowser()) {
       localStorage.removeItem('token');
       localStorage.removeItem('refreshToken');
     }
-    this.tokenSubject.next(null);
-    this.isAuthenticatedSubject.next(false);
+    this.tokenSignal.set(null);
+    this.isAuthenticatedSignal.set(false);
+  }
+
+  logout(): void {
+    this.cancelProactiveRefresh();
+    this.authApi.logout();
+    this.clearLocalSession();
     this.router.navigate(['/login']);
   }
 
-  isAuthenticated(): boolean {
-    return this.hasToken();
+  public checkSession(): boolean {
+    if (!this.hasToken()) {
+      if (this.isAuthenticatedSignal()) {
+        this.clearLocalSession();
+      }
+      return false;
+    }
+    return true;
   }
 
   getToken(): string | null {
-    return this.getStoredToken();
+    return this.tokenSignal() ?? this.getStoredToken();
   }
 
   /**
    * Restore auth state on application startup or page reload.
    */
   restoreAuthState(): void {
+    if (!this.isBrowser()) return;
+
     const token = this.getStoredToken();
     const refreshToken = this.getStoredRefreshToken();
 
-    if (token && refreshToken) {
-      this.tokenSubject.next(token);
-      this.isAuthenticatedSubject.next(true);
-      this.initVisibilityAndNetworkListeners();
-
-      const expiry = this.getTokenExpiryMillis(token);
-      const now = Date.now();
-
-      // If token has already expired or will expire within 2 minutes, refresh immediately
-      if (expiry && (expiry - now < 120000)) {
-        console.log('🔄 [AuthService] Stored token expired or near expiry on startup. Refreshing...');
-        this.refreshToken().subscribe({
-          error: (err) => console.warn('⚠️ [AuthService] Startup refresh notice:', err)
-        });
-      } else {
-        this.scheduleProactiveRefresh(token);
-      }
-      console.log('🔄 [AuthService] Auth state restored from localStorage');
-    } else {
-      this.isAuthenticatedSubject.next(false);
+    if (!token) {
+      this.clearLocalSession();
+      return;
     }
+
+    if (this.isTokenExpired(token)) {
+      if (!refreshToken || this.isTokenExpired(refreshToken)) {
+        console.warn('⚠️ [AuthService] Stored token expired. Clearing unauthenticated session.');
+        this.clearLocalSession();
+        return;
+      }
+
+      console.log('🔄 [AuthService] Stored access token expired on startup. Refreshing...');
+      this.refreshToken().subscribe({
+        next: () => console.log('✅ [AuthService] Session restored via refresh token'),
+        error: (err: unknown) => {
+          console.warn('⚠️ [AuthService] Startup refresh failed. Session invalidated:', err);
+          this.clearLocalSession();
+        }
+      });
+      return;
+    }
+
+    this.tokenSignal.set(token);
+    this.isAuthenticatedSignal.set(true);
+    this.initVisibilityAndNetworkListeners();
+
+    const expiry = this.getTokenExpiryMillis(token);
+    const now = Date.now();
+    if (expiry && (expiry - now < 120000)) {
+      this.refreshToken().subscribe({
+        error: (err: unknown) => console.warn('⚠️ [AuthService] Near-expiry refresh notice:', err)
+      });
+    } else {
+      this.scheduleProactiveRefresh(token);
+    }
+    console.log('🔄 [AuthService] Valid auth state restored from localStorage');
   }
 
   /**
@@ -140,7 +192,7 @@ export class AuthService {
       return throwError(() => new Error('No refresh token available'));
     }
 
-    this.refreshInProgress$ = this.api.refreshAccessToken().pipe(
+    this.refreshInProgress$ = this.authApi.refreshAccessToken().pipe(
       map((response) => {
         const newToken = response.token;
         if (newToken) {
@@ -176,7 +228,7 @@ export class AuthService {
       console.log('🔄 [AuthService] Proactive refresh timer fired');
       this.refreshToken().subscribe({
         next: () => console.log('✅ [AuthService] Proactive token refresh succeeded'),
-        error: (err) => console.warn('⚠️ [AuthService] Proactive token refresh failed:', err)
+        error: (err: unknown) => console.warn('⚠️ [AuthService] Proactive token refresh failed:', err)
       });
     }, delayMs);
   }
@@ -205,7 +257,7 @@ export class AuthService {
       if (expiry && (expiry - Date.now() < 120000)) {
         console.log('🔄 [AuthService] Tab resumed / network reconnected with near-expired token. Refreshing...');
         this.refreshToken().subscribe({
-          error: (err) => console.warn('⚠️ [AuthService] Resume refresh notice:', err)
+          error: (err: unknown) => console.warn('⚠️ [AuthService] Resume refresh notice:', err)
         });
       }
     };
@@ -232,7 +284,7 @@ export class AuthService {
    * Get current user ID by fetching profile from API
    */
   getCurrentUserId(): Observable<string> {
-    return this.api.getProfile().pipe(
+    return this.userApi.getProfile().pipe(
       map((profile) => profile.id || ''),
       catchError((error) => {
         console.error('Failed to get current user ID:', error);

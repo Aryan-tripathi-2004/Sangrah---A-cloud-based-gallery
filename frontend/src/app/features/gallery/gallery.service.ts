@@ -1,8 +1,8 @@
 import { Injectable, inject, signal, computed } from '@angular/core';
-import { toObservable } from '@angular/core/rxjs-interop';
-import { Observable, throwError } from 'rxjs';
-import { tap, catchError, switchMap } from 'rxjs/operators';
-import { SangrahApiService, MediaItem, StorageUsage, TimelineResponse } from '../../core/api/sangrah-api.service';
+import { from, Observable, of, throwError, EMPTY } from 'rxjs';
+import { tap, catchError, concatMap, toArray, finalize, switchMap, map } from 'rxjs/operators';
+import { GalleryApiService } from '../../core/api/services/gallery-api.service';
+import { MediaItem, StorageUsage, TimelineResponse } from '../../core/api/models/api.models';
 
 export interface UploadProgress {
   fileName: string;
@@ -13,7 +13,7 @@ export interface UploadProgress {
 
 @Injectable({ providedIn: 'root' })
 export class GalleryService {
-  private api = inject(SangrahApiService);
+  private api = inject(GalleryApiService);
 
   // Modern Angular Signals state
   public readonly mediaList = signal<MediaItem[]>([]);
@@ -27,13 +27,6 @@ export class GalleryService {
   public readonly hasMedia = computed(() => this.mediaList().length > 0);
   public readonly hasUploadsInProgress = computed(() => this.uploadProgress().length > 0);
 
-  // Backwards-compatible RxJS observables via interop
-  public readonly mediaList$: Observable<MediaItem[]> = toObservable(this.mediaList);
-  public readonly storageUsage$: Observable<StorageUsage | null> = toObservable(this.storageUsage);
-  public readonly timeline$: Observable<TimelineResponse | null> = toObservable(this.timeline);
-  public readonly uploadProgress$: Observable<UploadProgress[]> = toObservable(this.uploadProgress);
-  public readonly loading$: Observable<boolean> = toObservable(this.loading);
-  public readonly currentTimelineView$: Observable<'daily' | 'monthly' | 'yearly'> = toObservable(this.currentTimelineView);
 
   /**
    * Load all media for the user
@@ -115,7 +108,7 @@ export class GalleryService {
     this.uploadProgress.update(current => [...current, progress]);
 
     return this.api.uploadGalleryMedia(file).pipe(
-      tap(() => {
+      switchMap((item) => {
         // Update progress to success
         this.uploadProgress.update(current =>
           current.map(p =>
@@ -125,15 +118,11 @@ export class GalleryService {
           )
         );
 
-        // AutoRemove after 2 seconds
-        setTimeout(() => {
-          this.uploadProgress.update(current =>
-            current.filter(p => p.fileName !== file.name)
-          );
-        }, 2000);
-
-        // Reload media list
-        this.loadMediaList().subscribe();
+        // Reload media list within the reactive stream
+        return this.loadMediaList().pipe(
+          map(() => item),
+          catchError(() => of(item))
+        );
       }),
       catchError(error => {
         // Update progress to error
@@ -156,36 +145,23 @@ export class GalleryService {
   }
 
   /**
-   * Upload multiple files sequentially
+   * Upload multiple files sequentially using native RxJS
    */
   uploadFiles(files: File[]): Observable<MediaItem[]> {
+    if (!files || files.length === 0) return of([]);
     this.loading.set(true);
-    const uploadedItems: MediaItem[] = [];
 
-    const uploadNext = (index: number): Observable<MediaItem[]> => {
-      if (index >= files.length) {
-        this.loading.set(false);
-        return new Observable(observer => {
-          observer.next(uploadedItems);
-          observer.complete();
-        });
-      }
-
-      return this.uploadFile(files[index]).pipe(
-        tap(item => {
-          uploadedItems.push(item);
-        }),
-        catchError(() => {
-          // Continue with next file even if one fails
-          return new Observable<MediaItem>(observer => {
-            observer.complete();
-          });
-        }),
-        switchMap(() => uploadNext(index + 1))
-      );
-    };
-
-    return uploadNext(0);
+    return from(files).pipe(
+      concatMap(file => this.uploadFile(file).pipe(
+        // Continue with the next file even if one fails
+        catchError((err) => {
+          console.error(`Failed to upload ${file.name}:`, err);
+          return EMPTY;
+        })
+      )),
+      toArray(), // Wait for all sequential uploads to finish, then emit as array
+      finalize(() => this.loading.set(false))
+    );
   }
 
   /**
@@ -228,6 +204,13 @@ export class GalleryService {
 
   getUploadProgressValue(): UploadProgress[] {
     return this.uploadProgress();
+  }
+
+  /**
+   * Remove a specific upload progress entry by filename
+   */
+  removeProgress(fileName: string): void {
+    this.uploadProgress.update(current => current.filter(p => p.fileName !== fileName));
   }
 
   /**

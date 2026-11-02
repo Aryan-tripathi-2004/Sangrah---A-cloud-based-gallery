@@ -20,6 +20,7 @@ import com.example.Event.shared.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -39,6 +40,7 @@ public class EventCollaboratorServiceImpl implements IEventCollaboratorService {
     private final EventCollaboratorMapper collaboratorMapper;
 
     @Override
+    @Transactional
     public CollaboratorMutationResponse addCollaborator(
             String eventId,
             AddCollaboratorRequest request,
@@ -76,6 +78,7 @@ public class EventCollaboratorServiceImpl implements IEventCollaboratorService {
     }
 
     @Override
+    @Transactional
     public MessageResponse removeCollaborator(
             String eventId,
             String collaboratorUserId,
@@ -89,6 +92,7 @@ public class EventCollaboratorServiceImpl implements IEventCollaboratorService {
     }
 
     @Override
+    @Transactional
     public CollaboratorMutationResponse updateCollaboratorPermissions(
             String eventId,
             String collaboratorUserId,

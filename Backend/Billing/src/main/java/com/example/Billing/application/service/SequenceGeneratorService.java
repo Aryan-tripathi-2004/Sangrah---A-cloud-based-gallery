@@ -1,5 +1,6 @@
 package com.example.Billing.application.service;
 
+import com.example.Billing.application.service.interfaces.ISequenceGeneratorService;
 import com.example.Billing.infrastructure.persistence.document.DatabaseSequence;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.mongodb.core.MongoOperations;
@@ -14,10 +15,11 @@ import static org.springframework.data.mongodb.core.query.Query.query;
 
 @Service
 @RequiredArgsConstructor
-public class SequenceGeneratorService {
+public class SequenceGeneratorService implements ISequenceGeneratorService {
 
     private final MongoOperations mongoOperations;
 
+    @Override
     public long generateSequence(String seqName) {
         DatabaseSequence counter = mongoOperations.findAndModify(
                 query(where("_id").is(seqName)),

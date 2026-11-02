@@ -3,16 +3,16 @@ package com.example.Billing.application.service.impl;
 import com.example.Billing.api.dto.response.InvoiceDTO;
 import com.example.Billing.api.dto.response.PaymentDTO;
 import com.example.Billing.api.dto.response.UserBillingSettingsDTO;
-import com.example.Billing.application.service.PDFGenerationService;
 import com.example.Billing.application.service.interfaces.ICostEstimationService;
 import com.example.Billing.application.service.interfaces.IInvoiceLifecycleService;
+import com.example.Billing.application.service.interfaces.IPDFGenerationService;
 import com.example.Billing.application.service.interfaces.IStripeIntegrationService;
 import com.example.Billing.infrastructure.client.AuthServiceClient;
+import com.example.Billing.infrastructure.client.EmailServiceClient;
 import com.example.Billing.infrastructure.client.dto.AuthUserResponse;
 import com.example.Billing.infrastructure.mapper.InvoiceMapper;
 import com.example.Billing.infrastructure.mapper.PaymentMapper;
 import com.example.Billing.infrastructure.persistence.document.InvoiceDocument;
-import com.example.Billing.infrastructure.persistence.document.PaymentDocument;
 import com.example.Billing.infrastructure.persistence.repository.InvoiceRepository;
 import com.example.Billing.infrastructure.persistence.repository.PaymentRepository;
 import com.example.Billing.shared.enums.InvoiceStatus;
@@ -23,8 +23,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -41,10 +43,11 @@ public class InvoiceLifecycleServiceImpl implements IInvoiceLifecycleService {
 
     private final InvoiceRepository invoiceRepository;
     private final PaymentRepository paymentRepository;
-    private final PDFGenerationService pdfGenerationService;
+    private final IPDFGenerationService pdfGenerationService;
     private final ICostEstimationService costEstimationService;
     private final IStripeIntegrationService stripeIntegrationService;
     private final AuthServiceClient authServiceClient;
+    private final EmailServiceClient emailServiceClient;
     private final InvoiceMapper invoiceMapper;
     private final PaymentMapper paymentMapper;
 
@@ -71,52 +74,40 @@ public class InvoiceLifecycleServiceImpl implements IInvoiceLifecycleService {
 
     @Override
     public byte[] getInvoicePDF(String userId, String invoiceId) {
-        log.info("📥 [PDF Download] Fetching PDF for invoice {} for user {}", invoiceId, userId);
+        log.info("📄 Fetching PDF for invoice {} for user {}", invoiceId, userId);
 
         InvoiceDocument invoice = invoiceRepository.findByInvoiceId(invoiceId)
-                .orElseThrow(() -> {
-                    log.error("❌ [PDF Download] Invoice not found: {}", invoiceId);
-                    return new ResourceNotFoundException("Invoice not found: " + invoiceId);
-                });
+            .orElseThrow(() -> new ResourceNotFoundException("Invoice not found: " + invoiceId));
 
         if (!invoice.getUserId().equals(userId)) {
-            log.error("❌ [PDF Download] Unauthorized access to invoice {} by user {}", invoiceId, userId);
+            log.warn("Unauthorized access to invoice PDF {} by user {}", invoiceId, userId);
             throw new ForbiddenOperationException("Unauthorized access to invoice");
         }
 
-        log.info("📊 [PDF Download] Invoice Status: {} | PDF Generated: {} | PDF Size: {} bytes",
-                invoice.getStatus(),
-                invoice.getPdfGeneratedAt() != null ? "YES" : "NO",
-                invoice.getPdfContent() != null ? invoice.getPdfContent().length : 0);
-
-        // ✨ BEST PRACTICE: Allow download for PENDING invoices too
-        // PDF shows status clearly (PENDING or PAID)
-        if (invoice.getPdfContent() == null || invoice.getPdfContent().length == 0) {
-            log.warn("⚠️ [PDF Download] PDF not available for invoice: {} - Status: {}. Generating on demand...", invoiceId, invoice.getStatus());
-            try {
-                byte[] generatedPdf = pdfGenerationService.generateInvoicePDF(invoiceId);
-                invoice.setPdfContent(generatedPdf);
-                invoice.setPdfGeneratedAt(Instant.now());
-                invoiceRepository.save(invoice);
-                log.info("✅ [PDF Download] PDF generated on demand successful for invoice: {}", invoiceId);
-            } catch (Exception e) {
-                log.error("❌ [PDF Download] Failed to generate PDF on demand: {}", e.getMessage());
-                throw new BillingProcessingException("Invoice PDF could not be generated at this time.");
-            }
+        if (invoice.getPdfContent() != null && invoice.getPdfContent().length > 0) {
+            log.info("✅ Returning cached PDF for invoice: {} ({} bytes)", invoiceId, invoice.getPdfContent().length);
+            return invoice.getPdfContent();
         }
 
-        if (invoice.getPdfContent() == null || invoice.getPdfContent().length == 0) {
-            throw new ResourceNotFoundException("PDF could not be generated for invoice: " + invoiceId);
+        log.info("⚙️ Generating PDF on-demand for invoice: {}", invoiceId);
+        byte[] pdfContent = pdfGenerationService.generateInvoicePDF(invoiceId);
+
+        try {
+            invoice.setPdfContent(pdfContent);
+            invoice.setPdfGeneratedAt(Instant.now());
+            invoiceRepository.save(invoice);
+            log.info("💾 Cached generated PDF in database: {} bytes", pdfContent.length);
+        } catch (Exception e) {
+            log.warn("⚠️ Failed to cache PDF in database (non-critical): {}", e.getMessage());
         }
 
-        log.info("✅ [PDF Download] PDF retrieved successfully for invoice: {} ({} bytes) - Status: {}",
-                invoiceId, invoice.getPdfContent().length, invoice.getStatus());
-        return invoice.getPdfContent();
+        return pdfContent;
     }
 
     @Override
     public Page<InvoiceDTO> getInvoiceHistory(String userId, Pageable pageable) {
-        log.info("📋 Fetching invoice history for user {}", userId);
+        log.info("📄 Fetching paginated invoices for user {} - page: {} size: {}",
+                userId, pageable.getPageNumber(), pageable.getPageSize());
 
         return invoiceRepository.findByUserIdOrderByIssuedDateDesc(userId, pageable)
             .map(invoiceMapper::toDTO);
@@ -126,18 +117,14 @@ public class InvoiceLifecycleServiceImpl implements IInvoiceLifecycleService {
     public List<PaymentDTO> getPaymentHistory(String userId, int page, int size) {
         log.info("💳 Fetching payment history for user {} - page: {} size: {}", userId, page, size);
 
-        List<PaymentDocument> payments = paymentRepository.findByUserIdOrderByTransactionDateDesc(userId)
+        return paymentRepository.findByUserIdOrderByTransactionDateDesc(userId, PageRequest.of(page, size))
             .stream()
-            .skip((long) page * size)
-            .limit(size)
-            .toList();
-
-        return payments.stream()
             .map(paymentMapper::toDTO)
             .toList();
     }
 
     @Override
+    @Transactional
     public InvoiceDTO createInvoice(String userId, String invoiceId, Instant startDate, Instant endDate) {
         log.info("💰 Creating invoice {} for user {} from {} to {}", invoiceId, userId, startDate, endDate);
 
@@ -178,13 +165,13 @@ public class InvoiceLifecycleServiceImpl implements IInvoiceLifecycleService {
             .charges(InvoiceDocument.Charges.builder()
                 .storageRate(BigDecimal.valueOf(0.01))
                 .subtotal(costs.totalCost())
-                .taxRate(BigDecimal.ZERO)  // TODO: Get tax rate from settings
+                .taxRate(BigDecimal.ZERO)
                 .tax(BigDecimal.ZERO)
                 .totalAmount(costs.totalCost())
                 .build())
             .status(InvoiceStatus.PENDING)
             .issuedDate(Instant.now())
-            .dueDate(Instant.now().plusSeconds(invoiceDueDays * 24 * 3600))  // configurable days from now
+            .dueDate(Instant.now().plusSeconds(invoiceDueDays * 24 * 3600))
             .paidDate(null)
             .createdAt(Instant.now())
             .updatedAt(Instant.now())
@@ -194,13 +181,13 @@ public class InvoiceLifecycleServiceImpl implements IInvoiceLifecycleService {
         InvoiceDocument savedInvoice = invoiceRepository.save(invoice);
         log.info("✅ Invoice created: {} (total: ${}) (email: {})", invoiceId, costs.totalCost(), userEmail);
 
-        // ✨ BEST PRACTICE: Generate PDF immediately when invoice is created (not on payment)
+        // Generate PDF immediately when invoice is created
         try {
             byte[] pdfContent = pdfGenerationService.generateInvoicePDF(invoiceId);
             savedInvoice.setPdfContent(pdfContent);
             savedInvoice.setPdfGeneratedAt(Instant.now());
-            invoiceRepository.save(savedInvoice);
-            log.info("✅ [BEST PRACTICE] PDF generated immediately on invoice creation: {} bytes", pdfContent.length);
+            savedInvoice = invoiceRepository.save(savedInvoice);
+            log.info("✅ PDF generated immediately on invoice creation: {} bytes", pdfContent.length);
         } catch (Exception e) {
             log.error("❌ PDF generation failed during invoice creation: {}", e.getMessage());
         }
@@ -209,6 +196,7 @@ public class InvoiceLifecycleServiceImpl implements IInvoiceLifecycleService {
     }
 
     @Override
+    @Transactional
     public InvoiceDTO markInvoiceAsPaid(String userId, String invoiceId) {
         log.info("💳 Marking invoice {} as PAID for user {}", invoiceId, userId);
 
@@ -230,30 +218,74 @@ public class InvoiceLifecycleServiceImpl implements IInvoiceLifecycleService {
         return invoiceMapper.toDTO(saved);
     }
 
-    /**
-     * Fetch user email from Auth Service
-     * Called when creating invoice to ensure email is available for payment notifications
-     */
+    @Override
+    @Transactional
+    public void processPaidInvoiceReceiptAndNotification(String userId, String invoiceId) {
+        log.info("💳 [Lifecycle] Processing paid invoice receipt and notification for invoice: {} | user: {}", invoiceId, userId);
+        InvoiceDocument invoice = invoiceRepository.findByInvoiceId(invoiceId)
+                .orElseThrow(() -> new ResourceNotFoundException("Invoice not found: " + invoiceId));
+
+        if (!invoice.getUserId().equals(userId)) {
+            throw new ForbiddenOperationException("Unauthorized access to invoice: " + invoiceId);
+        }
+
+        String targetEmail = invoice.getUserEmail();
+        if (targetEmail == null || targetEmail.isBlank()) {
+            targetEmail = getUserEmailFromAuthService(userId);
+            invoice.setUserEmail(targetEmail);
+        }
+
+        if (invoice.getStatus() != InvoiceStatus.PAID) {
+            invoice.setStatus(InvoiceStatus.PAID);
+            invoice.setPaidDate(Instant.now());
+            invoice.setUpdatedAt(Instant.now());
+        }
+
+        try {
+            byte[] paidPdfContent = pdfGenerationService.generateInvoicePDF(invoiceId);
+            invoice.setPdfContent(paidPdfContent);
+            invoice.setPdfGeneratedAt(Instant.now());
+        } catch (Exception pdfException) {
+            log.warn("⚠️ Failed to regenerate PDF with PAID status: {}", pdfException.getMessage());
+        }
+
+        invoiceRepository.save(invoice);
+
+        byte[] emailAttachment = invoice.getPdfContent() != null ? invoice.getPdfContent() : new byte[0];
+        BigDecimal amount = (invoice.getCharges() != null && invoice.getCharges().getTotalAmount() != null)
+                ? invoice.getCharges().getTotalAmount()
+                : BigDecimal.ZERO;
+
+        try {
+            emailServiceClient.sendInvoicePaidEmail(
+                    EmailServiceClient.EmailSendRequest.builder()
+                            .invoiceId(invoiceId)
+                            .userId(userId)
+                            .userEmail(targetEmail)
+                            .amount(amount)
+                            .pdfContent(emailAttachment)
+                            .emailType("INVOICE_PAID")
+                            .build()
+            );
+            log.info("✅ Payment confirmation email dispatched for invoice: {}", invoiceId);
+        } catch (Exception emailEx) {
+            log.error("❌ Failed to dispatch payment confirmation email: {}", emailEx.getMessage(), emailEx);
+        }
+    }
+
     private String getUserEmailFromAuthService(String userId) {
         try {
             log.debug("📧 Fetching user email from Auth Service for user: {}", userId);
             AuthUserResponse response = authServiceClient.getUserById(userId);
-
             if (response != null && response.data() != null) {
                 String email = response.data().email();
-
                 if (email != null && !email.isEmpty()) {
-                    log.info("✅ User email fetched from Auth Service: {}", email);
                     return email;
                 }
             }
-
-            log.warn("⚠️ Could not fetch user email from Auth Service, using fallback");
-            return billingFallbackEmail;
-
         } catch (Exception e) {
-            log.warn("⚠️ Failed to fetch user email from Auth Service: {}", e.getMessage());
-            return billingFallbackEmail;
+            log.warn("⚠️ Failed to fetch user email: {}", e.getMessage());
         }
+        return billingFallbackEmail;
     }
 }

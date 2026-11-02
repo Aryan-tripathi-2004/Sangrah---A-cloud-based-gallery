@@ -1,5 +1,6 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { Injectable, inject } from '@angular/core';
+import { Injectable, inject, PLATFORM_ID } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
 import { Observable } from 'rxjs';
 import { MediaItem, StorageUsage, TimelineResponse } from '../models/api.models';
 
@@ -7,9 +8,10 @@ import { MediaItem, StorageUsage, TimelineResponse } from '../models/api.models'
 export class GalleryApiService {
   private readonly http = inject(HttpClient);
   private readonly baseUrl = 'http://localhost:8080/api/v1';
+  private readonly platformId = inject(PLATFORM_ID);
 
   private getTokenFromStorage(): string | null {
-    if (typeof window === 'undefined') {
+    if (!isPlatformBrowser(this.platformId)) {
       return null;
     }
     return localStorage.getItem('token');

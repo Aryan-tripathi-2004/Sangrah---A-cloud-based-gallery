@@ -5,6 +5,7 @@ import com.example.Media.api.dto.response.MediaDeleteResponse;
 import com.example.Media.api.dto.response.MediaResponse;
 import com.example.Media.api.dto.response.StorageUsageLedgerResponse;
 import com.example.Media.api.dto.response.StorageUsageResponse;
+import com.example.Media.application.service.helper.MediaPersistenceHelper;
 import com.example.Media.application.service.interfaces.IAsyncStoragePurgeWorker;
 import com.example.Media.application.service.interfaces.IMediaService;
 import com.example.Media.infrastructure.mapper.MediaMapper;
@@ -22,6 +23,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.tika.Tika;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -31,25 +35,10 @@ import java.io.InputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.HexFormat;
-import java.util.List;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 
 /**
  * Concrete implementation of {@link IMediaService}.
- *
- * <p>All business logic has been moved verbatim from the former {@code MediaService}
- * class. The only structural changes are:
- * <ul>
- *   <li>This class now {@code implements IMediaService}, satisfying Dependency Inversion.</li>
- *   <li>{@code String domain} parameters are replaced with the type-safe {@link MediaDomain}
- *       enum to align with the updated document and repository contracts.</li>
- *   <li>A new {@link #getStorageLedger} method has been added to decouple the controller
- *       from the {@link StorageUsageLedgerRepository}.</li>
- * </ul>
- * </p>
  */
 @Slf4j
 @Service
@@ -61,177 +50,171 @@ public class MediaServiceImpl implements IMediaService {
         "video/mp4", "video/webm"
     );
 
+    private final Tika tika;
     private final MediaRepository mediaRepository;
     private final StorageUsageLedgerRepository ledgerRepository;
     private final StorageProvider storageProvider;
-    private final Tika tika;
     private final MediaMapper mediaMapper;
     private final IAsyncStoragePurgeWorker asyncStoragePurgeWorker;
+    private final MediaPersistenceHelper mediaPersistenceHelper;
 
-    @Value("${storage.limit.bytes}")
+    @Value("${media.storage.limit.bytes:10737418240}")
     private long storageLimitBytes;
 
-    @Value("${sangrah.storage.provider}")
+    @Value("${media.upload.max-size}")
+    private long maxFileSize;
+
+    @Value("${sangrah.storage.provider:LOCAL}")
     private String storageProviderName;
 
     /**
-     * Upload a file with deduplication support
+     * Upload a file with SHA-256 deduplication and per-domain routing.
      */
     @Override
     public MediaResponse uploadMedia(String userId, MediaDomain domain, String entityRefId, MultipartFile file) {
-        String storageKey = null;
+        log.info("📤 [Media Upload] Request | user: {} | domain: {} | entity: {} | file: {} ({} bytes)",
+                userId, domain, entityRefId, file.getOriginalFilename(), file.getSize());
+
+        if (file.isEmpty()) {
+            throw new DomainValidationException("File cannot be empty");
+        }
+
+        if (file.getSize() > maxFileSize) {
+            throw new DomainValidationException("File size exceeds limit: " + file.getSize() + " > " + maxFileSize);
+        }
+
+        String mimeType;
         try {
-            log.info("📤 [Media Upload] Starting upload for user: {} | domain: {} | file: {}",
-                userId, domain, file.getOriginalFilename());
-
-            // Step 1: Calculate SHA-256 checksum (for deduplication) - Stream I/O outside transaction
-            String checksum = calculateFileChecksum(file.getInputStream());
-            log.info("🔐 [Media Upload] Checksum calculated: {}", checksum);
-
-            // Step 2: Check for duplicates (same file already uploaded) - Read query outside transaction
-            Optional<MediaDocument> existingMedia = mediaRepository.findByChecksumSha256AndDeletedAtIsNull(checksum);
-            if (existingMedia.isPresent() && existingMedia.get().getUserId().equals(userId)) {
-                log.info("♻️  [Media Upload] Duplicate detected - reusing existing media: {}", existingMedia.get().getId());
-                return mediaMapper.toResponse(existingMedia.get());  // Return existing instead of uploading again
-            }
-
-            // Step 3: Determine MIME type - Stream I/O outside transaction
-            String mimeType;
-            try (InputStream is = file.getInputStream()) {
-                mimeType = tika.detect(is);
-            }
-            log.debug("📄 [Media Upload] MIME type detected: {}", mimeType);
-
-            if (!ALLOWED_MIME_TYPES.contains(mimeType)) {
-                throw new DomainValidationException("Unsupported or malicious file type detected: " + mimeType);
-            }
-
-            // Step 4: Save file to storage provider - Disk/Network I/O outside transaction
-            storageKey = storageProvider.save(file);
-            log.info("💾 [Media Upload] File saved with key: {}", storageKey);
-
-            // Step 5 & 6: Delegate pure database operations to transactional boundary
-            return persistMediaRecords(userId, domain, entityRefId, file, checksum, mimeType, storageKey);
-
-        } catch (IOException e) {
-            log.error("❌ [Media Upload] Failed to upload file: {}", e.getMessage(), e);
-            throw new MediaProcessingException("Failed to upload file due to an internal storage error.", e);
+            mimeType = tika.detect(file.getInputStream());
         } catch (Exception e) {
-            if (storageKey != null) {
-                try {
-                    storageProvider.delete(storageKey);
-                    log.warn("🧹 [Media Upload] Cleaned up orphaned physical file after failure: {}", storageKey);
-                } catch (IOException cleanupEx) {
-                    log.error("❌ [Media Upload] Failed to clean up orphaned storage file {}: {}", storageKey, cleanupEx.getMessage());
-                }
+            log.error("❌ Failed to detect MIME type: {}", e.getMessage());
+            throw new DomainValidationException("Unable to determine MIME type", e);
+        }
+
+        if (!ALLOWED_MIME_TYPES.contains(mimeType)) {
+            log.warn("⚠️  Disallowed MIME type: {}", mimeType);
+            throw new DomainValidationException("Unsupported MIME type: " + mimeType);
+        }
+
+        // Check user quota
+        long currentUsage = getStorageUsageBytes(userId);
+        if (currentUsage + file.getSize() > storageLimitBytes) {
+            log.warn("❌ Quota exceeded for user {}: current={} limit={}", userId, currentUsage, storageLimitBytes);
+            throw new DomainValidationException("Storage quota exceeded");
+        }
+
+        // SHA-256 deduplication check
+        String checksum;
+        try {
+            checksum = calculateFileChecksum(file.getInputStream());
+        } catch (IOException e) {
+            log.error("❌ Failed to calculate checksum: {}", e.getMessage());
+            throw new MediaProcessingException("Failed to calculate checksum", e);
+        }
+
+        Optional<MediaDocument> existingMedia = mediaRepository.findByChecksumSha256AndDeletedAtIsNull(checksum);
+        if (existingMedia.isPresent() && existingMedia.get().getUserId().equals(userId)) {
+            log.info("♻️  [Media Upload] Dedup HIT: existing ID={}", existingMedia.get().getId());
+            return mediaMapper.toResponse(existingMedia.get());
+        }
+
+        // Upload to storage provider
+        String storageKey;
+        try {
+            storageKey = storageProvider.save(file);
+            log.info("☁️  [Media Upload] Binary saved to storage provider: key={}", storageKey);
+        } catch (Exception e) {
+            log.error("❌ Storage provider failure: {}", e.getMessage());
+            throw new MediaProcessingException("Failed to save binary to storage provider", e);
+        }
+
+        // Delegate transactional record creation to dedicated helper bean (fixes Spring AOP self-invocation bypass)
+        try {
+            return mediaPersistenceHelper.persistMediaRecords(
+                    userId, domain, entityRefId, file, checksum, mimeType, storageKey, storageProviderName
+            );
+        } catch (Exception e) {
+            log.error("❌ Metadata persistence failed, cleaning up orphaned storage key {}: {}", storageKey, e.getMessage());
+            try {
+                storageProvider.delete(storageKey);
+            } catch (Exception cleanupEx) {
+                log.error("CRITICAL: Failed to clean up orphaned binary after DB failure: key={}", storageKey, cleanupEx);
             }
             throw e;
         }
     }
 
     /**
-     * Persist metadata and ledger entry within a scoped database transaction.
-     */
-    @Transactional
-    protected MediaResponse persistMediaRecords(
-            String userId,
-            MediaDomain domain,
-            String entityRefId,
-            MultipartFile file,
-            String checksum,
-            String mimeType,
-            String storageKey) {
-        Instant now = Instant.now();
-
-        // Step 5: Create MediaDocument
-        MediaDocument mediaDoc = MediaDocument.builder()
-                .userId(userId)
-                .domain(domain)
-                .entityRefId(entityRefId)
-                .fileName(file.getOriginalFilename())
-                .originalFileName(file.getOriginalFilename())
-                .mimeType(mimeType)
-                .sizeBytes(file.getSize())
-                .storageKey(storageKey)
-                .storageProvider(storageProviderName)
-                .checksumSha256(checksum)
-                .contentType(mimeType)
-                .uploadedAt(now)
-                .createdAt(now)
-                .updatedAt(now)
-                .build();
-
-        mediaRepository.save(mediaDoc);
-        log.info("✅ [Media Upload] MediaDocument created: {}", mediaDoc.getId());
-
-        // Step 6: Create StorageUsageLedger entry for billing
-        StorageUsageLedgerDocument ledgerEntry = StorageUsageLedgerDocument.builder()
-                .userId(userId)
-                .domain(domain)
-                .domainRefId(mediaDoc.getId())
-                .sizeBytes(file.getSize())
-                .startAt(now)
-                .sourceService("MediaService")
-                .createdAt(now)
-                .build();
-
-        ledgerRepository.save(ledgerEntry);
-        log.info("📊 [Media Upload] Ledger entry created for billing tracking");
-
-        log.info("✅ [Media Upload] Upload completed successfully");
-        return mediaMapper.toResponse(mediaDoc);
-    }
-
-    /**
-     * Retrieve a file by media ID
+     * Retrieve a media file stream as a Spring {@link Resource}.
      */
     @Override
     public Resource getMediaFile(String mediaId) {
+        log.info("📥 [Media Download] ID: {}", mediaId);
+
+        MediaDocument mediaDoc = mediaRepository.findById(mediaId)
+                .orElseThrow(() -> new ResourceNotFoundException("Media not found: " + mediaId));
+
+        if (mediaDoc.isDeleted()) {
+            log.warn("⚠️  Media is deleted: {}", mediaId);
+            throw new ResourceNotFoundException("Media has been deleted: " + mediaId);
+        }
+
         try {
-            log.info("📥 [Media Download] Fetching file for mediaId: {}", mediaId);
-
-            MediaDocument mediaDoc = mediaRepository.findByIdAndDeletedAtIsNull(mediaId)
-                    .orElseThrow(() -> {
-                        log.error("❌ [Media Download] Media not found or deleted: {}", mediaId);
-                        return new ResourceNotFoundException("MediaDocument", "id", mediaId);
-                    });
-
-            log.info("📄 [Media Download] Found media: {} | StorageKey: {}", mediaId, mediaDoc.getStorageKey());
             return storageProvider.load(mediaDoc.getStorageKey());
-
         } catch (IOException e) {
-            log.error("❌ [Media Download] Failed to load file: {}", e.getMessage(), e);
-            throw new MediaProcessingException("Failed to load file due to an internal storage error.", e);
+            log.error("❌ Failed to load file binary for storageKey {}: {}", mediaDoc.getStorageKey(), e.getMessage());
+            throw new MediaProcessingException("Failed to load media file", e);
         }
     }
 
     /**
-     * Get media details by ID
+     * Retrieve media metadata by ID.
      */
     @Override
-    public MediaResponse getMediaDetails(String mediaId) {
-        log.info("📋 [Media Details] Fetching details for mediaId: {}", mediaId);
+    public MediaResponse getMediaById(String mediaId) {
+        log.info("🔍 [Media Metadata] ID: {}", mediaId);
 
-        return mediaMapper.toResponse(mediaRepository.findByIdAndDeletedAtIsNull(mediaId)
-                .orElseThrow(() -> {
-                    log.error("❌ [Media Details] Media not found: {}", mediaId);
-                    return new ResourceNotFoundException("MediaDocument", "id", mediaId);
-                }));
+        MediaDocument mediaDoc = mediaRepository.findById(mediaId)
+                .orElseThrow(() -> new ResourceNotFoundException("Media not found: " + mediaId));
+
+        if (mediaDoc.isDeleted()) {
+            throw new ResourceNotFoundException("Media has been deleted: " + mediaId);
+        }
+
+        return mediaMapper.toResponse(mediaDoc);
     }
 
     /**
-     * Soft delete a media file
+     * Soft-delete a single media file (internal/system overload)
+     */
+    @Override
+    public MediaDeleteResponse deleteMedia(String mediaId) {
+        return deleteMedia(mediaId, "SYSTEM", "ADMIN");
+    }
+
+    /**
+     * Soft-delete a single media file with BOLA ownership verification
      */
     @Override
     @Transactional
-    public MediaDeleteResponse deleteMedia(String mediaId) {
-        log.info("🗑️  [Media Delete] Soft deleting mediaId: {}", mediaId);
+    public MediaDeleteResponse deleteMedia(String mediaId, String userId, String role) {
+        log.info("🗑️  [Media Delete] ID: {} | caller: {} | role: {}", mediaId, userId, role);
 
-        MediaDocument mediaDoc = mediaRepository.findByIdAndDeletedAtIsNull(mediaId)
-                .orElseThrow(() -> {
-                    log.error("❌ [Media Delete] Media not found or already deleted: {}", mediaId);
-                    return new ResourceNotFoundException("MediaDocument", "id", mediaId);
-                });
+        MediaDocument mediaDoc = mediaRepository.findById(mediaId)
+                .orElseThrow(() -> new ResourceNotFoundException("Media not found: " + mediaId));
+
+        if (mediaDoc.isDeleted()) {
+            log.warn("⚠️  Media already deleted: {}", mediaId);
+            return new MediaDeleteResponse("success", "Media already deleted");
+        }
+
+        // BOLA defense: Verify calling user owns the media or is an administrator/system
+        boolean isAdminOrSystem = "SYSTEM".equalsIgnoreCase(userId) 
+                || (role != null && (role.toUpperCase().contains("ADMIN") || role.toUpperCase().contains("SYSTEM")));
+        if (!isAdminOrSystem && (userId == null || !mediaDoc.getUserId().equals(userId))) {
+            log.warn("🚨 [BOLA Violation] User {} attempted to delete media {} owned by {}", userId, mediaId, mediaDoc.getUserId());
+            throw new SecurityException("Access denied: You do not own this media resource");
+        }
 
         // Mark as deleted
         mediaDoc.setDeletedAt(Instant.now());
@@ -266,19 +249,39 @@ public class MediaServiceImpl implements IMediaService {
     }
 
     /**
-     * Bulk soft-delete media files
+     * Bulk soft-delete media files (internal/system overload)
+     */
+    @Override
+    public MediaDeleteResponse deleteMediaBulk(List<String> mediaIds) {
+        return deleteMediaBulk(mediaIds, "SYSTEM", "ADMIN");
+    }
+
+    /**
+     * Bulk soft-delete media files with BOLA ownership verification
      */
     @Override
     @Transactional
-    public MediaDeleteResponse deleteMediaBulk(List<String> mediaIds) {
+    public MediaDeleteResponse deleteMediaBulk(List<String> mediaIds, String userId, String role) {
         if (mediaIds == null || mediaIds.isEmpty()) {
             log.warn("⚠️  [Media Bulk Delete] Received empty or null mediaIds list");
             return new MediaDeleteResponse("success", "No media IDs provided");
         }
 
-        log.info("🗑️  [Media Bulk Delete] Bulk soft deleting {} media items", mediaIds.size());
+        log.info("🗑️  [Media Bulk Delete] Bulk soft deleting {} media items | caller: {} | role: {}", mediaIds.size(), userId, role);
 
+        boolean isAdminOrSystem = "SYSTEM".equalsIgnoreCase(userId) 
+                || (role != null && (role.toUpperCase().contains("ADMIN") || role.toUpperCase().contains("SYSTEM")));
         List<MediaDocument> mediaDocs = mediaRepository.findAllById(mediaIds);
+
+        if (!isAdminOrSystem) {
+            for (MediaDocument doc : mediaDocs) {
+                if (doc.getUserId() != null && !doc.getUserId().equals(userId)) {
+                    log.warn("🚨 [BOLA Violation] User {} attempted to bulk-delete media {} owned by {}", userId, doc.getId(), doc.getUserId());
+                    throw new SecurityException("Access denied: You do not own all specified media resources");
+                }
+            }
+        }
+
         Instant now = Instant.now();
         List<MediaDocument> docsToUpdate = new ArrayList<>();
         List<String> storageKeysToPurge = new ArrayList<>();
@@ -296,65 +299,51 @@ public class MediaServiceImpl implements IMediaService {
 
         if (!docsToUpdate.isEmpty()) {
             mediaRepository.saveAll(docsToUpdate);
-            log.info("✅ [Media Bulk Delete] {} media documents marked as deleted", docsToUpdate.size());
         }
 
-        // Close storage usage ledgers for all deleted media
         List<StorageUsageLedgerDocument> ledgerEntries = ledgerRepository.findByDomainRefIdIn(mediaIds);
         List<StorageUsageLedgerDocument> entriesToUpdate = new ArrayList<>();
         for (StorageUsageLedgerDocument entry : ledgerEntries) {
             if (entry.isActive()) {
                 entry.setEndAt(now);
                 entriesToUpdate.add(entry);
-                log.info("📊 [Media Bulk Delete] Ledger entry closed: byte-days = {}", entry.getBytesDays());
             }
         }
 
         if (!entriesToUpdate.isEmpty()) {
             ledgerRepository.saveAll(entriesToUpdate);
-            log.info("📊 [Media Bulk Delete] {} ledger entries saved", entriesToUpdate.size());
         }
 
-        // Purge physical files asynchronously via background worker to eliminate N+1 I/O loops,
-        // prevent HTTP worker thread starvation, and avoid holding database transactions open during I/O
-        if (!storageKeysToPurge.isEmpty()) {
-            asyncStoragePurgeWorker.purgeStorageKeysAsync(storageKeysToPurge);
+        for (String storageKey : storageKeysToPurge) {
+            asyncStoragePurgeWorker.purgeStorageKeyAsync(storageKey);
         }
 
-        log.info("✅ [Media Bulk Delete] Bulk deletion completed for {} items", docsToUpdate.size());
-        return new MediaDeleteResponse("success", "Bulk media deleted: " + docsToUpdate.size() + " items");
+        log.info("✅ [Media Bulk Delete] Successfully soft-deleted {} items", docsToUpdate.size());
+        return new MediaDeleteResponse("success", docsToUpdate.size() + " items deleted");
     }
 
     /**
-     * List media files for a user in a domain
-     */
-    @Override
-    public List<MediaResponse> listMediaByUserAndDomain(String userId, MediaDomain domain) {
-        log.debug("📋 [Media List] Listing media for user: {} | domain: {}", userId, domain);
-
-        List<MediaResponse> media = mediaRepository.findByUserIdAndDomainAndDeletedAtIsNull(userId, domain)
-                .stream().map(mediaMapper::toResponse).toList();
-        log.info("📊 [Media List] Found {} media files", media.size());
-
-        return media;
-    }
-
-    /**
-     * List all media for a user across all domains
+     * List active media for a user.
      */
     @Override
     public List<MediaResponse> listMediaByUser(String userId) {
-        log.debug("📋 [Media List] Listing all media for user: {}", userId);
-
-        List<MediaResponse> media = mediaRepository.findByUserIdAndDeletedAtIsNull(userId)
+        log.info("📋 [Media List] Querying all active media for user: {}", userId);
+        return mediaRepository.findByUserIdAndDeletedAtIsNull(userId)
                 .stream().map(mediaMapper::toResponse).toList();
-        log.info("📊 [Media List] Found {} total media files across all domains", media.size());
-
-        return media;
     }
 
     /**
-     * Get storage usage stats for a user
+     * List active media for a user partitioned by domain.
+     */
+    @Override
+    public List<MediaResponse> listMediaByUserAndDomain(String userId, MediaDomain domain) {
+        log.info("📋 [Media List] Querying media for user: {} | domain: {}", userId, domain);
+        return mediaRepository.findByUserIdAndDomainAndDeletedAtIsNull(userId, domain)
+                .stream().map(mediaMapper::toResponse).toList();
+    }
+
+    /**
+     * Aggregated active storage consumption for a user.
      */
     @Override
     public long getStorageUsageBytes(String userId) {
@@ -390,6 +379,17 @@ public class MediaServiceImpl implements IMediaService {
     }
 
     /**
+     * Query paginated storage usage ledger entries across all users in a date range (for batch billing).
+     */
+    @Override
+    public Page<StorageUsageLedgerResponse> getLedgerEntriesBetweenDates(Instant startDate, Instant endDate, int page, int size) {
+        log.info("📊 [Storage Ledger] Querying paginated ledger entries from {} to {} (page: {}, size: {})", startDate, endDate, page, size);
+        Pageable pageable = PageRequest.of(page, size);
+        return ledgerRepository.findByStartAtBetween(startDate, endDate, pageable)
+                .map(mediaMapper::toLedgerResponse);
+    }
+
+    /**
      * Calculate SHA-256 checksum of a file
      */
     private String calculateFileChecksum(InputStream inputStream) throws IOException {
@@ -408,6 +408,67 @@ public class MediaServiceImpl implements IMediaService {
             log.error("❌ SHA-256 not supported: {}", e.getMessage());
             throw new IllegalStateException("SHA-256 not supported", e);
         }
+    }
+
+    @Override
+    public MediaResponse getAuthorizedMediaDetails(String mediaId, String callerUserId, String role) {
+        MediaResponse details = getMediaById(mediaId);
+
+        if (MediaDomain.GALLERY.equals(details.domain())) {
+            boolean isAdminOrSystem = "SYSTEM".equalsIgnoreCase(callerUserId)
+                    || (role != null && (role.toUpperCase().contains("ADMIN") || role.toUpperCase().contains("SYSTEM")));
+            if (!isAdminOrSystem && (callerUserId == null || !details.userId().equals(callerUserId))) {
+                log.warn("🚨 [BOLA Block] User {} attempted to access private Gallery media {} owned by {}", callerUserId, mediaId, details.userId());
+                throw new SecurityException("Access denied: Gallery media is private to its owner");
+            }
+        }
+        return details;
+    }
+
+    @Override
+    public boolean shouldStreamBinary(String acceptHeader) {
+        if (acceptHeader == null) {
+            return false;
+        }
+        if (acceptHeader.contains("application/json")) {
+            return false;
+        }
+        return acceptHeader.contains("image/")
+                || acceptHeader.contains("video/")
+                || acceptHeader.contains("application/octet-stream");
+    }
+
+    @Override
+    public List<MediaResponse> listAuthorizedMedia(String userId, String callerUserId, String role, MediaDomain domain) {
+        boolean isAdminOrSystem = "SYSTEM".equalsIgnoreCase(callerUserId)
+                || (role != null && (role.toUpperCase().contains("ADMIN") || role.toUpperCase().contains("SYSTEM")));
+        if (!isAdminOrSystem && (callerUserId == null || !callerUserId.equals(userId))) {
+            throw new SecurityException("Access denied: You can only query your own media list");
+        }
+        return domain != null ? listMediaByUserAndDomain(userId, domain) : listMediaByUser(userId);
+    }
+
+    @Override
+    public StorageUsageResponse getAuthorizedStorageUsage(String userId, String headerUserId, String role) {
+        String targetUserId = (userId != null && !userId.isBlank()) ? userId : headerUserId;
+        if (targetUserId == null || targetUserId.isBlank()) {
+            throw new IllegalArgumentException("User ID must be provided");
+        }
+
+        if (headerUserId != null && !headerUserId.isBlank() && (role == null || !role.toUpperCase().contains("ADMIN"))) {
+            if (!headerUserId.equals(targetUserId)) {
+                throw new SecurityException("Access denied: You cannot view storage metrics of another user");
+            }
+        }
+        return getStorageUsage(targetUserId);
+    }
+
+    @Override
+    public List<StorageUsageLedgerResponse> getAuthorizedStorageLedger(String userId, Instant startDate, Instant endDate, String headerUserId, String role) {
+        if (headerUserId != null && (role == null || !role.toUpperCase().contains("ADMIN"))) {
+            throw new SecurityException("Access denied: Storage ledger is restricted to internal services and administrators");
+        }
+        return getStorageLedger(userId, startDate, endDate);
     }
 
     @Override

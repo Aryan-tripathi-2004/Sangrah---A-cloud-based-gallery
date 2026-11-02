@@ -7,7 +7,7 @@ import com.example.Billing.api.dto.response.PaymentStatusResponse;
 import com.stripe.exception.StripeException;
 
 public interface IStripePaymentService {
-    String createPaymentIntent(String userId, String invoiceId, BigDecimal amount) throws StripeException;
+    String createPaymentIntent(String userId, String invoiceId, BigDecimal amount);
     void handlePaymentSuccess(String paymentIntentId);
     void handlePaymentFailed(String paymentIntentId, String failureReason);
     void retryFailedPayments();
@@ -18,7 +18,7 @@ public interface IStripePaymentService {
      * Creates a Stripe payment intent for an invoice and returns a checkout session response.
      * Internally fetches the invoice to get the amount, then creates the payment intent.
      */
-    CheckoutSessionResponse createCheckoutSession(String userId, String invoiceId) throws StripeException;
+    CheckoutSessionResponse createCheckoutSession(String userId, String invoiceId);
 
     /**
      * Returns the payment status for a given invoice.

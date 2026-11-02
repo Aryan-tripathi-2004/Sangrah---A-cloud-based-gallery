@@ -1,5 +1,6 @@
 package com.example.Email.application.service.impl;
 
+import com.example.Email.application.service.interfaces.IAsyncEmailSender;
 import com.example.Email.application.service.interfaces.IEmailReconciliationService;
 import com.example.Email.infrastructure.persistence.document.EmailLogDocument;
 import com.example.Email.infrastructure.persistence.repository.EmailLogRepository;
@@ -29,7 +30,7 @@ import java.util.List;
 public class EmailReconciliationServiceImpl implements IEmailReconciliationService {
 
     private final EmailLogRepository emailLogRepository;
-    private final AsyncEmailSender asyncEmailSender;
+    private final IAsyncEmailSender asyncEmailSender;
 
     @Value("${app.email.from}")
     private String defaultFromEmail;

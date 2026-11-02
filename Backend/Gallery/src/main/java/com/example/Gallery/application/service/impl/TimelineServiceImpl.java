@@ -29,6 +29,16 @@ public class TimelineServiceImpl implements ITimelineService {
     private final TimelineMapper timelineMapper;
 
     @Override
+    public TimelineResponse getTimeline(String userId, TimelineGroupType groupBy) {
+        TimelineGroupType groupType = groupBy != null ? groupBy : TimelineGroupType.DAILY;
+        return switch (groupType) {
+            case DAILY -> getDailyTimeline(userId);
+            case MONTHLY -> getMonthlyTimeline(userId);
+            case YEARLY -> getYearlyTimeline(userId);
+        };
+    }
+
+    @Override
     public TimelineResponse getDailyTimeline(String userId) {
         log.info("📅 Generating daily timeline for user: {}", userId);
 

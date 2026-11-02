@@ -51,7 +51,7 @@
       <!-- Uploaders Grid -->
       @if (getFilteredUploaders().length > 0) {
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          @for (group of getFilteredUploaders(); track group) {
+          @for (group of getFilteredUploaders(); track group.uploaderId) {
             <div
               (click)="selectedUploader = group"
               class="rounded-lg bg-slate-800/30 border border-slate-700/50 hover:border-blue-500 cursor-pointer transition p-6 space-y-4">
@@ -147,23 +147,23 @@
       <!-- Media Items with Preview -->
       @if (getFilteredMediaFromUploader().length > 0) {
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          @for (media of getFilteredMediaFromUploader(); track media) {
+          @for (media of getFilteredMediaFromUploader(); track media.mediaId) {
             <div class="rounded-lg bg-slate-800/30 border border-slate-700/50 overflow-hidden">
               <!-- Media Preview (Clickable) -->
               <div class="h-48 bg-gradient-to-br from-blue-600/20 to-purple-600/20 flex items-center justify-center relative overflow-hidden"
                 (click)="openPreview(media)">
-                @if (isImageFile(media) && !isMediaFailed(media.mediaId)) {
-                  <img [src]="getMediaUrl(media)"
+                @if (isImage(media.mimeType, media.fileName) && !isMediaFailed(media.mediaId)) {
+                  <img [src]="getMediaUrl(media.mediaId)"
                     [alt]="media.fileName" class="w-full h-full object-cover"
                     (error)="onMediaLoadError(media.mediaId)">
                 }
-                @if (isVideoFile(media) && !isMediaFailed(media.mediaId)) {
+                @if (isVideo(media.mimeType, media.fileName) && !isMediaFailed(media.mediaId)) {
                   <video class="w-full h-full object-cover" muted
                     (error)="onMediaLoadError(media.mediaId)">
-                    <source [src]="getMediaUrl(media)" />
+                    <source [src]="getMediaUrl(media.mediaId)" />
                   </video>
                 }
-                @if (isMediaFailed(media.mediaId) || (!isImageFile(media) && !isVideoFile(media))) {
+                @if (isMediaFailed(media.mediaId) || (!isImage(media.mimeType, media.fileName) && !isVideo(media.mimeType, media.fileName))) {
                   <div class="flex flex-col items-center justify-center text-slate-400 p-2">
                     <span class="text-4xl mb-1">📄</span>
                     <span class="text-xs text-center truncate max-w-[150px]">{{ media.fileName || 'Media' }}</span>
@@ -269,10 +269,12 @@
     }
 
     <!-- Preview Modal -->
-    <app-media-preview-modal
-      [isOpen]="previewOpen"
-      [media]="previewMedia"
-      [fileUrlOverride]="previewFileUrl"
-      (closeModal)="closePreview()"
-    ></app-media-preview-modal>
+    @if (previewOpen) {
+      <app-media-preview-modal
+        [isOpen]="previewOpen"
+        [media]="previewMedia"
+        [fileUrlOverride]="previewFileUrl"
+        (closeModal)="closePreview()"
+      ></app-media-preview-modal>
+    }
   </div>

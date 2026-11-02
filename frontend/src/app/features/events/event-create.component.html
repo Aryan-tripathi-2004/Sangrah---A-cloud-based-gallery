@@ -135,10 +135,10 @@
               />
 
               <!-- Preview -->
-              @if (coverPreviewUrl) {
+              @if (coverPreviewUrl()) {
                 <div class="mt-4">
                   <img
-                    [src]="coverPreviewUrl"
+                    [src]="coverPreviewUrl()"
                     alt="Cover preview"
                     class="w-full h-48 object-cover rounded-lg border border-slate-700"
                     />
@@ -169,10 +169,10 @@
 
                 <button
                   type="submit"
-                  [disabled]="isSubmitting || !eventForm.valid"
+                  [disabled]="isSubmitting() || !eventForm.valid"
                   class="flex-1 px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 disabled:from-slate-600 disabled:to-slate-600 rounded-lg font-semibold transition"
                   >
-                  {{ isSubmitting ? '⏳ Creating...' : '✨ Create Event' }}
+                  {{ isSubmitting() ? '⏳ Creating...' : '✨ Create Event' }}
                 </button>
 
                 <a
@@ -185,9 +185,9 @@
               </div>
 
               <!-- Error Message -->
-              @if (errorMessage) {
+              @if (errorMessage()) {
                 <div class="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
-                  <p class="text-red-400">{{ errorMessage }}</p>
+                  <p class="text-red-400">{{ errorMessage() }}</p>
                 </div>
               }
 

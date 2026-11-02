@@ -1,9 +1,16 @@
-import { Component, OnDestroy, OnInit, inject, ChangeDetectorRef, ChangeDetectionStrategy } from '@angular/core';
+import { Component, OnDestroy, OnInit, inject, ChangeDetectionStrategy, DestroyRef, signal, computed, NgZone } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormBuilder, ReactiveFormsModule, Validators, FormGroup } from '@angular/forms';
-import { ActivatedRoute, RouterLink, Router } from '@angular/router';
-import { SangrahApiService, Event } from '../../core/api/sangrah-api.service';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { of } from 'rxjs';
+import { switchMap, catchError } from 'rxjs/operators';
+import { EventApiService } from '../../core/api/services/event-api.service';
 import { AuthService } from '../../core/auth/auth.service';
+import { Event } from '../../core/api/models/api.models';
+import { EventService } from './event.service';
+import { EventPermissionsService, EventPermissions, DEFAULT_EVENT_PERMISSIONS } from './event-permissions.service';
+import { extractErrorMessage } from '../../core/errors/api-error.model';
+
 import { LayoutComponent } from '../../shared/layout/layout.component';
 import { EventMediaUploadComponent } from './components/event-media-upload.component';
 import { EventMediaApprovalComponent } from './components/event-media-approval.component';
@@ -11,7 +18,6 @@ import { EventTimelineComponent } from './components/event-timeline.component';
 import { EventAccessRequestComponent } from './components/event-access-request.component';
 import { EventAccessRequestsComponent } from './components/event-access-requests.component';
 import { EventCollaboratorsComponent } from './components/event-collaborators.component';
-import { EventService } from './event.service';
 import { EditEventModalComponent } from '../../shared/components/edit-event-modal.component';
 import { DeleteEventModalComponent } from '../../shared/components/delete-event-modal.component';
 import { SuccessModalComponent } from '../../shared/components/success-modal.component';
@@ -23,7 +29,6 @@ import { ErrorModalComponent } from '../../shared/components/error-modal.compone
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     CommonModule,
-    ReactiveFormsModule,
     RouterLink,
     LayoutComponent,
     EventMediaUploadComponent,
@@ -40,86 +45,71 @@ import { ErrorModalComponent } from '../../shared/components/error-modal.compone
   templateUrl: './event-detail.component.html',
 })
 export class EventDetailComponent implements OnInit, OnDestroy {
-  private api = inject(SangrahApiService);
-  private route = inject(ActivatedRoute);
-  private router = inject(Router);
-  private authService = inject(AuthService);
-  private eventService = inject(EventService);
-  private cdr = inject(ChangeDetectorRef);
-  private fb = inject(FormBuilder);
+  private readonly api = inject(EventApiService);
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly authService = inject(AuthService);
+  private readonly eventService = inject(EventService);
+  private readonly permissionsService = inject(EventPermissionsService);
+  private readonly ngZone = inject(NgZone);
 
-  event: Event | null = null;
-  eventId = '';
-  isLoading = true;
-  requiresApproval = false;
-  currentTab = 'timeline';
-  isEventOwner = false;
-  isCollaborator = false;
+  event = signal<Event | null>(null);
+  eventId = signal<string>('');
+  isLoading = signal<boolean>(true);
+  requiresApproval = signal<boolean>(false);
+  currentTab = signal<string>('timeline');
 
-  // Collaborator-specific permissions
-  canUploadMedia = false;
-  canDirectUpload = false;
-  canDeleteMedia = false;
-  canReviewMedia = false;
-  canReviewAccessRequests = false;
-  canEditEventDetails = false;
+  // Permissions state managed by EventPermissionsService
+  readonly permissions = signal<EventPermissions>(DEFAULT_EVENT_PERMISSIONS);
+  readonly isEventOwner = computed(() => this.permissions().isEventOwner);
+  readonly isCollaborator = computed(() => this.permissions().isCollaborator);
+  readonly canUploadMedia = computed(() => this.permissions().canUploadMedia);
+  readonly canDirectUpload = computed(() => this.permissions().canDirectUpload);
+  readonly canDeleteMedia = computed(() => this.permissions().canDeleteMedia);
+  readonly canReviewMedia = computed(() => this.permissions().canReviewMedia);
+  readonly canReviewAccessRequests = computed(() => this.permissions().canReviewAccessRequests);
+  readonly canEditEventDetails = computed(() => this.permissions().canEditEventDetails);
 
-  pendingAccessCount = 0;
+  pendingAccessCount = signal<number>(0);
 
-  showEditModal = false;
-  showDeleteModal = false;
-  showSuccessModal = false;
-  showErrorModal = false;
+  showEditModal = signal<boolean>(false);
+  showDeleteModal = signal<boolean>(false);
+  showSuccessModal = signal<boolean>(false);
+  showErrorModal = signal<boolean>(false);
 
-  successTitle = '';
-  successMessage = '';
-  successCountdownSeconds: number | null = null;
-  successContext: 'edit' | 'delete' | null = null;
+  successTitle = signal<string>('');
+  successMessage = signal<string>('');
+  successCountdownSeconds = signal<number | null>(null);
+  successContext = signal<'edit' | 'delete' | null>(null);
 
-  errorTitle = 'Action failed';
-  errorMessage = '';
-  lastFailedAction: 'save' | 'delete' | null = null;
+  errorTitle = signal<string>('Action failed');
+  errorMessage = signal<string>('');
+  lastFailedAction = signal<'save' | 'delete' | null>(null);
 
-  isSavingEvent = false;
-  isDeletingEvent = false;
+  isDeletingEvent = signal<boolean>(false);
   private deleteCountdownTimer: ReturnType<typeof setInterval> | null = null;
-  selectedCoverImageFile: File | null = null;
-  selectedCoverImagePreviewUrl: string | null = null;
-  selectedCoverImageFileName: string | null = null;
 
-  editForm: FormGroup = this.fb.group({
-    title: ['', [Validators.required, Validators.minLength(3), Validators.maxLength(200)]],
-    description: ['', [Validators.maxLength(2000)]],
-    eventDate: ['', [Validators.required]],
-    visibility: ['PUBLIC', [Validators.required]],
-    moderationEnabled: [false],
+  collaboratorCount = computed(() => this.event()?.collaborators?.length ?? 0);
+  mediaCount = computed(() => this.eventService.getEventMediaValue().length);
+
+  currentCoverImageUrl = computed(() => {
+    const e = this.event();
+    return e?.coverImageId ? this.api.getMediaFileUrl(e.coverImageId) : null;
   });
 
-  private editFormSnapshot = '';
-
-  get collaboratorCount(): number {
-    return this.event?.collaborators?.length ?? 0;
-  }
-
-  get mediaCount(): number {
-    return this.eventService.getEventMediaValue().length;
-  }
-
-  get hasEditChanges(): boolean {
-    return JSON.stringify(this.normalizeEditFormValue(this.editForm.getRawValue())) !== this.editFormSnapshot || !!this.selectedCoverImageFile;
-  }
-
-  get canSaveEditChanges(): boolean {
-    return this.editForm.valid && this.hasEditChanges && !this.isSavingEvent;
+  constructor() {
+    this.destroyRef.onDestroy(() => {
+      this.clearDeleteCountdown();
+    });
   }
 
   ngOnInit(): void {
-    this.route.paramMap.subscribe((params) => {
-      const eventId = params.get('id');
-
-      if (eventId) {
-        this.eventId = eventId;
-        this.loadEvent(eventId);
+    this.route.paramMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((params) => {
+      const id = params.get('id');
+      if (id) {
+        this.eventId.set(id);
+        this.loadEvent(id);
       }
     });
   }
@@ -133,347 +123,194 @@ export class EventDetailComponent implements OnInit, OnDestroy {
   }
 
   loadEvent(eventId: string): void {
-    this.isLoading = true;
-    this.api.getEventById(eventId).subscribe({
-      next: (event: any) => {
-        this.event = event;
+    this.isLoading.set(true);
 
-        this.requiresApproval = event.requiresApproval === true;
-        this.pendingAccessCount = 0;
-        this.isEventOwner = false;
-        this.isCollaborator = false;
-        this.canUploadMedia = false;
-        this.canDirectUpload = false;
-        this.canDeleteMedia = false;
-        this.canReviewMedia = false;
-        this.canReviewAccessRequests = false;
-        this.canEditEventDetails = false;
+    this.api.getEventById(eventId)
+      .pipe(
+        switchMap((event: Event) => {
+          this.event.set(event);
+          this.requiresApproval.set(event.requiresApproval === true);
+          this.pendingAccessCount.set(0);
 
-        this.authService.getCurrentUserId().subscribe({
-          next: (currentUserId: string) => {
-            this.applyPermissions(event, currentUserId);
+          return this.authService.getCurrentUserId().pipe(
+            catchError(() => of('')),
+            switchMap((currentUserId: string) => {
+              const perms = currentUserId
+                ? this.permissionsService.computePermissions(event, currentUserId)
+                : DEFAULT_EVENT_PERMISSIONS;
+              this.permissions.set(perms);
 
-            if (!this.requiresApproval) {
-              this.loadEventMedia(eventId);
-            } else {
-              this.isLoading = false;
-              this.cdr.markForCheck();
-            }
-          },
-
-          error: () => {
-            this.isLoading = false;
-            this.cdr.markForCheck();
-          },
-        });
-      },
-
-      error: () => {
-        this.isLoading = false;
-        this.cdr.markForCheck();
-      },
-    });
-  }
-
-  private applyPermissions(event: Event, currentUserId: string): void {
-    this.isEventOwner = currentUserId === event.ownerUserId;
-
-    if (this.isEventOwner) {
-      this.isCollaborator = true;
-      this.canUploadMedia = true;
-      this.canDirectUpload = true;
-      this.canDeleteMedia = true;
-      this.canReviewMedia = true;
-      this.canReviewAccessRequests = true;
-      this.canEditEventDetails = true;
-      return;
-    }
-
-    const collaborator = event.collaborators?.find((c: any) => c.userId === currentUserId);
-
-    if (collaborator) {
-      this.isCollaborator = true;
-      this.canUploadMedia = collaborator.canUploadMedia === true;
-      this.canDirectUpload = collaborator.canDirectUpload === true;
-      this.canDeleteMedia = collaborator.canDeleteMedia === true;
-      this.canReviewMedia = collaborator.canReviewMedia === true;
-      this.canReviewAccessRequests = collaborator.canReviewAccessRequests === true;
-      this.canEditEventDetails = collaborator.canEditEventDetails === true;
-    }
+              if (!this.requiresApproval()) {
+                return this.eventService.loadEventMedia(eventId);
+              }
+              return of([]);
+            })
+          );
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe({
+        next: () => this.isLoading.set(false),
+        error: () => this.isLoading.set(false),
+      });
   }
 
   loadEventMedia(eventId: string): void {
-    this.eventService.loadEventMedia(eventId).subscribe({
-      next: () => {
-        this.isLoading = false;
-
-        try {
-          this.cdr.detectChanges();
-        } catch {}
-      },
-
-      error: () => {
-        this.isLoading = false;
-
-        try {
-          this.cdr.detectChanges();
-        } catch {}
-      },
-    });
+    this.eventService.loadEventMedia(eventId)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => this.isLoading.set(false),
+        error: () => this.isLoading.set(false),
+      });
   }
 
   onUploadComplete(): void {
-    this.loadEventMedia(this.eventId);
+    this.loadEventMedia(this.eventId());
   }
 
   onMediaUpdated(): void {
-    this.loadEventMedia(this.eventId);
+    this.loadEventMedia(this.eventId());
   }
 
   openEditEventModal(): void {
-    if (this.event) {
-      this.editForm.reset({
-        title: this.event.title,
-        description: this.event.description || '',
-        eventDate: this.formatDateForInput(this.event.eventDate),
-        visibility: this.event.visibility,
-        moderationEnabled: this.event.moderationEnabled || false,
-      });
-
-      this.editForm.markAsPristine();
-      this.editForm.markAsUntouched();
-      this.editFormSnapshot = JSON.stringify(this.normalizeEditFormValue(this.editForm.getRawValue()));
-      this.resetSelectedCoverImage();
-
-      this.showEditModal = true;
-      this.showDeleteModal = false;
-      this.showErrorModal = false;
-      this.showSuccessModal = false;
-    }
+    this.showEditModal.set(true);
+    this.showDeleteModal.set(false);
+    this.showErrorModal.set(false);
+    this.showSuccessModal.set(false);
   }
 
   closeEditModal(): void {
-    if (this.isSavingEvent) {
-      return;
-    }
-
-    this.showEditModal = false;
+    this.showEditModal.set(false);
   }
 
-  onCoverFileSelected(file: File | null): void {
-    this.selectedCoverImageFile = file;
-    this.selectedCoverImageFileName = file?.name ?? null;
-
-    if (this.selectedCoverImagePreviewUrl) {
-      URL.revokeObjectURL(this.selectedCoverImagePreviewUrl);
-      this.selectedCoverImagePreviewUrl = null;
-    }
-
-    if (file) {
-      this.selectedCoverImagePreviewUrl = URL.createObjectURL(file);
-    }
-  }
-
-  saveEventChanges(): void {
-    if (!this.eventId || !this.event || this.isSavingEvent) {
-      return;
-    }
-
-    if (this.editForm.invalid) {
-      this.editForm.markAllAsTouched();
-      return;
-    }
-
-    if (!this.hasEditChanges) {
-      return;
-    }
-
-    const formValue = this.normalizeEditFormValue(this.editForm.getRawValue());
-    const eventDetails = {
-      title: formValue.title,
-      description: formValue.description,
-      eventDate: formValue.eventDate,
-      visibility: formValue.visibility,
-      moderationEnabled: formValue.moderationEnabled,
-    };
-
-    this.isSavingEvent = true;
-
-    this.api.updateEvent(this.eventId, eventDetails, this.selectedCoverImageFile || undefined).subscribe({
-      next: (updatedEvent: any) => {
-        this.event = {
-          ...this.event,
-          ...updatedEvent,
-        } as Event;
-
-        this.showEditModal = false;
-        this.isSavingEvent = false;
-        this.resetSelectedCoverImage();
-        this.showErrorModal = false;
-        this.showSuccessModal = true;
-        this.successContext = 'edit';
-        this.successTitle = 'Event updated';
-        this.successMessage = 'The event details were saved successfully.';
-        this.successCountdownSeconds = null;
-
-        this.loadEvent(this.eventId);
-      },
-
-      error: (error) => {
-        this.isSavingEvent = false;
-        this.showEditModal = true;
-        this.showError('Unable to save changes', `Failed to update event: ${this.getErrorMessage(error)}`, 'save');
-        this.cdr.detectChanges();
-      },
+  onEventSaved(updatedEvent: Event): void {
+    const ev = this.event();
+    this.event.set({
+      ...ev,
+      ...updatedEvent,
     });
+    this.showEditModal.set(false);
+    this.showErrorModal.set(false);
+    this.showSuccessModal.set(true);
+    this.successContext.set('edit');
+    this.successTitle.set('Event updated');
+    this.successMessage.set('The event details were saved successfully.');
+    this.successCountdownSeconds.set(null);
+    this.loadEvent(this.eventId());
+  }
+
+  onEventSaveError(errorMsg: string): void {
+    this.showEditModal.set(true);
+    this.showError('Unable to save changes', `Failed to update event: ${errorMsg}`, 'save');
   }
 
   openDeleteModal(): void {
-    if (!this.isEventOwner || !this.event) {
+    if (!this.isEventOwner() || !this.event()) {
       return;
     }
-
-    this.showDeleteModal = true;
-    this.showErrorModal = false;
-    this.showSuccessModal = false;
+    this.showDeleteModal.set(true);
+    this.showErrorModal.set(false);
+    this.showSuccessModal.set(false);
   }
 
   closeDeleteModal(): void {
-    if (this.isDeletingEvent) {
+    if (this.isDeletingEvent()) {
       return;
     }
-
-    this.showDeleteModal = false;
+    this.showDeleteModal.set(false);
   }
 
   confirmDeleteEvent(): void {
-    if (!this.eventId || !this.isEventOwner || this.isDeletingEvent) {
+    const id = this.eventId();
+    if (!id || !this.isEventOwner() || this.isDeletingEvent()) {
       return;
     }
 
-    this.isDeletingEvent = true;
+    this.isDeletingEvent.set(true);
 
-    this.api.deleteEvent(this.eventId).subscribe({
-      next: () => {
-        this.isDeletingEvent = false;
-        this.showDeleteModal = false;
-        this.showSuccessModal = true;
-        this.successContext = 'delete';
-        this.successTitle = 'Event deleted';
-        this.successMessage = 'The event has been deleted. You will be redirected to the events list.';
-        this.successCountdownSeconds = 3;
+    this.api.deleteEvent(id)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          this.isDeletingEvent.set(false);
+          this.showDeleteModal.set(false);
+          this.showErrorModal.set(false);
+          this.showSuccessModal.set(true);
+          this.successContext.set('delete');
+          this.successTitle.set('Event deleted');
+          this.successMessage.set('The event has been deleted. You will be redirected to the events list.');
+          this.successCountdownSeconds.set(3);
 
-        this.startDeleteCountdown();
-      },
-
-      error: (error) => {
-        this.isDeletingEvent = false;
-        this.showError('Delete failed', `Failed to delete event: ${this.getErrorMessage(error)}`, 'delete');
-      },
-    });
+          this.startDeleteCountdown();
+        },
+        error: (error) => {
+          this.isDeletingEvent.set(false);
+          this.showError('Delete failed', `Failed to delete event: ${this.getErrorMessage(error)}`, 'delete');
+        },
+      });
   }
 
   closeSuccessModal(): void {
-    if (this.successContext === 'delete') {
+    if (this.successContext() === 'delete') {
       this.clearDeleteCountdown();
       this.navigateToEvents();
       return;
     }
 
-    this.showSuccessModal = false;
-    this.successContext = null;
-    this.successCountdownSeconds = null;
-  }
-
-  retryLastAction(): void {
-    if (this.lastFailedAction === 'save') {
-      this.showErrorModal = false;
-      this.saveEventChanges();
-      return;
-    }
-
-    if (this.lastFailedAction === 'delete') {
-      this.showErrorModal = false;
-      this.confirmDeleteEvent();
-    }
+    this.showSuccessModal.set(false);
+    this.successContext.set(null);
+    this.successCountdownSeconds.set(null);
   }
 
   closeErrorModal(): void {
-    this.showErrorModal = false;
+    this.showErrorModal.set(false);
+    this.lastFailedAction.set(null);
+  }
+
+  retryLastAction(): void {
+    const action = this.lastFailedAction();
+    this.closeErrorModal();
+
+    if (action === 'save') {
+      this.showEditModal.set(true);
+    } else if (action === 'delete') {
+      this.openDeleteModal();
+    }
   }
 
   private showError(title: string, message: string, action: 'save' | 'delete'): void {
-    this.errorTitle = title;
-    this.errorMessage = message;
-    this.lastFailedAction = action;
-    this.showErrorModal = true;
+    this.errorTitle.set(title);
+    this.errorMessage.set(message);
+    this.lastFailedAction.set(action);
+    this.showErrorModal.set(true);
   }
 
-  private normalizeEditFormValue(value: any): {
-    title: string;
-    description: string;
-    eventDate: string;
-    visibility: string;
-    moderationEnabled: boolean;
-  } {
-    return {
-      title: (value?.title ?? '').trim(),
-      description: (value?.description ?? '').trim(),
-      eventDate: value?.eventDate ?? '',
-      visibility: value?.visibility ?? 'PUBLIC',
-      moderationEnabled: !!value?.moderationEnabled,
-    };
-  }
-
-  getCurrentCoverImageUrl(): string | null {
-    return this.event?.coverImageId ? this.api.getMediaFileUrl(this.event.coverImageId) : null;
-  }
-
-  private resetSelectedCoverImage(): void {
-    if (this.selectedCoverImagePreviewUrl) {
-      URL.revokeObjectURL(this.selectedCoverImagePreviewUrl);
-    }
-
-    this.selectedCoverImageFile = null;
-    this.selectedCoverImagePreviewUrl = null;
-    this.selectedCoverImageFileName = null;
-  }
-
-  private formatDateForInput(eventDate: string | null | undefined): string {
-    if (!eventDate) {
-      return '';
-    }
-
-    const parsed = new Date(eventDate);
-    if (Number.isNaN(parsed.getTime())) {
-      return '';
-    }
-
-    const year = parsed.getFullYear();
-    const month = `${parsed.getMonth() + 1}`.padStart(2, '0');
-    const day = `${parsed.getDate()}`.padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  }
-
-  private getErrorMessage(error: any): string {
-    return error?.error?.error || error?.error?.message || error?.message || 'Unknown error';
+  private getErrorMessage(error: unknown): string {
+    return extractErrorMessage(error, 'Unknown error');
   }
 
   private startDeleteCountdown(): void {
     this.clearDeleteCountdown();
 
-    this.deleteCountdownTimer = setInterval(() => {
-      if (this.successCountdownSeconds === null) {
-        return;
-      }
+    this.ngZone.runOutsideAngular(() => {
+      this.deleteCountdownTimer = setInterval(() => {
+        const current = this.successCountdownSeconds();
+        if (current === null) {
+          this.clearDeleteCountdown();
+          return;
+        }
 
-      this.successCountdownSeconds -= 1;
+        const next = current - 1;
+        this.ngZone.run(() => {
+          this.successCountdownSeconds.set(next);
 
-      if (this.successCountdownSeconds <= 0) {
-        this.clearDeleteCountdown();
-        this.navigateToEvents();
-      }
-    }, 1000);
+          if (next <= 0) {
+            this.clearDeleteCountdown();
+            this.navigateToEvents();
+          }
+        });
+      }, 1000);
+    });
   }
 
   private clearDeleteCountdown(): void {
@@ -484,9 +321,9 @@ export class EventDetailComponent implements OnInit, OnDestroy {
   }
 
   private navigateToEvents(): void {
-    this.showSuccessModal = false;
-    this.successContext = null;
-    this.successCountdownSeconds = null;
+    this.showSuccessModal.set(false);
+    this.successContext.set(null);
+    this.successCountdownSeconds.set(null);
     this.router.navigate(['/events']);
   }
 }

@@ -1,8 +1,16 @@
-import { Component, OnInit, Output, EventEmitter, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
+import {
+  Component,
+  output,
+  ChangeDetectionStrategy,
+  inject,
+  DestroyRef,
+  signal,
+  computed,
+} from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { BillingService, InvoiceDTO } from '../../billing.service';
 import { StatusBadgeComponent } from '../status-badge/status-badge.component';
-import { Observable } from 'rxjs';
 
 @Component({
   selector: 'app-invoice-list',
@@ -11,38 +19,45 @@ import { Observable } from 'rxjs';
   imports: [CommonModule, StatusBadgeComponent],
   templateUrl: './invoice-list.component.html'
 })
-export class InvoiceListComponent implements OnInit {
-  @Output() invoiceSelected = new EventEmitter<InvoiceDTO>();
-  @Output() payInvoice = new EventEmitter<string>();
+export class InvoiceListComponent {
+  private readonly billingService = inject(BillingService);
+  private readonly destroyRef = inject(DestroyRef);
 
-  invoices$!: Observable<InvoiceDTO[]>;
-  totalPages$!: Observable<number>;
-  totalPages = 1;
+  readonly invoiceSelected = output<InvoiceDTO>();
+  readonly payInvoice = output<string>();
 
-  currentPage = 0;
-  pageSize = 10;
-  selectedStatus: string | null = null;
+  readonly totalPages = this.billingService.totalPages;
 
-  statuses = ['All', 'PAID', 'PENDING', 'OVERDUE'];
+  readonly selectedStatusSignal = signal<string | null>(null);
+  readonly currentPageSignal = signal<number>(0);
+  readonly pageSize = 10;
 
-  constructor(
-    private billingService: BillingService,
-    private cdr: ChangeDetectorRef
-  ) {}
+  readonly statuses = ['All', 'PAID', 'PENDING', 'OVERDUE'];
 
-  ngOnInit(): void {
-    this.invoices$ = this.billingService.invoices$;
-    this.totalPages$ = this.billingService.totalPages$;
-    this.totalPages$.subscribe(pages => {
-      this.totalPages = pages;
-      this.cdr.markForCheck();
-    });
+  readonly invoices = computed<InvoiceDTO[]>(() => {
+    const list = this.billingService.invoices();
+    const status = this.selectedStatusSignal();
+    if (!status) return list;
+    return list.filter((inv) => inv.status === status);
+  });
+
+  get selectedStatus(): string | null {
+    return this.selectedStatusSignal();
+  }
+  set selectedStatus(val: string | null) {
+    this.selectedStatusSignal.set(val);
+  }
+
+  get currentPage(): number {
+    return this.currentPageSignal();
+  }
+  set currentPage(val: number) {
+    this.currentPageSignal.set(val);
   }
 
   filterBy(status: string): void {
-    this.selectedStatus = status === 'All' ? null : status;
-    this.currentPage = 0;
-    this.cdr.markForCheck();
+    this.selectedStatusSignal.set(status === 'All' ? null : status);
+    this.currentPageSignal.set(0);
   }
 
   viewDetails(invoice: InvoiceDTO): void {
@@ -51,38 +66,44 @@ export class InvoiceListComponent implements OnInit {
 
   downloadPDF(invoiceId: string): void {
     console.log('📥 Starting PDF download for invoice:', invoiceId);
-    this.billingService.downloadInvoicePDF(invoiceId).subscribe({
-      next: (blob: Blob) => {
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${invoiceId}.pdf`;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-        console.log('✅ PDF downloaded successfully:', invoiceId);
-      },
-      error: (error) => {
-        console.error('❌ PDF download failed:', error);
-        alert('Failed to download PDF. Please try again.');
-      }
-    });
+    this.billingService.downloadInvoicePDF(invoiceId)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (blob: Blob) => {
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `${invoiceId}.pdf`;
+          document.body.appendChild(a);
+          a.click();
+          window.URL.revokeObjectURL(url);
+          document.body.removeChild(a);
+          console.log('✅ PDF downloaded successfully:', invoiceId);
+        },
+        error: (error) => {
+          console.error('❌ PDF download failed:', error);
+          alert('Failed to download PDF. Please try again.');
+        }
+      });
   }
 
   previousPage(): void {
-    if (this.currentPage > 0) {
-      this.currentPage--;
-      this.cdr.markForCheck();
-      this.billingService.loadInvoices(this.currentPage, this.pageSize).subscribe();
+    const page = this.currentPageSignal();
+    if (page > 0) {
+      this.currentPageSignal.set(page - 1);
+      this.billingService.loadInvoices(page - 1, this.pageSize)
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe();
     }
   }
 
   nextPage(): void {
-    if (this.currentPage < this.totalPages - 1) {
-      this.currentPage++;
-      this.cdr.markForCheck();
-      this.billingService.loadInvoices(this.currentPage, this.pageSize).subscribe();
+    const page = this.currentPageSignal();
+    if (page < this.totalPages() - 1) {
+      this.currentPageSignal.set(page + 1);
+      this.billingService.loadInvoices(page + 1, this.pageSize)
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe();
     }
   }
 

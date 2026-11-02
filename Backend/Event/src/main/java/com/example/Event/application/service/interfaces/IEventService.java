@@ -9,6 +9,7 @@ import com.example.Event.api.dto.response.EventResponse;
 import com.example.Event.api.dto.response.EventSettingsResponse;
 import com.example.Event.api.dto.response.EventSummaryResponse;
 import com.example.Event.api.dto.response.EventUpdateResponse;
+import com.example.Event.shared.enums.EventScope;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
@@ -39,4 +40,13 @@ public interface IEventService {
     EventSettingsResponse updateSettings(String eventId, EventSettingsRequest request, String userId);
 
     List<EventSummaryResponse> getEventsWithPendingRequests(String userId);
+
+    default List<EventSummaryResponse> getEvents(String userId, EventScope scope) {
+        EventScope targetScope = scope != null ? scope : EventScope.GLOBAL;
+        return switch (targetScope) {
+            case MY_EVENTS -> getMyEvents(userId);
+            case PENDING_REQUESTS -> getEventsWithPendingRequests(userId);
+            default -> getGlobalEvents(userId);
+        };
+    }
 }

@@ -72,14 +72,4 @@ public class UserController {
         log.info("  Account deleted successfully");
         return ResponseEntity.noContent().build();
     }
-
-    @GetMapping
-    @Operation(summary = "Find user by identifier")
-    public ResponseEntity<UserWrapperResponse> findUser(
-            @RequestParam(required = false) String id,
-            @RequestParam(required = false) String email) {
-        
-        log.info("  Fetching user data for id: {} or email: {}", id, email);
-        return ResponseEntity.ok(userService.findUserWrapper(id, email));
-    }
 }

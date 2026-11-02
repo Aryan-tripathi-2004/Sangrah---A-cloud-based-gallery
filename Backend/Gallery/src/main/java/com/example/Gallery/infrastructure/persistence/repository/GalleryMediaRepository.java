@@ -95,4 +95,13 @@ public interface GalleryMediaRepository extends MongoRepository<GalleryMediaDocu
         "{ $sort: { '_id': -1 } }"
     })
     List<TimelineGroupAggregationResult> getGroupedTimelineYearly(String userId);
+
+    /**
+     * Group by media type and sum size in bytes using MongoDB aggregation.
+     */
+    @Aggregation(pipeline = {
+        "{ $match: { userId: ?0, deletedAt: null } }",
+        "{ $group: { _id: '$type', totalBytes: { $sum: '$sizeBytes' }, count: { $sum: 1 } } }"
+    })
+    List<StorageTypeAggregationResult> getStorageUsageByType(String userId);
 }

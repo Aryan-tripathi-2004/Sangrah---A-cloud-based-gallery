@@ -1,7 +1,8 @@
-import { Injectable, Inject, Optional } from '@angular/core';
-import { BehaviorSubject, Observable, throwError } from 'rxjs';
+import { Injectable, inject, signal } from '@angular/core';
+import { Observable, throwError } from 'rxjs';
 import { catchError, tap } from 'rxjs/operators';
-import { SangrahApiService, CostEstimateDTO, InvoiceDTO, PaymentDTO, PagedResponse } from '../../core/api/sangrah-api.service';
+import { BillingApiService } from '../../core/api/services/billing-api.service';
+import { CostEstimateDTO, InvoiceDTO, PaymentDTO, PagedResponse } from '../../core/api/models/api.models';
 import { environment } from '../../../environments/environment';
 
 // Re-export DTOs
@@ -9,101 +10,80 @@ export type { CostEstimateDTO, InvoiceDTO, PaymentDTO, PagedResponse };
 
 @Injectable({ providedIn: 'root' })
 export class BillingService {
-  // ===== COST ESTIMATE STATE =====
-  private costEstimateSubject = new BehaviorSubject<CostEstimateDTO | null>(null);
-  public costEstimate$ = this.costEstimateSubject.asObservable();
+  private readonly api = inject(BillingApiService);
 
-  // ===== INVOICES STATE =====
-  private invoicesSubject = new BehaviorSubject<InvoiceDTO[]>([]);
-  public invoices$ = this.invoicesSubject.asObservable();
-
-  private currentInvoiceSubject = new BehaviorSubject<InvoiceDTO | null>(null);
-  public currentInvoice$ = this.currentInvoiceSubject.asObservable();
-
-  // ===== PAYMENTS STATE =====
-  private paymentsSubject = new BehaviorSubject<PaymentDTO[]>([]);
-  public payments$ = this.paymentsSubject.asObservable();
-
-  // ===== PAGINATION STATE =====
-  private totalPagesSubject = new BehaviorSubject<number>(1);
-  public totalPages$ = this.totalPagesSubject.asObservable();
-
-  // ===== LOADING STATE =====
-  private loadingSubject = new BehaviorSubject<boolean>(false);
-  public loading$ = this.loadingSubject.asObservable();
-
-  // ===== ERROR STATE =====
-  private errorSubject = new BehaviorSubject<string>('');
-  public error$ = this.errorSubject.asObservable();
-
-  // ===== STRIPE PAYMENT INTENT STATE =====
-  private paymentIntentSubject = new BehaviorSubject<PaymentIntentState | null>(null);
-  public paymentIntent$ = this.paymentIntentSubject.asObservable();
-
-  constructor(private api: SangrahApiService) {}
+  // ===== STRICTLY TYPED SIGNALS =====
+  public readonly costEstimate = signal<CostEstimateDTO | null>(null);
+  public readonly invoices = signal<InvoiceDTO[]>([]);
+  public readonly currentInvoice = signal<InvoiceDTO | null>(null);
+  public readonly payments = signal<PaymentDTO[]>([]);
+  public readonly totalPages = signal<number>(1);
+  public readonly loading = signal<boolean>(false);
+  public readonly error = signal<string>('');
+  public readonly paymentIntent = signal<PaymentIntentState | null>(null);
 
   // ===== LOAD METHODS =====
 
   loadCostEstimate(): Observable<CostEstimateDTO> {
-    this.loadingSubject.next(true);
+    this.loading.set(true);
     return this.api.getCostEstimate().pipe(
       tap(data => {
-        this.costEstimateSubject.next(data);
-        this.loadingSubject.next(false);
-        this.errorSubject.next('');
+        this.costEstimate.set(data);
+        this.loading.set(false);
+        this.error.set('');
       }),
       catchError(err => {
-        this.errorSubject.next('Failed to load cost estimate');
-        this.loadingSubject.next(false);
+        this.error.set('Failed to load cost estimate');
+        this.loading.set(false);
         return throwError(() => err);
       })
     );
   }
 
   loadInvoices(page: number = 0, size: number = 10): Observable<PagedResponse<InvoiceDTO>> {
-    this.loadingSubject.next(true);
+    this.loading.set(true);
     return this.api.getInvoices({ page: page.toString(), size: size.toString() }).pipe(
       tap(response => {
-        this.invoicesSubject.next(response.content);
-        this.totalPagesSubject.next(response.totalPages);
-        this.loadingSubject.next(false);
-        this.errorSubject.next('');
+        this.invoices.set(response.content || []);
+        this.totalPages.set(response.totalPages || 1);
+        this.loading.set(false);
+        this.error.set('');
       }),
       catchError(err => {
-        this.errorSubject.next('Failed to load invoices');
-        this.loadingSubject.next(false);
+        this.error.set('Failed to load invoices');
+        this.loading.set(false);
         return throwError(() => err);
       })
     );
   }
 
   loadInvoiceDetail(invoiceId: string): Observable<InvoiceDTO> {
-    this.loadingSubject.next(true);
+    this.loading.set(true);
     return this.api.getInvoiceDetail(invoiceId).pipe(
       tap(data => {
-        this.currentInvoiceSubject.next(data);
-        this.loadingSubject.next(false);
-        this.errorSubject.next('');
+        this.currentInvoice.set(data);
+        this.loading.set(false);
+        this.error.set('');
       }),
       catchError(err => {
-        this.errorSubject.next('Failed to load invoice details');
-        this.loadingSubject.next(false);
+        this.error.set('Failed to load invoice details');
+        this.loading.set(false);
         return throwError(() => err);
       })
     );
   }
 
   loadPaymentHistory(): Observable<PaymentDTO[]> {
-    this.loadingSubject.next(true);
+    this.loading.set(true);
     return this.api.getPaymentHistory().pipe(
       tap(data => {
-        this.paymentsSubject.next(data);
-        this.loadingSubject.next(false);
-        this.errorSubject.next('');
+        this.payments.set(Array.isArray(data) ? data : []);
+        this.loading.set(false);
+        this.error.set('');
       }),
       catchError(err => {
-        this.errorSubject.next('Failed to load payment history');
-        this.loadingSubject.next(false);
+        this.error.set('Failed to load payment history');
+        this.loading.set(false);
         return throwError(() => err);
       })
     );
@@ -112,14 +92,12 @@ export class BillingService {
   // ===== ACTION METHODS =====
 
   payInvoice(invoiceId: string): Observable<any> {
-    // PLACEHOLDER: Returns mock session URL
-    // Real Stripe integration in Phase 2
     return this.api.payInvoice(invoiceId).pipe(
       tap(() => {
-        this.errorSubject.next('');
+        this.error.set('');
       }),
       catchError(err => {
-        this.errorSubject.next(err?.error?.error || 'Payment initiation failed');
+        this.error.set(err?.error?.error || 'Payment initiation failed');
         return throwError(() => err);
       })
     );
@@ -132,21 +110,21 @@ export class BillingService {
    * Called by StripePaymentModalComponent
    */
   createPaymentIntent(invoiceId: string): Observable<CheckoutSessionResponse> {
-    this.loadingSubject.next(true);
+    this.loading.set(true);
     return this.api.createCheckoutSession(invoiceId).pipe(
       tap(response => {
-        this.paymentIntentSubject.next({
+        this.paymentIntent.set({
           clientSecret: response.clientSecret,
           amount: response.amount,
           invoiceId: invoiceId,
           currency: response.currency
         });
-        this.loadingSubject.next(false);
-        this.errorSubject.next('');
+        this.loading.set(false);
+        this.error.set('');
       }),
       catchError(err => {
-        this.errorSubject.next('Failed to create payment session');
-        this.loadingSubject.next(false);
+        this.error.set('Failed to create payment session');
+        this.loading.set(false);
         return throwError(() => err);
       })
     );
@@ -163,14 +141,14 @@ export class BillingService {
    * Get current payment intent state
    */
   getCurrentPaymentIntent(): PaymentIntentState | null {
-    return this.paymentIntentSubject.value;
+    return this.paymentIntent();
   }
 
   /**
    * Clear payment intent state
    */
   clearPaymentIntent(): void {
-    this.paymentIntentSubject.next(null);
+    this.paymentIntent.set(null);
   }
 
   /**
@@ -197,7 +175,7 @@ export class BillingService {
   // ===== UTILITY METHODS =====
 
   clearError(): void {
-    this.errorSubject.next('');
+    this.error.set('');
   }
 
   getContextualCostMessage(estimate: CostEstimateDTO): string {

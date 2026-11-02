@@ -13,35 +13,13 @@ import com.example.Event.application.service.interfaces.IEventModerationService;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
-import com.example.Event.shared.exception.DomainValidationException;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 @Validated
 @RestController
@@ -79,14 +57,7 @@ public class EventMediaController {
             @RequestHeader(value = HttpHeaders.ACCEPT, defaultValue = MediaType.APPLICATION_JSON_VALUE) String acceptHeader,
             @RequestHeader(value = "X-User-Id", required = false) String userId) {
             
-        if (acceptHeader.contains(MediaType.APPLICATION_JSON_VALUE)) {
-            return ResponseEntity.ok(moderationService.getMedia(eventId, mediaId));
-        }
-
-        EventMediaFileResponse response = moderationService.getMediaFile(eventId, mediaId, userId);
-        return ResponseEntity.ok()
-                .contentType(response.contentType())
-                .body(response.content());
+        return moderationService.getMediaResponse(eventId, mediaId, acceptHeader, userId);
     }
 
     @PatchMapping("/media/{mediaId}/status")
@@ -96,12 +67,7 @@ public class EventMediaController {
             @PathVariable String mediaId,
             @Valid @RequestBody MediaModerationRequest request,
             @CurrentUserId String userId) {
-        
-        return switch (request.status()) {
-            case APPROVED -> ResponseEntity.ok(moderationService.approveMedia(eventId, mediaId, userId));
-            case REJECTED -> ResponseEntity.ok(moderationService.rejectMedia(eventId, mediaId, request.rejectionDetails(), userId));
-            default -> throw new DomainValidationException("Invalid status transition requested. Allowed: APPROVED, REJECTED");
-        };
+        return ResponseEntity.ok(moderationService.moderateMedia(eventId, mediaId, request, userId));
     }
 
     @DeleteMapping("/media/{mediaId}")

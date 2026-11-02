@@ -27,7 +27,7 @@
         </tr>
       </thead>
       <tbody class="divide-y divide-slate-700/30">
-        @for (invoice of (invoices$ | async); track invoice) {
+        @for (invoice of invoices(); track invoice.id || invoice.invoiceId || invoice) {
           <tr class="hover:bg-slate-700/20 transition-colors">
             <td class="px-6 py-4 font-mono text-sm text-slate-300">{{ invoice.invoiceId }}</td>
             <td class="px-6 py-4 text-sm text-slate-400">
@@ -64,7 +64,7 @@
     </table>
 
     <!-- Empty State -->
-    @if (((invoices$ | async) || []).length === 0) {
+    @if (invoices().length === 0) {
       <div class="px-6 py-12 text-center">
         <div class="text-3xl mb-2">📄</div>
         <div class="text-slate-400">No invoices found</div>
@@ -74,7 +74,7 @@
 
   <!-- Mobile Cards -->
   <div class="md:hidden space-y-4">
-    @for (invoice of (invoices$ | async); track invoice) {
+    @for (invoice of invoices(); track invoice.id || invoice.invoiceId || invoice) {
       <div class="bg-slate-800/30 border border-slate-700/50 rounded-xl p-4">
         <div class="flex justify-between items-start mb-3">
           <span class="font-mono text-sm text-slate-300">{{ invoice.invoiceId }}</span>
@@ -104,7 +104,7 @@
     }
 
     <!-- Empty State -->
-    @if (((invoices$ | async) || []).length === 0) {
+    @if (invoices().length === 0) {
       <div class="text-center py-12">
         <div class="text-3xl mb-2">📄</div>
         <div class="text-slate-400">No invoices found</div>
@@ -113,7 +113,7 @@
   </div>
 
   <!-- Pagination -->
-  @if (totalPages > 1) {
+  @if (totalPages() > 1) {
     <div class="flex justify-center items-center gap-4 mt-8">
       <button
         (click)="previousPage()"
@@ -121,10 +121,10 @@
         class="px-4 py-2 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed text-slate-100 rounded font-semibold transition-colors">
         ← Previous
       </button>
-      <span class="text-slate-400">Page {{ currentPage + 1 }} of {{ totalPages }}</span>
+      <span class="text-slate-400">Page {{ currentPage + 1 }} of {{ totalPages() }}</span>
       <button
         (click)="nextPage()"
-        [disabled]="currentPage >= totalPages - 1"
+        [disabled]="currentPage >= totalPages() - 1"
         class="px-4 py-2 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed text-slate-100 rounded font-semibold transition-colors">
         Next →
       </button>
