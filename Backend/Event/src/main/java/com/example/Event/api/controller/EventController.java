@@ -16,9 +16,12 @@ import com.example.Event.api.dto.response.MessageResponse;
 import com.example.Event.application.service.interfaces.IEventCollaboratorService;
 import com.example.Event.application.service.interfaces.IEventService;
 import com.example.Event.shared.enums.EventScope;
+import com.example.Event.shared.enums.EventVisibility;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -66,10 +69,19 @@ public class EventController {
 
     @GetMapping
     @Operation(summary = "Get filtered events collection")
-    public ResponseEntity<List<EventSummaryResponse>> getEvents(
+    public ResponseEntity<?> getEvents(
             @RequestHeader(value = "X-User-Id", required = false) String userId,
-            @RequestParam(defaultValue = "GLOBAL") EventScope scope) {
+            @RequestParam(defaultValue = "GLOBAL") EventScope scope,
+            @RequestParam(required = false) EventVisibility visibility,
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size) {
 
+        if (page != null || size != null) {
+            int p = page != null ? Math.max(0, page) : 0;
+            int s = size != null ? Math.min(100, Math.max(1, size)) : 20;
+            Pageable pageable = PageRequest.of(p, s);
+            return ResponseEntity.ok(eventService.getEvents(userId, scope, visibility, pageable));
+        }
         return ResponseEntity.ok(eventService.getEvents(userId, scope));
     }
 

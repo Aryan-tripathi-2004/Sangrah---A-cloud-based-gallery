@@ -139,6 +139,24 @@
           </div>
         }
       </div>
+
+      <!-- Pagination / Load More -->
+      @if (hasMore()) {
+        <div class="text-center pt-8 pb-4">
+          <button
+            type="button"
+            (click)="loadMore()"
+            [disabled]="isLoadingMore()"
+            class="px-6 py-3 bg-slate-800 hover:bg-slate-700 text-blue-400 hover:text-blue-300 rounded-xl font-semibold transition border border-slate-700 disabled:opacity-50"
+          >
+            @if (isLoadingMore()) {
+              <span>⏳ Loading more events...</span>
+            } @else {
+              <span>Load More Events (Showing {{ events().length }} of {{ totalElements() }})</span>
+            }
+          </button>
+        </div>
+      }
     }
 
     <!-- Loading State -->

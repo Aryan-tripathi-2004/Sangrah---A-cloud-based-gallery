@@ -19,12 +19,13 @@ public interface IBillingService {
     byte[] getInvoicePDF(String userId, String invoiceId);
     ResponseEntity<byte[]> getInvoicePDFResponse(String userId, String invoiceId);
     Page<InvoiceDTO> getInvoiceHistory(String userId, Pageable pageable);
-    List<PaymentDTO> getPaymentHistory(String userId, int page, int size);
+    Page<PaymentDTO> getPaymentHistory(String userId, int page, int size);
     InvoiceDTO createInvoice(String userId, String invoiceId, Instant startDate, Instant endDate);
     InvoiceDTO markInvoiceAsPaid(String userId, String invoiceId);
     UserBillingSettingsDTO getUserSettings(String userId);
     StorageUsageSummaryResponse getStorageUsageSummary(String userId);
     List<StorageUsageLedgerDTO> getStorageUsageDetails(String userId);
+    Page<StorageUsageLedgerDTO> getStorageUsageDetails(String userId, Pageable pageable);
     StripeConfigResponse getStripeConfig();
     HealthResponse getHealth();
 }

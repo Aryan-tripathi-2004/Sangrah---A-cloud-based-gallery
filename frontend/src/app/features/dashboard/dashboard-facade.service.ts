@@ -86,18 +86,24 @@ export class DashboardFacadeService {
           this.storagePercentage.set(0);
         }
 
-        this.recentEvents.set(Array.isArray(events) ? events.slice(0, 5) : []);
+        const eventList: Event[] = Array.isArray(events) ? events : ((events as any)?.content || []);
+        this.recentEvents.set(eventList.slice(0, 5));
 
-        if (timeline?.groups && Array.isArray(timeline.groups)) {
+        if (storage && storage.fileCount !== undefined) {
+          this.galleryCount.set(storage.fileCount);
+        } else if (timeline?.groups && Array.isArray(timeline.groups)) {
           const totalItems = timeline.groups.reduce((total: number, group: TimelineGroup) => {
-            return total + (group.items?.length || 0);
+            return total + (group.totalElements ?? group.count ?? group.items?.length ?? 0);
           }, 0);
           this.galleryCount.set(totalItems);
         } else {
           this.galleryCount.set(0);
         }
 
-        this.pendingCount.set(Array.isArray(pendingRequests) ? pendingRequests.length : 0);
+        const pendingTotal = Array.isArray(pendingRequests)
+          ? pendingRequests.length
+          : ((pendingRequests as any)?.totalElements ?? (pendingRequests as any)?.content?.length ?? 0);
+        this.pendingCount.set(pendingTotal);
         this.isLoading.set(false);
       },
       error: (err) => {

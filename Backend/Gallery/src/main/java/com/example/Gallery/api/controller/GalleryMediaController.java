@@ -39,10 +39,13 @@ public class GalleryMediaController {
     }
 
     @GetMapping("/media")
-    @Operation(summary = "List media", description = "Get list of all active (non-deleted) media items for user")
-    public ResponseEntity<GalleryMediaListResponse> listMedia(@CurrentUserId String userId) {
-        log.info("📋 List media request for user: {}", userId);
-        return ResponseEntity.ok(mediaService.listUserMedia(userId));
+    @Operation(summary = "List media", description = "Get list of active (non-deleted) media items for user with pagination")
+    public ResponseEntity<GalleryMediaListResponse> listMedia(
+            @CurrentUserId String userId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size) {
+        log.info("📋 List media request for user: {} (page: {}, size: {})", userId, page, size);
+        return ResponseEntity.ok(mediaService.listUserMedia(userId, page, size));
     }
 
     @GetMapping(value = "/media/{mediaId}", produces = {MediaType.APPLICATION_JSON_VALUE, MediaType.APPLICATION_OCTET_STREAM_VALUE, "image/*", "video/*"})

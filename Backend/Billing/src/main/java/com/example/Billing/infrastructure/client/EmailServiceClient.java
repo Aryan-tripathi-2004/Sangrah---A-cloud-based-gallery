@@ -14,7 +14,7 @@ import lombok.NoArgsConstructor;
 
 @FeignClient(
         name = "email-service",
-        url = "${email.service.url:http://localhost:8086}"
+        url = "${email.service.url}"
 )
 public interface EmailServiceClient {
 

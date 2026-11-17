@@ -32,6 +32,8 @@ import com.example.Event.shared.exception.ForbiddenOperationException;
 import com.example.Event.shared.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
@@ -164,6 +166,14 @@ public class EventModerationServiceImpl implements IEventModerationService {
     }
 
     @Override
+    public EventMediaCollectionResponse getMediaCollection(String eventId, String userId, String view, Pageable pageable) {
+        if ("timeline".equalsIgnoreCase(view)) {
+            return getTimeline(eventId, userId, pageable);
+        }
+        return listEventMedia(eventId, userId, pageable);
+    }
+
+    @Override
     public EventMediaCollectionResponse getTimeline(String eventId, String userId) {
         EventDocument event = eventRepository.findById(eventId).orElseThrow(() -> new ResourceNotFoundException("Event not found"));
         requireTimelineAccess(event, userId);
@@ -178,6 +188,37 @@ public class EventModerationServiceImpl implements IEventModerationService {
     }
 
     @Override
+    public EventMediaCollectionResponse getTimeline(String eventId, String userId, Pageable pageable) {
+        EventDocument event = eventRepository.findById(eventId).orElseThrow(() -> new ResourceNotFoundException("Event not found"));
+        requireTimelineAccess(event, userId);
+
+        Page<EventMediaApprovalDocument> approvalsPage = approvalRepository
+                .findByEventIdAndStatusOrderByCreatedAtDesc(eventId, STATUS_APPROVED, pageable);
+
+        List<EventMediaItemResponse> media = approvalsPage.getContent().stream()
+                .map(this::toTimelineItem)
+                .toList();
+
+        long pendingCount = approvalRepository.countByEventIdAndStatus(eventId, STATUS_PENDING);
+        long approvedCount = approvalRepository.countByEventIdAndStatus(eventId, STATUS_APPROVED);
+        long rejectedCount = approvalRepository.countByEventIdAndStatus(eventId, STATUS_REJECTED);
+
+        return mediaMapper.toCollectionResponse(
+                eventId,
+                media,
+                "Timeline retrieved successfully",
+                approvalsPage.getNumber(),
+                approvalsPage.getSize(),
+                approvalsPage.getTotalElements(),
+                approvalsPage.getTotalPages(),
+                approvalsPage.hasNext(),
+                pendingCount,
+                approvedCount,
+                rejectedCount
+        );
+    }
+
+    @Override
     public EventMediaCollectionResponse listEventMedia(String eventId, String userId) {
         EventDocument event = eventRepository.findById(eventId).orElseThrow(() -> new ResourceNotFoundException("Event not found"));
         requireProtectedMediaListAccess(event, userId);
@@ -186,10 +227,57 @@ public class EventModerationServiceImpl implements IEventModerationService {
         Map<String, String> uploaderNameCache = new HashMap<>();
 
         List<EventMediaItemResponse> media = approvals.stream()
-                .map(approval -> toDetailedMediaItem(approval, uploaderNameCache))
+                .map(approval -> toEventMediaItem(approval, uploaderNameCache))
                 .toList();
 
-        return mediaMapper.toCollectionResponse(eventId, media, "Event media loaded");
+        long pendingCount = approvalRepository.countByEventIdAndStatus(eventId, STATUS_PENDING);
+        long approvedCount = approvalRepository.countByEventIdAndStatus(eventId, STATUS_APPROVED);
+        long rejectedCount = approvalRepository.countByEventIdAndStatus(eventId, STATUS_REJECTED);
+
+        return mediaMapper.toCollectionResponse(
+                eventId,
+                media,
+                "Event media loaded",
+                0,
+                media.size(),
+                media.size(),
+                1,
+                false,
+                pendingCount,
+                approvedCount,
+                rejectedCount
+        );
+    }
+
+    @Override
+    public EventMediaCollectionResponse listEventMedia(String eventId, String userId, Pageable pageable) {
+        EventDocument event = eventRepository.findById(eventId).orElseThrow(() -> new ResourceNotFoundException("Event not found"));
+        requireProtectedMediaListAccess(event, userId);
+
+        Page<EventMediaApprovalDocument> approvalsPage = approvalRepository.findByEventId(eventId, pageable);
+        Map<String, String> uploaderNameCache = new HashMap<>();
+
+        List<EventMediaItemResponse> media = approvalsPage.getContent().stream()
+                .map(approval -> toEventMediaItem(approval, uploaderNameCache))
+                .toList();
+
+        long pendingCount = approvalRepository.countByEventIdAndStatus(eventId, STATUS_PENDING);
+        long approvedCount = approvalRepository.countByEventIdAndStatus(eventId, STATUS_APPROVED);
+        long rejectedCount = approvalRepository.countByEventIdAndStatus(eventId, STATUS_REJECTED);
+
+        return mediaMapper.toCollectionResponse(
+                eventId,
+                media,
+                "Event media loaded",
+                approvalsPage.getNumber(),
+                approvalsPage.getSize(),
+                approvalsPage.getTotalElements(),
+                approvalsPage.getTotalPages(),
+                approvalsPage.hasNext(),
+                pendingCount,
+                approvedCount,
+                rejectedCount
+        );
     }
 
     @Override
@@ -435,6 +523,22 @@ public class EventModerationServiceImpl implements IEventModerationService {
 
     private EventMediaItemResponse toTimelineItem(EventMediaApprovalDocument approval) {
         return mediaMapper.toTimelineItem(approval);
+    }
+
+    private EventMediaItemResponse toEventMediaItem(EventMediaApprovalDocument approval, Map<String, String> uploaderNameCache) {
+        String uploaderUserId = approval.getUploaderUserId();
+        String uploaderName = null;
+        if (uploaderUserId != null && !uploaderUserId.isBlank()) {
+            uploaderName = uploaderNameCache.computeIfAbsent(uploaderUserId, id -> {
+                try {
+                    return userIntegrationService.getUserDisplayName(id);
+                } catch (Exception e) {
+                    log.warn("Could not fetch display name for user {}: {}", id, e.getMessage());
+                    return "User " + id;
+                }
+            });
+        }
+        return mediaMapper.toDetailedItem(approval, uploaderName, null);
     }
 
     private EventMediaItemResponse toDetailedMediaItem(EventMediaApprovalDocument approval) {

@@ -26,6 +26,7 @@ import org.springframework.core.io.Resource;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -63,13 +64,13 @@ public class MediaServiceImpl implements IMediaService {
     private final IAsyncStoragePurgeWorker asyncStoragePurgeWorker;
     private final MediaPersistenceHelper mediaPersistenceHelper;
 
-    @Value("${media.storage.limit.bytes:10737418240}")
+    @Value("${media.storage.limit.bytes}")
     private long storageLimitBytes;
 
     @Value("${media.upload.max-size}")
     private long maxFileSize;
 
-    @Value("${sangrah.storage.provider:LOCAL}")
+    @Value("${sangrah.storage.provider}")
     private String storageProviderName;
 
     /**
@@ -337,6 +338,13 @@ public class MediaServiceImpl implements IMediaService {
                 .stream().map(mediaMapper::toResponse).toList();
     }
 
+    @Override
+    public Page<MediaResponse> listMediaByUser(String userId, Pageable pageable) {
+        log.info("📋 [Media List] Querying paginated active media for user: {}", userId);
+        return mediaRepository.findByUserIdAndDeletedAtIsNull(userId, pageable)
+                .map(mediaMapper::toResponse);
+    }
+
     /**
      * List active media for a user partitioned by domain.
      */
@@ -345,6 +353,13 @@ public class MediaServiceImpl implements IMediaService {
         log.info("📋 [Media List] Querying media for user: {} | domain: {}", userId, domain);
         return mediaRepository.findByUserIdAndDomainAndDeletedAtIsNull(userId, domain)
                 .stream().map(mediaMapper::toResponse).toList();
+    }
+
+    @Override
+    public Page<MediaResponse> listMediaByUserAndDomain(String userId, MediaDomain domain, Pageable pageable) {
+        log.info("📋 [Media List] Querying paginated media for user: {} | domain: {}", userId, domain);
+        return mediaRepository.findByUserIdAndDomainAndDeletedAtIsNull(userId, domain, pageable)
+                .map(mediaMapper::toResponse);
     }
 
     /**
@@ -376,11 +391,24 @@ public class MediaServiceImpl implements IMediaService {
         log.info("📊 [Storage Ledger] Querying ledger | user: {} | period: {} to {}", userId, start, end);
 
         List<StorageUsageLedgerResponse> ledgerEntries = ledgerRepository
-                .findByUserIdAndStartAtBetween(userId, start, end)
+                .findActiveLedgerInPeriodForUser(userId, start, end)
                 .stream().map(mediaMapper::toLedgerResponse).toList();
         log.info("📋 [Storage Ledger] Found {} ledger entries", ledgerEntries.size());
 
         return ledgerEntries;
+    }
+
+    @Override
+    public Page<StorageUsageLedgerResponse> getStorageLedger(String userId, Instant startDate, Instant endDate, int page, int size) {
+        Instant start = startDate != null ? startDate : Instant.EPOCH;
+        Instant end = endDate != null ? endDate : Instant.now();
+        int validPage = Math.max(0, page);
+        int validSize = Math.min(500, Math.max(1, size));
+        Pageable pageable = PageRequest.of(validPage, validSize, Sort.by(Sort.Direction.ASC, "id"));
+        log.info("📊 [Storage Ledger] Querying paginated user ledger | user: {} | period: {} to {} | page: {} size: {}",
+                userId, start, end, validPage, validSize);
+        return ledgerRepository.findActiveLedgerInPeriodForUser(userId, start, end, pageable)
+                .map(mediaMapper::toLedgerResponse);
     }
 
     /**
@@ -388,9 +416,12 @@ public class MediaServiceImpl implements IMediaService {
      */
     @Override
     public Page<StorageUsageLedgerResponse> getLedgerEntriesBetweenDates(Instant startDate, Instant endDate, int page, int size) {
-        log.info("📊 [Storage Ledger] Querying paginated ledger entries from {} to {} (page: {}, size: {})", startDate, endDate, page, size);
-        Pageable pageable = PageRequest.of(page, size);
-        return ledgerRepository.findByStartAtBetween(startDate, endDate, pageable)
+        int validPage = Math.max(0, page);
+        int validSize = Math.min(500, Math.max(1, size));
+        log.info("📊 [Storage Ledger] Querying paginated ledger entries from {} to {} (page: {}, size: {})",
+                startDate, endDate, validPage, validSize);
+        Pageable pageable = PageRequest.of(validPage, validSize, Sort.by(Sort.Direction.ASC, "id"));
+        return ledgerRepository.findActiveLedgerInPeriod(startDate, endDate, pageable)
                 .map(mediaMapper::toLedgerResponse);
     }
 
@@ -473,6 +504,16 @@ public class MediaServiceImpl implements IMediaService {
     }
 
     @Override
+    public Page<MediaResponse> listAuthorizedMedia(String userId, String callerUserId, String role, MediaDomain domain, Pageable pageable) {
+        boolean isAdminOrSystem = "SYSTEM".equalsIgnoreCase(callerUserId)
+                || (role != null && (role.toUpperCase().contains("ADMIN") || role.toUpperCase().contains("SYSTEM")));
+        if (!isAdminOrSystem && (callerUserId == null || !callerUserId.equals(userId))) {
+            throw new SecurityException("Access denied: You can only query your own media list");
+        }
+        return domain != null ? listMediaByUserAndDomain(userId, domain, pageable) : listMediaByUser(userId, pageable);
+    }
+
+    @Override
     public StorageUsageResponse getAuthorizedStorageUsage(String userId, String headerUserId, String role) {
         String targetUserId = (userId != null && !userId.isBlank()) ? userId : headerUserId;
         if (targetUserId == null || targetUserId.isBlank()) {
@@ -493,6 +534,14 @@ public class MediaServiceImpl implements IMediaService {
             throw new SecurityException("Access denied: Storage ledger is restricted to internal services and administrators");
         }
         return getStorageLedger(userId, startDate, endDate);
+    }
+
+    @Override
+    public Page<StorageUsageLedgerResponse> getAuthorizedStorageLedger(String userId, Instant startDate, Instant endDate, int page, int size, String headerUserId, String role) {
+        if (headerUserId != null && (role == null || !role.toUpperCase().contains("ADMIN"))) {
+            throw new SecurityException("Access denied: Storage ledger is restricted to internal services and administrators");
+        }
+        return getStorageLedger(userId, startDate, endDate, page, size);
     }
 
     @Override

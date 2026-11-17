@@ -31,7 +31,18 @@ public interface EventAccessMapper {
     @Mapping(target = "message", source = "message")
     AccessRequestMutationResponse toMutationResponse(EventAccessRequestDocument document, String message);
 
+    @Mapping(target = "page", constant = "0")
+    @Mapping(target = "size", expression = "java(requests != null ? requests.size() : 0)")
+    @Mapping(target = "totalElements", expression = "java(requests != null ? (long) requests.size() : 0L)")
+    @Mapping(target = "totalPages", constant = "1")
+    @Mapping(target = "hasMore", constant = "false")
     AccessRequestsResponse toRequestsResponse(String eventId, List<AccessRequestResponse> requests);
+
+    default AccessRequestsResponse toRequestsResponse(
+            String eventId, List<AccessRequestResponse> requests,
+            int page, int size, long totalElements, int totalPages, boolean hasMore) {
+        return new AccessRequestsResponse(eventId, requests, page, size, totalElements, totalPages, hasMore);
+    }
 
     @Mapping(target = "status", source = "document.status")
     @Mapping(target = "message", source = "message")

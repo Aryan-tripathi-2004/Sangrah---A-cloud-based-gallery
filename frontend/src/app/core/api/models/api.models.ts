@@ -146,6 +146,8 @@ export interface PaginatedResponse<T> {
   totalPages?: number;
   size?: number;
   number?: number;
+  last?: boolean;
+  hasNext?: boolean;
 }
 
 export interface AccessStatusResponse {
@@ -214,14 +216,34 @@ export interface TimelineGroup {
   type: string;
   groupType: string;
   label: string;
+  date?: string;
   count: number;
   items: MediaItem[];
+  page?: number;
+  size?: number;
+  totalElements?: number;
+  hasMore?: boolean;
 }
 
 export interface TimelineResponse {
   view: string;
   groups: TimelineGroup[];
   totalGroups: number;
+  page?: number;
+  size?: number;
+  hasMore?: boolean;
+}
+
+export interface GalleryMediaListResponse {
+  count: number;
+  items: MediaItem[];
+  page?: number;
+  size?: number;
+  totalElements?: number;
+  totalPages?: number;
+  first?: boolean;
+  last?: boolean;
+  hasNext?: boolean;
 }
 
 export interface Notification {

@@ -1,19 +1,15 @@
 package com.example.Gallery.infrastructure.client;
 
-import com.example.Gallery.api.dto.StorageUsageLedgerDTO;
 import com.example.Gallery.infrastructure.client.dto.MediaServiceDeleteResponse;
 import com.example.Gallery.infrastructure.client.dto.MediaServiceDetailResponse;
 import com.example.Gallery.infrastructure.client.dto.MediaServiceStorageUsageResponse;
 import com.example.Gallery.infrastructure.client.dto.MediaServiceUploadResponse;
-import java.time.Instant;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.util.List;
-
-@FeignClient(name = "media-service", url = "${media.service.url:http://localhost:8087}")
+@FeignClient(name = "media-service", url = "${media.service.url}")
 public interface MediaServiceClient {
 
     /**
@@ -32,16 +28,6 @@ public interface MediaServiceClient {
      */
     @GetMapping(value = "/api/v1/media/{mediaId}", headers = "Accept=application/json")
     MediaServiceDetailResponse getMediaDetails(@PathVariable("mediaId") String mediaId);
-
-    /**
-     * Get storage ledger for billing
-     */
-    @GetMapping("/api/v1/media/ledger")
-    List<StorageUsageLedgerDTO> getStorageLedger(
-            @RequestParam("userId") String userId,
-            @RequestParam("startDate") Instant startDate,
-            @RequestParam("endDate") Instant endDate
-    );
 
     /**
      * Delete media from Media Service

@@ -3,6 +3,8 @@ package com.example.Email.infrastructure.persistence.repository;
 import com.example.Email.infrastructure.persistence.document.EmailLogDocument;
 import com.example.Email.shared.enums.EmailStatus;
 import com.example.Email.shared.enums.EmailType;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.stereotype.Repository;
 
@@ -43,6 +45,8 @@ public interface EmailLogRepository extends MongoRepository<EmailLogDocument, St
      * Used by reconciliation scheduler to identify zombie emails stuck in PENDING.
      */
     List<EmailLogDocument> findByStatusAndCreatedAtBefore(EmailStatus status, Instant cutoffTime);
+
+    Page<EmailLogDocument> findByStatusAndCreatedAtBefore(EmailStatus status, Instant cutoffTime, Pageable pageable);
 
     List<EmailLogDocument> findByToEmailAndEmailType(String toEmail, EmailType emailType);
 }

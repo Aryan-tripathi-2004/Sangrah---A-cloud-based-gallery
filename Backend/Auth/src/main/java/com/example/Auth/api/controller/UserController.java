@@ -3,7 +3,6 @@ package com.example.Auth.api.controller;
 import com.example.Auth.api.annotation.CurrentUserId;
 import com.example.Auth.api.dto.UserDTO;
 import com.example.Auth.api.dto.request.UpdateProfileRequest;
-import com.example.Auth.api.dto.response.UserWrapperResponse;
 import com.example.Auth.application.service.interfaces.IUserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -41,12 +40,7 @@ public class UserController {
             @CurrentUserId String userId,
             @Valid @RequestBody UpdateProfileRequest updateRequest) {
         log.info("  Updating profile for user: {}", userId);
-        
-        // Convert request DTO to UserDTO internally for service layer 
-        // to avoid cascading changes too deeply if unnecessary, 
-        // but ideally update IAuthService method signature. Let's assume we update the service too.
         UserDTO updatedUser = userService.updateUser(userId, updateRequest);
-        
         log.info("  Profile updated successfully");
         return ResponseEntity.ok(updatedUser);
     }

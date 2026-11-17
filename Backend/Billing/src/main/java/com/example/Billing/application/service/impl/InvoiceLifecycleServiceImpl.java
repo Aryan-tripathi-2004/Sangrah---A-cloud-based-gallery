@@ -114,13 +114,13 @@ public class InvoiceLifecycleServiceImpl implements IInvoiceLifecycleService {
     }
 
     @Override
-    public List<PaymentDTO> getPaymentHistory(String userId, int page, int size) {
-        log.info("💳 Fetching payment history for user {} - page: {} size: {}", userId, page, size);
+    public Page<PaymentDTO> getPaymentHistory(String userId, int page, int size) {
+        int validPage = Math.max(0, page);
+        int validSize = Math.min(100, Math.max(1, size));
+        log.info("💳 Fetching payment history for user {} - page: {} size: {}", userId, validPage, validSize);
 
-        return paymentRepository.findByUserIdOrderByTransactionDateDesc(userId, PageRequest.of(page, size))
-            .stream()
-            .map(paymentMapper::toDTO)
-            .toList();
+        return paymentRepository.findByUserIdOrderByTransactionDateDesc(userId, PageRequest.of(validPage, validSize))
+            .map(paymentMapper::toDTO);
     }
 
     @Override

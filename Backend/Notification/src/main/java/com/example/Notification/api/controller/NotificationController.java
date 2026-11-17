@@ -26,9 +26,11 @@ public class NotificationController {
     @Operation(summary = "Get user's notifications")
     public ResponseEntity<NotificationListResponse> list(
             @CurrentUserId String userId,
-            @RequestParam(defaultValue = "${notification.pagination.default-skip:0}") int skip,
-            @RequestParam(defaultValue = "${notification.pagination.default-limit:50}") int limit) {
-        return ResponseEntity.ok(notificationService.getUserNotifications(userId, skip, limit));
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size,
+            @RequestParam(required = false) Integer skip,
+            @RequestParam(required = false) Integer limit) {
+        return ResponseEntity.ok(notificationService.getUserNotifications(userId, page, size, skip, limit));
     }
 
     @GetMapping("/unread-count")

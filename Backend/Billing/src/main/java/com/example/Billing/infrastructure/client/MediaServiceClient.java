@@ -17,7 +17,7 @@ import java.util.List;
  */
 @FeignClient(
     name = "media-service",
-    url = "${media.service.url:http://localhost:8087}"
+    url = "${media.service.url}"
 )
 public interface MediaServiceClient {
 
@@ -25,10 +25,12 @@ public interface MediaServiceClient {
     MediaStorageUsageDTO getStorageUsage(@RequestParam("userId") String userId);
 
     @GetMapping("/internal/api/v1/media/ledger/user")
-    List<StorageUsageLedgerDTO> getUserStorageLedger(
+    Page<StorageUsageLedgerDTO> getUserStorageLedger(
         @RequestParam("userId") String userId,
         @RequestParam("startDate") Instant startDate,
-        @RequestParam("endDate") Instant endDate
+        @RequestParam("endDate") Instant endDate,
+        @RequestParam("page") int page,
+        @RequestParam("size") int size
     );
 
     @GetMapping("/internal/api/v1/media/ledger")

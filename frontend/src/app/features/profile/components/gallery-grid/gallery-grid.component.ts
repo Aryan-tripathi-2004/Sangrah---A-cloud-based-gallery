@@ -1,4 +1,4 @@
-import { Component, ChangeDetectionStrategy, input, inject, signal } from '@angular/core';
+import { Component, ChangeDetectionStrategy, input, output, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { MediaItem } from '../../../../core/api/models/api.models';
@@ -15,6 +15,9 @@ export class GalleryGridComponent {
   private readonly galleryApi = inject(GalleryApiService);
 
   items = input<MediaItem[]>([]);
+  hasMore = input<boolean>(false);
+  isLoadingMore = input<boolean>(false);
+  loadMore = output<void>();
   selectedMedia = signal<MediaItem | null>(null);
 
   getMediaUrl(item: MediaItem): string {

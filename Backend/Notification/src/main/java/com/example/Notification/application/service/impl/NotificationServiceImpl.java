@@ -38,6 +38,12 @@ public class NotificationServiceImpl implements INotificationService {
     private final NotificationPreferenceRepository preferenceRepository;
     private final NotificationMapper notificationMapper;
 
+    @Value("${notification.pagination.default-skip}")
+    private int defaultSkip;
+
+    @Value("${notification.pagination.default-limit}")
+    private int defaultLimit;
+
     @Value("${notification.pagination.min-skip}")
     private int minSkip;
 
@@ -71,15 +77,36 @@ public class NotificationServiceImpl implements INotificationService {
 
     @Override
     public NotificationListResponse getUserNotifications(String userId, int skip, int limit) {
-        log.info("[Notification Service] Fetching notifications for user: {} - Skip: {}, Limit: {}", userId, skip, limit);
+        int validLimit = Math.min(maxLimit, Math.max(minLimit, limit));
+        int validSkip = Math.max(minSkip, skip);
+        int page = validSkip / validLimit;
+        return getUserNotificationsPaged(userId, page, validLimit);
+    }
 
-        if (skip < minSkip || limit < minLimit || limit > maxLimit) {
-            throw new IllegalArgumentException("Invalid pagination parameters. Limit must be " + minLimit + "-" + maxLimit);
+    @Override
+    public NotificationListResponse getUserNotifications(String userId, Integer page, Integer size, Integer skip, Integer limit) {
+        int calculatedPage = 0;
+        int calculatedSize = defaultLimit;
+
+        if (page != null || size != null) {
+            calculatedPage = page != null ? Math.max(0, page) : 0;
+            calculatedSize = size != null ? Math.min(maxLimit, Math.max(minLimit, size)) : defaultLimit;
+        } else if (skip != null || limit != null) {
+            int lim = limit != null ? Math.min(maxLimit, Math.max(minLimit, limit)) : defaultLimit;
+            int sk = skip != null ? Math.max(minSkip, skip) : defaultSkip;
+            calculatedPage = sk / lim;
+            calculatedSize = lim;
         }
+        return getUserNotificationsPaged(userId, calculatedPage, calculatedSize);
+    }
 
-        int page = skip / limit;
-        Pageable pageable = PageRequest.of(page, limit);
+    @Override
+    public NotificationListResponse getUserNotificationsPaged(String userId, int page, int size) {
+        int validPage = Math.max(0, page);
+        int validSize = Math.min(maxLimit, Math.max(minLimit, size));
+        log.info("[Notification Service] Fetching paged notifications for user: {} - Page: {}, Size: {}", userId, validPage, validSize);
 
+        Pageable pageable = PageRequest.of(validPage, validSize);
         Page<NotificationDocument> paginated = notificationRepository.findByRecipientUserIdOrderByCreatedAtDesc(userId, pageable);
 
         List<NotificationResponse> dtos = paginated.getContent().stream()
@@ -95,8 +122,12 @@ public class NotificationServiceImpl implements INotificationService {
                 dtos,
                 unreadCount,
                 totalCount,
-                skip,
-                limit
+                validPage * validSize,
+                validSize,
+                validPage,
+                validSize,
+                paginated.getTotalPages(),
+                paginated.hasNext()
         );
     }
 

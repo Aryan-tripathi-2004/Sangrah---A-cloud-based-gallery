@@ -139,7 +139,7 @@ export class EventMediaApprovalComponent implements OnInit {
 
   // Derived total pending count
   readonly pendingCountComputed = computed<number>(() => {
-    return this.uploaderGroups().reduce((sum, group) => sum + group.pendingCount, 0);
+    return this.eventService.pendingCount();
   });
 
   // Backward-compatible accessors for template binding
@@ -217,9 +217,22 @@ export class EventMediaApprovalComponent implements OnInit {
     this.tokenReadySignal.set(val);
   }
 
+  readonly hasMore = this.eventService.hasMoreEventMedia;
+  readonly isLoading = this.eventService.loading;
+
+  loadMore(): void {
+    if (!this.isLoading() && this.hasMore()) {
+      this.eventService.loadMoreEventMedia(this.eventId())
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe({
+          error: (err) => console.error('Failed to load more media for approval:', err)
+        });
+    }
+  }
+
   ngOnInit(): void {
     const id = this.eventId();
-    if (id) {
+    if (id && (this.eventService.eventMedia().length === 0 || this.eventService.currentMediaView() !== undefined)) {
       this.eventService.loadEventMedia(id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
         error: (err) => console.error('Failed to load event media on init:', err)
       });

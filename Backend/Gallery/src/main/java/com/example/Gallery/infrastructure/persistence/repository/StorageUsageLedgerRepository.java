@@ -40,6 +40,21 @@ public interface StorageUsageLedgerRepository extends MongoRepository<StorageUsa
     List<StorageUsageLedgerDocument> findByDomainRefId(String domainRefId);
 
     /**
+     * Overlapping period queries for accurate prorated billing (files active at any point in [startDate, endDate])
+     */
+    @Query("{ 'startAt': { $lte: ?1 }, $or: [ { 'endAt': null }, { 'endAt': { $gte: ?0 } } ] }")
+    Page<StorageUsageLedgerDocument> findActiveLedgerInPeriod(Instant startDate, Instant endDate, Pageable pageable);
+
+    @Query("{ 'startAt': { $lte: ?1 }, $or: [ { 'endAt': null }, { 'endAt': { $gte: ?0 } } ] }")
+    List<StorageUsageLedgerDocument> findActiveLedgerInPeriod(Instant startDate, Instant endDate);
+
+    @Query("{ 'userId': ?0, 'startAt': { $lte: ?2 }, $or: [ { 'endAt': null }, { 'endAt': { $gte: ?1 } } ] }")
+    Page<StorageUsageLedgerDocument> findActiveLedgerInPeriodForUser(String userId, Instant startDate, Instant endDate, Pageable pageable);
+
+    @Query("{ 'userId': ?0, 'startAt': { $lte: ?2 }, $or: [ { 'endAt': null }, { 'endAt': { $gte: ?1 } } ] }")
+    List<StorageUsageLedgerDocument> findActiveLedgerInPeriodForUser(String userId, Instant startDate, Instant endDate);
+
+    /**
      * Find entries within a date range (for month-end billing)
      * Includes both active and deleted files
      */

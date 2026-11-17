@@ -11,6 +11,7 @@ import com.example.Event.application.service.interfaces.IEventAccessService;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
@@ -20,6 +21,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @Validated
@@ -43,7 +45,14 @@ public class EventAccessRequestController {
     @Operation(summary = "List event access requests (owner only)")
     public ResponseEntity<AccessRequestsResponse> list(
             @PathVariable String eventId,
-            @CurrentUserId String userId) {
+            @CurrentUserId String userId,
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size) {
+        if (page != null || size != null) {
+            int p = page != null ? Math.max(0, page) : 0;
+            int s = size != null ? Math.min(100, Math.max(1, size)) : 50;
+            return ResponseEntity.ok(accessService.listAccessRequests(eventId, userId, PageRequest.of(p, s)));
+        }
         return ResponseEntity.ok(accessService.listAccessRequests(eventId, userId));
     }
 

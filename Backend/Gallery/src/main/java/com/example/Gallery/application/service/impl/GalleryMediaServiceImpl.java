@@ -33,6 +33,7 @@ import org.springframework.core.io.Resource;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
@@ -59,7 +60,7 @@ public class GalleryMediaServiceImpl implements IGalleryMediaService {
     private final OrphanedMediaLogRepository orphanedMediaLogRepository;
     private final GalleryPersistenceHelper galleryPersistenceHelper;
 
-    @Value("${media.storage.max-file-size:104857600}")
+    @Value("${media.storage.max-file-size}")
     private long maxFileSizeBytes;
 
     @Override
@@ -244,16 +245,21 @@ public class GalleryMediaServiceImpl implements IGalleryMediaService {
 
     @Override
     public GalleryMediaListResponse listUserMedia(String userId) {
-        log.info("📋 Listing media for user: {}", userId);
+        return listUserMedia(userId, 0, 50);
+    }
 
-        List<GalleryMediaDocument> mediaList = mediaRepository.findByUserIdAndDeletedAtIsNull(userId);
-        log.info("Found {} active files", mediaList.size());
+    @Override
+    public GalleryMediaListResponse listUserMedia(String userId, int page, int size) {
+        log.info("📋 Listing media for user: {} (page: {}, size: {})", userId, page, size);
 
-        List<MediaItemResponse> responses = mediaList.stream()
-                .map(galleryMediaMapper::toMediaItemResponse)
-                .collect(Collectors.toList());
+        int validPage = Math.max(0, page);
+        int validSize = Math.min(100, Math.max(1, size));
+        Pageable pageable = PageRequest.of(validPage, validSize, Sort.by(Sort.Direction.DESC, "uploadedAt"));
+        Page<GalleryMediaDocument> mediaPage = mediaRepository.findByUserIdAndDeletedAtIsNull(userId, pageable);
+        log.info("Found {} active files on page {}/{}", mediaPage.getNumberOfElements(), validPage, mediaPage.getTotalPages());
 
-        return new GalleryMediaListResponse(responses.size(), responses);
+        Page<MediaItemResponse> responsePage = mediaPage.map(galleryMediaMapper::toMediaItemResponse);
+        return GalleryMediaListResponse.from(responsePage);
     }
 
     @Override
@@ -264,10 +270,10 @@ public class GalleryMediaServiceImpl implements IGalleryMediaService {
 
     @Override
     public List<StorageUsageLedgerDTO> getLedgerEntriesBetweenDates(Instant startDate, Instant endDate) {
-        log.info("📊 Querying ledger entries from {} to {}", startDate, endDate);
+        log.info("📊 Querying active ledger entries from {} to {}", startDate, endDate);
 
         List<StorageUsageLedgerDocument> ledgerEntries =
-            storageUsageLedgerRepository.findByStartAtBetween(startDate, endDate);
+            storageUsageLedgerRepository.findActiveLedgerInPeriod(startDate, endDate);
 
         log.info("📋 Found {} ledger entries in date range", ledgerEntries.size());
 
@@ -278,13 +284,15 @@ public class GalleryMediaServiceImpl implements IGalleryMediaService {
 
     @Override
     public Page<StorageUsageLedgerDTO> getLedgerEntriesBetweenDates(Instant startDate, Instant endDate, int page, int size) {
-        log.info("Querying paginated ledger entries from {} to {} (page: {}, size: {})", startDate, endDate, page, size);
+        int validPage = Math.max(0, page);
+        int validSize = Math.min(500, Math.max(1, size));
+        log.info("Querying paginated active ledger entries from {} to {} (page: {}, size: {})", startDate, endDate, validPage, validSize);
 
-        Pageable pageable = PageRequest.of(page, size);
+        Pageable pageable = PageRequest.of(validPage, validSize, Sort.by(Sort.Direction.ASC, "id"));
         Page<StorageUsageLedgerDocument> ledgerPage =
-            storageUsageLedgerRepository.findByStartAtBetween(startDate, endDate, pageable);
+            storageUsageLedgerRepository.findActiveLedgerInPeriod(startDate, endDate, pageable);
 
-        log.info("Found {} ledger entries on page {}/{}", ledgerPage.getNumberOfElements(), page, ledgerPage.getTotalPages());
+        log.info("Found {} ledger entries on page {}/{}", ledgerPage.getNumberOfElements(), validPage, ledgerPage.getTotalPages());
 
         return ledgerPage.map(ledgerMapper::toDTO);
     }

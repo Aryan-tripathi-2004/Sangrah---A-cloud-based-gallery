@@ -5,6 +5,7 @@ import com.example.Media.shared.enums.MediaDomain;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.mongodb.repository.MongoRepository;
+import org.springframework.data.mongodb.repository.Query;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
@@ -12,6 +13,16 @@ import java.util.List;
 
 @Repository
 public interface StorageUsageLedgerRepository extends MongoRepository<StorageUsageLedgerDocument, String> {
+
+    // Overlapping period queries for accurate prorated billing (files active at any point in [startDate, endDate])
+    @Query("{ 'startAt': { $lte: ?1 }, $or: [ { 'endAt': null }, { 'endAt': { $gte: ?0 } } ] }")
+    Page<StorageUsageLedgerDocument> findActiveLedgerInPeriod(Instant startDate, Instant endDate, Pageable pageable);
+
+    @Query("{ 'userId': ?0, 'startAt': { $lte: ?2 }, $or: [ { 'endAt': null }, { 'endAt': { $gte: ?1 } } ] }")
+    Page<StorageUsageLedgerDocument> findActiveLedgerInPeriodForUser(String userId, Instant startDate, Instant endDate, Pageable pageable);
+
+    @Query("{ 'userId': ?0, 'startAt': { $lte: ?2 }, $or: [ { 'endAt': null }, { 'endAt': { $gte: ?1 } } ] }")
+    List<StorageUsageLedgerDocument> findActiveLedgerInPeriodForUser(String userId, Instant startDate, Instant endDate);
 
     // Find ledger entries for a user in a date range (for billing)
     List<StorageUsageLedgerDocument> findByUserIdAndStartAtBetween(String userId, Instant startDate, Instant endDate);

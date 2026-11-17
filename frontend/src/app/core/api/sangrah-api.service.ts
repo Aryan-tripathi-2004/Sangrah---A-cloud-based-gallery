@@ -27,7 +27,8 @@ import {
   PaymentDTO,
   CheckoutSessionResponse,
   PaymentStatusResponse,
-  PagedResponse
+  PagedResponse,
+  PaginatedResponse
 } from './models/api.models';
 import { AuthApiService } from './services/auth-api.service';
 import { UserApiService } from './services/user-api.service';
@@ -278,8 +279,8 @@ export class SangrahApiService {
     return this.billingApi.payInvoice(invoiceId);
   }
 
-  getPaymentHistory(): Observable<PaymentDTO[]> {
-    return this.billingApi.getPaymentHistory();
+  getPaymentHistory(page: number = 0, size: number = 10): Observable<PaginatedResponse<PaymentDTO>> {
+    return this.billingApi.getPaymentHistory(page, size);
   }
 
   getBillingSummary(yearMonth: string): Observable<unknown> {

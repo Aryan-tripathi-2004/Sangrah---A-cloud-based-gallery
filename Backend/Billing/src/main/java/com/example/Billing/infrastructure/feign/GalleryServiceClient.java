@@ -15,7 +15,7 @@ import java.time.Instant;
  */
 @FeignClient(
     name = "gallery-service",
-    url = "${gallery.service.url:http://localhost:8082}"
+    url = "${gallery.service.url}"
 )
 public interface GalleryServiceClient {
 

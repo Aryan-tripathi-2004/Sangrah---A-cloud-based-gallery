@@ -17,6 +17,10 @@ public interface INotificationService {
 
     NotificationListResponse getUserNotifications(String userId, int skip, int limit);
 
+    NotificationListResponse getUserNotifications(String userId, Integer page, Integer size, Integer skip, Integer limit);
+
+    NotificationListResponse getUserNotificationsPaged(String userId, int page, int size);
+
     List<NotificationResponse> getUnreadNotifications(String userId);
 
     NotificationActionResponse markAsRead(String userId, String notificationId);

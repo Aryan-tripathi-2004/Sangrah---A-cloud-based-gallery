@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -36,8 +37,11 @@ public class MediaStorageGarbageCollectionServiceImpl implements IMediaStorageGa
     @Value("${media.gc.retention-days}")
     private long retentionDays;
 
+    @Value("${media.gc.batch-size}")
+    private int batchSize;
+
     @Override
-    @Scheduled(cron = "${media.gc.cron:0 0 2 * * *}")
+    @Scheduled(cron = "${media.gc.cron}")
     public void purgeOrphanedStorageFiles() {
         sweepOrphanedStorageFiles();
     }
@@ -45,12 +49,12 @@ public class MediaStorageGarbageCollectionServiceImpl implements IMediaStorageGa
     @Override
     public int sweepOrphanedStorageFiles() {
         Instant cutoffDate = Instant.now().minus(Duration.ofDays(retentionDays));
-        log.info("🧹 [Media GC] Starting storage sweep for media soft-deleted before {} (retention: {} days)",
-                cutoffDate, retentionDays);
+        log.info("🧹 [Media GC] Starting storage sweep for media soft-deleted before {} (retention: {} days, batchSize: {})",
+                cutoffDate, retentionDays, batchSize);
 
         List<MediaDocument> candidateDocs;
         try {
-            candidateDocs = mediaRepository.findByDeletedAtBeforeAndStorageKeyIsNotNull(cutoffDate);
+            candidateDocs = mediaRepository.findByDeletedAtBeforeAndStorageKeyIsNotNull(cutoffDate, PageRequest.of(0, Math.max(1, batchSize))).getContent();
         } catch (Exception e) {
             log.error("❌ [Media GC] Failed to query soft-deleted media documents: {}", e.getMessage(), e);
             return 0;

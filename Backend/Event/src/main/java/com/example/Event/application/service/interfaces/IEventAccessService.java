@@ -11,11 +11,14 @@ import com.example.Event.api.dto.response.AccessRequestMutationResponse;
 import com.example.Event.api.dto.response.AccessRequestsResponse;
 import com.example.Event.api.dto.response.AccessRevocationResponse;
 import com.example.Event.api.dto.response.AccessStatusResponse;
+import org.springframework.data.domain.Pageable;
 
 public interface IEventAccessService {
     AccessRequestMutationResponse requestAccess(String eventId, AccessMessageRequest request, String userId);
 
     AccessRequestsResponse listAccessRequests(String eventId, String userId);
+
+    AccessRequestsResponse listAccessRequests(String eventId, String userId, Pageable pageable);
 
     AccessApprovalResponse approveRequest(String eventId, String requestId, AccessApprovalRequest request, String userId);
 

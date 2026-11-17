@@ -2,6 +2,8 @@ package com.example.Billing.application.service.interfaces;
 
 import com.example.Billing.api.dto.response.StorageUsageLedgerDTO;
 import com.example.Billing.api.dto.response.StorageUsageSummaryResponse;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 import java.util.List;
 
@@ -26,4 +28,6 @@ public interface IStorageMeteringService {
      * @return list of storage usage ledger DTOs
      */
     List<StorageUsageLedgerDTO> getStorageUsageDetails(String userId);
+
+    Page<StorageUsageLedgerDTO> getStorageUsageDetails(String userId, Pageable pageable);
 }

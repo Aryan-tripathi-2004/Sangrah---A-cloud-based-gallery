@@ -10,6 +10,9 @@ import com.example.Event.api.dto.response.EventSettingsResponse;
 import com.example.Event.api.dto.response.EventSummaryResponse;
 import com.example.Event.api.dto.response.EventUpdateResponse;
 import com.example.Event.shared.enums.EventScope;
+import com.example.Event.shared.enums.EventVisibility;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
@@ -47,6 +50,27 @@ public interface IEventService {
             case MY_EVENTS -> getMyEvents(userId);
             case PENDING_REQUESTS -> getEventsWithPendingRequests(userId);
             default -> getGlobalEvents(userId);
+        };
+    }
+
+    Page<EventSummaryResponse> getGlobalEvents(String userId, Pageable pageable);
+
+    Page<EventSummaryResponse> getGlobalEvents(String userId, EventVisibility visibility, Pageable pageable);
+
+    Page<EventSummaryResponse> getMyEvents(String userId, Pageable pageable);
+
+    Page<EventSummaryResponse> getEventsWithPendingRequests(String userId, Pageable pageable);
+
+    default Page<EventSummaryResponse> getEvents(String userId, EventScope scope, Pageable pageable) {
+        return getEvents(userId, scope, null, pageable);
+    }
+
+    default Page<EventSummaryResponse> getEvents(String userId, EventScope scope, EventVisibility visibility, Pageable pageable) {
+        EventScope targetScope = scope != null ? scope : EventScope.GLOBAL;
+        return switch (targetScope) {
+            case MY_EVENTS -> getMyEvents(userId, pageable);
+            case PENDING_REQUESTS -> getEventsWithPendingRequests(userId, pageable);
+            default -> getGlobalEvents(userId, visibility, pageable);
         };
     }
 }

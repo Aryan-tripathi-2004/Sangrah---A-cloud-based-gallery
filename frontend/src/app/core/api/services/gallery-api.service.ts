@@ -2,7 +2,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject, PLATFORM_ID } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
 import { Observable } from 'rxjs';
-import { MediaItem, StorageUsage, TimelineResponse } from '../models/api.models';
+import { MediaItem, StorageUsage, TimelineResponse, GalleryMediaListResponse, PaginatedResponse } from '../models/api.models';
 
 @Injectable({ providedIn: 'root' })
 export class GalleryApiService {
@@ -23,8 +23,9 @@ export class GalleryApiService {
     return this.http.post<MediaItem>(`${this.baseUrl}/gallery/media`, formData);
   }
 
-  listGalleryMedia(): Observable<{ count: number; items: MediaItem[] }> {
-    return this.http.get<{ count: number; items: MediaItem[] }>(`${this.baseUrl}/gallery/media`);
+  listGalleryMedia(page = 0, size = 50): Observable<GalleryMediaListResponse> {
+    const params = new HttpParams().set('page', page).set('size', size);
+    return this.http.get<GalleryMediaListResponse>(`${this.baseUrl}/gallery/media`, { params });
   }
 
   getGalleryMedia(mediaId: string): Observable<MediaItem> {
@@ -78,9 +79,30 @@ export class GalleryApiService {
     return this.http.get<StorageUsage>(`${this.baseUrl}/gallery/usage`);
   }
 
-  getGalleryTimeline(groupBy: 'DAILY' | 'MONTHLY' | 'YEARLY' = 'DAILY'): Observable<TimelineResponse> {
-    const params = new HttpParams().set('groupBy', groupBy);
+  getGalleryTimeline(
+    groupBy: 'DAILY' | 'MONTHLY' | 'YEARLY' = 'DAILY',
+    page = 0,
+    size = 10
+  ): Observable<TimelineResponse> {
+    const params = new HttpParams()
+      .set('groupBy', groupBy)
+      .set('page', page)
+      .set('size', size);
     return this.http.get<TimelineResponse>(`${this.baseUrl}/gallery/timeline`, { params });
+  }
+
+  getTimelineGroupItems(
+    groupBy: 'DAILY' | 'MONTHLY' | 'YEARLY',
+    groupDate: string,
+    page = 0,
+    size = 50
+  ): Observable<PaginatedResponse<MediaItem>> {
+    const params = new HttpParams()
+      .set('groupBy', groupBy)
+      .set('groupDate', groupDate)
+      .set('page', page)
+      .set('size', size);
+    return this.http.get<PaginatedResponse<MediaItem>>(`${this.baseUrl}/gallery/timeline/items`, { params });
   }
 
   /**

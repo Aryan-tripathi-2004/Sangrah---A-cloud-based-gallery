@@ -10,13 +10,9 @@ import com.example.Email.infrastructure.persistence.repository.EmailLogRepositor
 import com.example.Email.shared.enums.EmailStatus;
 import com.example.Email.shared.enums.EmailType;
 import com.example.Email.shared.exception.EmailProcessingException;
-import jakarta.mail.internet.MimeMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.mail.javamail.JavaMailSender;
-import org.springframework.mail.javamail.MimeMessageHelper;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.thymeleaf.TemplateEngine;
 import org.thymeleaf.context.Context;
@@ -36,7 +32,6 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class EmailServiceImpl implements IEmailService {
 
-    private final JavaMailSender mailSender;
     private final TemplateEngine templateEngine;
     private final EmailLogRepository emailLogRepository;
     private final IAsyncEmailSender asyncEmailSender;

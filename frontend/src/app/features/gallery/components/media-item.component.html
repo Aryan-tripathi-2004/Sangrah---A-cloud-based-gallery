@@ -1,11 +1,14 @@
 <div
-  class="group relative break-inside-avoid bg-slate-800/50 border border-slate-700/30 rounded-lg overflow-hidden cursor-pointer transition-all hover:shadow-lg hover:bg-slate-800 hover:-translate-y-1"
+  class="group relative break-inside-avoid bg-slate-800/50 border border-slate-700/30 rounded-lg overflow-hidden cursor-pointer transition-all hover:shadow-lg hover:bg-slate-800 hover:-translate-y-1 mb-4"
+  style="content-visibility: auto; contain-intrinsic-size: 200px 250px;"
   >
   <!-- Image/Video Thumbnail -->
   @if (isImage()) {
     <img
       [src]="fileUrl()"
       [alt]="media.originalFileName"
+      loading="lazy"
+      decoding="async"
       class="w-full h-auto cursor-pointer"
       (click)="onPreview()"
       (load)="onImageLoad()"
@@ -15,6 +18,7 @@
   @if (isVideo()) {
     <video
       [src]="fileUrl()"
+      preload="metadata"
       class="w-full h-auto cursor-pointer"
       (click)="onPreview()"
       (loadedmetadata)="onImageLoad()"

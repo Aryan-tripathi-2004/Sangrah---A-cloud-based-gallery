@@ -13,6 +13,8 @@ import com.example.Event.application.service.interfaces.IEventModerationService;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -40,12 +42,20 @@ public class EventMediaController {
     }
 
     @GetMapping("/media")
-    @Operation(summary = "Get event media collection", description = "Use ?view=timeline to group media sequentially")
+    @Operation(summary = "Get event media collection", description = "Use ?view=timeline to group media sequentially (supports pagination with page and size)")
     public ResponseEntity<EventMediaCollectionResponse> getMediaCollection(
             @PathVariable String eventId,
             @RequestHeader(value = "X-User-Id", required = false) String userId,
-            @RequestParam(defaultValue = "list") String view) {
-            
+            @RequestParam(defaultValue = "list") String view,
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size) {
+
+        if (page != null || size != null) {
+            int p = page != null ? Math.max(0, page) : 0;
+            int s = size != null ? Math.max(1, size) : 50;
+            Pageable pageable = PageRequest.of(p, s);
+            return ResponseEntity.ok(moderationService.getMediaCollection(eventId, userId, view, pageable));
+        }
         return ResponseEntity.ok(moderationService.getMediaCollection(eventId, userId, view));
     }
 

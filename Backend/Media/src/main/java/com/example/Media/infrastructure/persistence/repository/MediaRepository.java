@@ -2,6 +2,8 @@ package com.example.Media.infrastructure.persistence.repository;
 
 import com.example.Media.infrastructure.persistence.document.MediaDocument;
 import com.example.Media.shared.enums.MediaDomain;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.mongodb.repository.Aggregation;
 import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.stereotype.Repository;
@@ -19,8 +21,14 @@ public interface MediaRepository extends MongoRepository<MediaDocument, String> 
     // Find all media for a user in a domain
     List<MediaDocument> findByUserIdAndDomainAndDeletedAtIsNull(String userId, MediaDomain domain);
 
+    // Paginated find all media for a user in a domain
+    Page<MediaDocument> findByUserIdAndDomainAndDeletedAtIsNull(String userId, MediaDomain domain, Pageable pageable);
+
     // Find all media for a user across all domains
     List<MediaDocument> findByUserIdAndDeletedAtIsNull(String userId);
+
+    // Paginated find all media for a user across all domains
+    Page<MediaDocument> findByUserIdAndDeletedAtIsNull(String userId, Pageable pageable);
 
     // Find media by ID (check if exists and not deleted)
     Optional<MediaDocument> findByIdAndDeletedAtIsNull(String id);
@@ -36,6 +44,8 @@ public interface MediaRepository extends MongoRepository<MediaDocument, String> 
 
     // Find soft-deleted media older than cutoff date that still have a storage key attached
     List<MediaDocument> findByDeletedAtBeforeAndStorageKeyIsNotNull(Instant cutoffDate);
+
+    Page<MediaDocument> findByDeletedAtBeforeAndStorageKeyIsNotNull(Instant cutoffDate, Pageable pageable);
 
     // Count active media for a user
     long countByUserIdAndDeletedAtIsNull(String userId);

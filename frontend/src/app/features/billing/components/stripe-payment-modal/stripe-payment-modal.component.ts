@@ -300,6 +300,7 @@ export class StripePaymentModalComponent implements OnInit, OnDestroy {
   private syncAndUpdateStatus(maxAttempts: number = 5): void {
     console.log('🔄 Syncing payment status with backend...');
     const targetInvoiceId = this.invoiceId();
+    let isPaid = false;
     timer(0, 1000).pipe(
       take(maxAttempts),
       takeUntilDestroyed(this.destroyRef),
@@ -316,6 +317,7 @@ export class StripePaymentModalComponent implements OnInit, OnDestroy {
       take(1)
     ).subscribe({
       next: () => {
+        isPaid = true;
         console.log('✅✅ Payment successfully synced and marked as PAID!');
         this.clearTimeouts();
         this.paymentSuccess.emit();
@@ -324,8 +326,10 @@ export class StripePaymentModalComponent implements OnInit, OnDestroy {
         }, 1500);
       },
       complete: () => {
-        console.warn('⚠️ Sync attempts completed without PAID, falling back to polling');
-        this.pollPaymentStatus();
+        if (!isPaid) {
+          console.warn('⚠️ Sync attempts completed without PAID, falling back to polling');
+          this.pollPaymentStatus();
+        }
       }
     });
   }
@@ -336,6 +340,7 @@ export class StripePaymentModalComponent implements OnInit, OnDestroy {
   private pollPaymentStatus(maxAttempts: number = 30): void {
     console.log('🔍 Starting declarative polling for payment status...');
     const targetInvoiceId = this.invoiceId();
+    let isPaid = false;
     timer(0, 1000).pipe(
       take(maxAttempts),
       takeUntilDestroyed(this.destroyRef),
@@ -352,6 +357,7 @@ export class StripePaymentModalComponent implements OnInit, OnDestroy {
       take(1)
     ).subscribe({
       next: () => {
+        isPaid = true;
         console.log('✅ Invoice marked as PAID!');
         this.clearTimeouts();
         this.paymentSuccess.emit();
@@ -360,9 +366,10 @@ export class StripePaymentModalComponent implements OnInit, OnDestroy {
         }, 1500);
       },
       complete: () => {
-        console.warn('⏱️ Payment status poll timeout - closing modal');
-        this.paymentSuccess.emit();
-        this.closeModal.emit();
+        if (!isPaid) {
+          console.warn('⏱️ Payment status poll timeout - closing modal');
+          this.closeModal.emit();
+        }
       }
     });
   }

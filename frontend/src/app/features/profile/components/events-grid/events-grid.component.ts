@@ -1,4 +1,4 @@
-import { Component, ChangeDetectionStrategy, input, inject } from '@angular/core';
+import { Component, ChangeDetectionStrategy, input, output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { Event } from '../../../../core/api/models/api.models';
@@ -15,6 +15,9 @@ export class EventsGridComponent {
   private readonly eventApi = inject(EventApiService);
 
   events = input<Event[]>([]);
+  hasMore = input<boolean>(false);
+  isLoadingMore = input<boolean>(false);
+  loadMore = output<void>();
 
   getCoverImageUrl(event: Event): string | null {
     if (event.coverImageId) {

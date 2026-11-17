@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -44,15 +45,19 @@ public class EmailReconciliationServiceImpl implements IEmailReconciliationServi
     @Value("${app.email.reconciliation.max-retries}")
     private int maxRetries;
 
+    @Value("${app.email.reconciliation.batch-size}")
+    private int batchSize;
+
     @Override
-    @Scheduled(cron = "${app.email.reconciliation.cron:0 */5 * * * *}")
+    @Scheduled(cron = "${app.email.reconciliation.cron}")
     public void reconcilePendingEmails() {
         Instant cutoffTime = Instant.now().minus(Duration.ofMinutes(pendingThresholdMinutes));
         log.debug("🔍 [RECONCILIATION] Scanning for emails stuck in PENDING before {}", cutoffTime);
 
         List<EmailLogDocument> stuckEmails;
         try {
-            stuckEmails = emailLogRepository.findByStatusAndCreatedAtBefore(EmailStatus.PENDING, cutoffTime);
+            stuckEmails = emailLogRepository.findByStatusAndCreatedAtBefore(
+                    EmailStatus.PENDING, cutoffTime, PageRequest.of(0, Math.max(1, batchSize))).getContent();
         } catch (Exception ex) {
             log.error("❌ [RECONCILIATION] Failed to query pending email logs: {}", ex.getMessage(), ex);
             return;

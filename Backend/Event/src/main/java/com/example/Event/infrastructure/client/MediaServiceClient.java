@@ -3,14 +3,13 @@ package com.example.Event.infrastructure.client;
 import com.example.Event.infrastructure.client.dto.MediaDeleteResponse;
 import com.example.Event.infrastructure.client.dto.MediaServiceResponse;
 import com.example.Event.shared.enums.MediaDomain;
-import java.time.Instant;
 import java.util.List;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-@FeignClient(name = "media-service-event", url = "${media.service.url:http://localhost:8087}")
+@FeignClient(name = "media-service-event", url = "${media.service.url}")
 public interface MediaServiceClient {
 
     /**
@@ -57,16 +56,6 @@ public interface MediaServiceClient {
     default MediaDeleteResponse deleteMediaBulk(List<String> mediaIds, String userId) {
         return deleteMediaBulk(mediaIds, userId, "SYSTEM");
     }
-
-    /**
-     * Get storage ledger for billing
-     */
-    @GetMapping("/api/v1/media/ledger")
-    Object getStorageLedger(
-            @RequestParam("userId") String userId,
-            @RequestParam("startDate") Instant startDate,
-            @RequestParam("endDate") Instant endDate
-    );
 
     /**
      * Get media file from Media Service

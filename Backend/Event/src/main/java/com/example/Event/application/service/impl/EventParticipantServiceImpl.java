@@ -1,6 +1,7 @@
 package com.example.Event.application.service.impl;
 
 import com.example.Event.api.dto.response.EventParticipantsResponse;
+import com.example.Event.api.dto.response.ParticipantResponse;
 import com.example.Event.application.service.interfaces.IEventParticipantService;
 import com.example.Event.infrastructure.mapper.EventParticipantMapper;
 import com.example.Event.infrastructure.persistence.document.EventAccessRequestDocument;
@@ -12,6 +13,9 @@ import com.example.Event.shared.exception.ForbiddenOperationException;
 import com.example.Event.shared.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -64,6 +68,57 @@ public class EventParticipantServiceImpl implements IEventParticipantService {
 
         log.info("👥 Found {} active participants for event {}", participantUserIds.size(), eventId);
         return participantMapper.toParticipantsResponse(eventId, List.copyOf(participantUserIds));
+    }
+
+    @Override
+    public EventParticipantsResponse listParticipants(String eventId, String requesterUserId, Pageable pageable) {
+        log.info("👥 Listing paginated participants for event: {} by user: {}", eventId, requesterUserId);
+
+        EventDocument event = eventRepository.findById(eventId)
+                .orElseThrow(() -> new ResourceNotFoundException("Event not found: " + eventId));
+
+        boolean isOwnerOrCollab = (requesterUserId != null && requesterUserId.equals(event.getOwnerUserId())) ||
+                (event.getCollaborators() != null && event.getCollaborators().stream()
+                        .anyMatch(c -> requesterUserId != null && requesterUserId.equals(c.getUserId())));
+
+        if (!isOwnerOrCollab) {
+            throw new ForbiddenOperationException("Only the event owner or collaborators can view participants");
+        }
+
+        int validPage = Math.max(0, pageable.getPageNumber());
+        int validSize = Math.min(100, Math.max(1, pageable.getPageSize()));
+        Pageable boundedPageable = PageRequest.of(validPage, validSize, pageable.getSort());
+
+        Page<EventAccessRequestDocument> requestsPage =
+                accessRequestRepository.findByEventIdAndStatus(eventId, ApprovalStatus.APPROVED, boundedPageable);
+
+        Set<String> participantUserIds = new LinkedHashSet<>();
+        if (validPage == 0) {
+            if (event.getOwnerUserId() != null && !event.getOwnerUserId().isBlank()) {
+                participantUserIds.add(event.getOwnerUserId());
+            }
+            if (event.getCollaborators() != null) {
+                for (EventDocument.EventCollaborator collaborator : event.getCollaborators()) {
+                    if (collaborator.getUserId() != null && !collaborator.getUserId().isBlank()) {
+                        participantUserIds.add(collaborator.getUserId());
+                    }
+                }
+            }
+        }
+        for (EventAccessRequestDocument req : requestsPage.getContent()) {
+            if (req.getRequesterUserId() != null && !req.getRequesterUserId().isBlank()) {
+                participantUserIds.add(req.getRequesterUserId());
+            }
+        }
+
+        long coreStaffCount = (event.getOwnerUserId() != null && !event.getOwnerUserId().isBlank() ? 1 : 0)
+                + (event.getCollaborators() != null ? event.getCollaborators().size() : 0);
+        long totalElements = requestsPage.getTotalElements() + coreStaffCount;
+        int totalPages = Math.max(1, (int) Math.ceil((double) totalElements / validSize));
+        boolean hasMore = requestsPage.hasNext();
+
+        List<ParticipantResponse> participantResponses = participantMapper.toParticipantList(List.copyOf(participantUserIds));
+        return new EventParticipantsResponse(eventId, participantResponses, validPage, validSize, totalElements, totalPages, hasMore);
     }
 
     @Override

@@ -2,7 +2,7 @@ import { Injectable, inject, signal, computed } from '@angular/core';
 import { from, Observable, of, throwError, EMPTY } from 'rxjs';
 import { tap, catchError, concatMap, toArray, finalize, switchMap, map } from 'rxjs/operators';
 import { GalleryApiService } from '../../core/api/services/gallery-api.service';
-import { MediaItem, StorageUsage, TimelineResponse } from '../../core/api/models/api.models';
+import { MediaItem, StorageUsage, TimelineResponse, TimelineGroup, GalleryMediaListResponse, PaginatedResponse } from '../../core/api/models/api.models';
 
 export interface UploadProgress {
   fileName: string;
@@ -19,6 +19,10 @@ export class GalleryService {
   public readonly mediaList = signal<MediaItem[]>([]);
   public readonly storageUsage = signal<StorageUsage | null>(null);
   public readonly timeline = signal<TimelineResponse | null>(null);
+  public readonly timelineGroups = signal<TimelineGroup[]>([]);
+  public readonly currentTimelinePage = signal<number>(0);
+  public readonly hasMoreTimeline = signal<boolean>(true);
+  public readonly isLoadingMoreTimeline = signal<boolean>(false);
   public readonly uploadProgress = signal<UploadProgress[]>([]);
   public readonly loading = signal<boolean>(false);
   public readonly currentTimelineView = signal<'daily' | 'monthly' | 'yearly'>('monthly');
@@ -29,13 +33,17 @@ export class GalleryService {
 
 
   /**
-   * Load all media for the user
+   * Load all media for the user (paginated)
    */
-  loadMediaList(): Observable<{ count: number; items: MediaItem[] }> {
+  loadMediaList(page = 0, size = 50): Observable<GalleryMediaListResponse> {
     this.loading.set(true);
-    return this.api.listGalleryMedia().pipe(
+    return this.api.listGalleryMedia(page, size).pipe(
       tap(response => {
-        this.mediaList.set(response.items || []);
+        if (page === 0) {
+          this.mediaList.set(response.items || []);
+        } else {
+          this.mediaList.update(prev => [...prev, ...(response.items || [])]);
+        }
         this.loading.set(false);
       }),
       catchError(error => {
@@ -62,36 +70,71 @@ export class GalleryService {
   }
 
   /**
-   * Load timeline with specified view
+   * Load timeline with specified view and pagination
    */
-  loadTimeline(view: 'daily' | 'monthly' | 'yearly' = 'monthly'): Observable<TimelineResponse> {
-    this.loading.set(true);
+  loadTimeline(view: 'daily' | 'monthly' | 'yearly' = 'monthly', page = 0, size = 10): Observable<TimelineResponse> {
+    if (page === 0) {
+      this.loading.set(true);
+    } else {
+      this.isLoadingMoreTimeline.set(true);
+    }
     this.currentTimelineView.set(view);
 
     let request$: Observable<TimelineResponse>;
 
     switch (view) {
       case 'daily':
-        request$ = this.api.getGalleryTimeline('DAILY');
+        request$ = this.api.getGalleryTimeline('DAILY', page, size);
         break;
       case 'yearly':
-        request$ = this.api.getGalleryTimeline('YEARLY');
+        request$ = this.api.getGalleryTimeline('YEARLY', page, size);
         break;
       default:
-        request$ = this.api.getGalleryTimeline('MONTHLY');
+        request$ = this.api.getGalleryTimeline('MONTHLY', page, size);
     }
 
     return request$.pipe(
       tap(response => {
+        if (page === 0) {
+          this.timelineGroups.set(response.groups || []);
+        } else {
+          this.timelineGroups.update(prev => [...prev, ...(response.groups || [])]);
+        }
+        this.currentTimelinePage.set(page);
+        this.hasMoreTimeline.set(response.hasMore ?? false);
         this.timeline.set(response);
         this.loading.set(false);
+        this.isLoadingMoreTimeline.set(false);
       }),
       catchError(error => {
         console.error(`Failed to load ${view} timeline:`, error);
         this.loading.set(false);
+        this.isLoadingMoreTimeline.set(false);
         return throwError(() => error);
       })
     );
+  }
+
+  /**
+   * Load next page of timeline groups (infinite scroll)
+   */
+  loadMoreTimeline(): Observable<TimelineResponse> {
+    if (!this.hasMoreTimeline() || this.isLoadingMoreTimeline() || this.loading()) {
+      return EMPTY;
+    }
+    return this.loadTimeline(this.currentTimelineView(), this.currentTimelinePage() + 1);
+  }
+
+  /**
+   * Load more items for a specific timeline group (e.g. Month or Year with many photos)
+   */
+  loadMoreGroupItems(
+    groupBy: 'DAILY' | 'MONTHLY' | 'YEARLY',
+    groupDate: string,
+    page: number,
+    size = 20
+  ): Observable<PaginatedResponse<MediaItem>> {
+    return this.api.getTimelineGroupItems(groupBy, groupDate, page, size);
   }
 
   /**
@@ -179,6 +222,23 @@ export class GalleryService {
       tap(() => {
         // Remove from local state
         this.mediaList.update(current => current.filter(m => m.id !== mediaId));
+        this.timelineGroups.update(groups =>
+          groups
+            .map(group => {
+              const hasItem = group.items.some(m => m.id === mediaId);
+              if (!hasItem) return group;
+              const updatedItems = group.items.filter(m => m.id !== mediaId);
+              const updatedCount = Math.max(0, (group.count ?? group.items.length) - 1);
+              const updatedTotal = group.totalElements !== undefined ? Math.max(0, group.totalElements - 1) : updatedCount;
+              return {
+                ...group,
+                items: updatedItems,
+                count: updatedCount,
+                totalElements: updatedTotal
+              };
+            })
+            .filter(group => group.items.length > 0)
+        );
       }),
       catchError(error => {
         console.error('Failed to delete media:', error);
@@ -220,6 +280,10 @@ export class GalleryService {
     this.mediaList.set([]);
     this.storageUsage.set(null);
     this.timeline.set(null);
+    this.timelineGroups.set([]);
+    this.currentTimelinePage.set(0);
+    this.hasMoreTimeline.set(true);
+    this.isLoadingMoreTimeline.set(false);
     this.uploadProgress.set([]);
     this.loading.set(false);
   }
