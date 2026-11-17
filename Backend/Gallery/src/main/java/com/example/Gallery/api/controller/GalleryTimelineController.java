@@ -1,6 +1,7 @@
 package com.example.Gallery.api.controller;
 
 import com.example.Gallery.api.annotation.CurrentUserId;
+import com.example.Gallery.api.dto.response.MediaItemResponse;
 import com.example.Gallery.api.dto.response.TimelineResponse;
 import com.example.Gallery.application.service.interfaces.ITimelineService;
 import com.example.Gallery.shared.enums.TimelineGroupType;
@@ -8,6 +9,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -24,11 +26,25 @@ public class GalleryTimelineController {
     private final ITimelineService timelineService;
 
     @GetMapping
-    @Operation(summary = "Get timeline", description = "View media grouped by specified interval (newest first)")
+    @Operation(summary = "Get timeline", description = "View media grouped by specified interval (newest first) with pagination")
     public ResponseEntity<TimelineResponse> getTimeline(
             @CurrentUserId String userId,
-            @RequestParam(defaultValue = "DAILY") TimelineGroupType groupBy) {
-        log.info("Timeline request from user: {} grouping by: {}", userId, groupBy);
-        return ResponseEntity.ok(timelineService.getTimeline(userId, groupBy));
+            @RequestParam(defaultValue = "DAILY") TimelineGroupType groupBy,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        log.info("Timeline request from user: {} grouping by: {}, page: {}, size: {}", userId, groupBy, page, size);
+        return ResponseEntity.ok(timelineService.getTimeline(userId, groupBy, page, size));
+    }
+
+    @GetMapping("/items")
+    @Operation(summary = "Get timeline group items", description = "Get paginated items for a specific timeline group")
+    public ResponseEntity<Page<MediaItemResponse>> getGroupItems(
+            @CurrentUserId String userId,
+            @RequestParam TimelineGroupType groupBy,
+            @RequestParam String groupDate,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size) {
+        log.info("Timeline group items request from user: {} for date: {}, page: {}, size: {}", userId, groupDate, page, size);
+        return ResponseEntity.ok(timelineService.getGroupItems(userId, groupBy, groupDate, page, size));
     }
 }

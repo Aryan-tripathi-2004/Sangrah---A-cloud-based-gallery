@@ -36,8 +36,8 @@
         <div class="w-full lg:w-80 xl:w-88 flex-shrink-0 lg:h-full lg:overflow-y-auto no-scrollbar">
           <app-profile-sidebar
             [user]="user()"
-            [eventsCount]="myEvents().length"
-            [galleryCount]="galleryItems().length"
+            [eventsCount]="totalEventsCount()"
+            [galleryCount]="totalGalleryCount()"
             [storageUsage]="storageUsage()"
             [isUploadingAvatar]="isUploadingAvatar()"
             [isSavingBio]="isSavingBio()"
@@ -50,11 +50,21 @@
         <main class="flex-1 min-w-0 lg:h-full lg:overflow-y-auto custom-scrollbar px-1 sm:px-2 pb-16 lg:pb-4">
           @switch (activeTab()) {
             @case ('events') {
-              <app-events-grid [events]="myEvents()" />
+              <app-events-grid
+                [events]="myEvents()"
+                [hasMore]="hasMoreEvents()"
+                [isLoadingMore]="isLoadingMoreEvents()"
+                (loadMore)="loadMoreEvents()"
+              />
             }
 
             @case ('gallery') {
-              <app-gallery-grid [items]="galleryItems()" />
+              <app-gallery-grid
+                [items]="galleryItems()"
+                [hasMore]="hasMoreGallery()"
+                [isLoadingMore]="isLoadingMoreGallery()"
+                (loadMore)="loadMoreGallery()"
+              />
             }
 
             @case ('saved') {

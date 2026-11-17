@@ -93,7 +93,7 @@
       @if (!requiresApproval()) {
         <div class="flex gap-4 border-b border-slate-800 overflow-x-auto">
           <button
-            (click)="currentTab.set('timeline')"
+            (click)="switchTab('timeline')"
             [class.border-b-2]="currentTab() === 'timeline'"
             [class.border-blue-500]="currentTab() === 'timeline'"
             class="px-4 py-3 font-semibold transition hover:text-slate-100 whitespace-nowrap"
@@ -102,7 +102,7 @@
           </button>
           @if (isEventOwner() || canUploadMedia() || canDirectUpload() || currentEvent.visibility === 'PUBLIC') {
             <button
-              (click)="currentTab.set('upload')"
+              (click)="switchTab('upload')"
               [class.border-b-2]="currentTab() === 'upload'"
               [class.border-blue-500]="currentTab() === 'upload'"
               class="px-4 py-3 font-semibold transition hover:text-slate-100 whitespace-nowrap"
@@ -112,7 +112,7 @@
           }
           @if (isEventOwner() || canReviewMedia()) {
             <button
-              (click)="currentTab.set('approvals')"
+              (click)="switchTab('approvals')"
               [class.border-b-2]="currentTab() === 'approvals'"
               [class.border-blue-500]="currentTab() === 'approvals'"
               class="px-4 py-3 font-semibold transition hover:text-slate-100 whitespace-nowrap"
@@ -122,7 +122,7 @@
           }
           @if (isEventOwner() || isCollaborator()) {
             <button
-              (click)="currentTab.set('collaborators')"
+              (click)="switchTab('collaborators')"
               [class.border-b-2]="currentTab() === 'collaborators'"
               [class.border-blue-500]="currentTab() === 'collaborators'"
               class="px-4 py-3 font-semibold transition hover:text-slate-100 whitespace-nowrap"
@@ -132,7 +132,7 @@
           }
           @if ((isEventOwner() || canReviewAccessRequests()) && currentEvent.visibility === 'PROTECTED') {
             <button
-              (click)="currentTab.set('access-requests')"
+              (click)="switchTab('access-requests')"
               [class.border-b-2]="currentTab() === 'access-requests'"
               [class.border-blue-500]="currentTab() === 'access-requests'"
               class="px-4 py-3 font-semibold transition hover:text-slate-100 whitespace-nowrap"

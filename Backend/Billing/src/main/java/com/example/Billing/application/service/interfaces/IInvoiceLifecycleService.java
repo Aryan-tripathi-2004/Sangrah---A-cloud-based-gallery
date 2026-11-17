@@ -47,9 +47,9 @@ public interface IInvoiceLifecycleService {
      * @param userId user identifier
      * @param page page index
      * @param size page size
-     * @return list of payment DTOs
+     * @return page of payment DTOs
      */
-    List<PaymentDTO> getPaymentHistory(String userId, int page, int size);
+    Page<PaymentDTO> getPaymentHistory(String userId, int page, int size);
 
     /**
      * Creates and persists a new invoice for a user and billing period.

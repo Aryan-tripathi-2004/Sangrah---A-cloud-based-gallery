@@ -17,6 +17,9 @@ export class BillingService {
   public readonly invoices = signal<InvoiceDTO[]>([]);
   public readonly currentInvoice = signal<InvoiceDTO | null>(null);
   public readonly payments = signal<PaymentDTO[]>([]);
+  public readonly paymentCurrentPage = signal<number>(0);
+  public readonly paymentTotalPages = signal<number>(1);
+  public readonly paymentTotalElements = signal<number>(0);
   public readonly totalPages = signal<number>(1);
   public readonly loading = signal<boolean>(false);
   public readonly error = signal<string>('');
@@ -73,11 +76,15 @@ export class BillingService {
     );
   }
 
-  loadPaymentHistory(): Observable<PaymentDTO[]> {
+  loadPaymentHistory(page: number = 0, size: number = 10): Observable<any> {
     this.loading.set(true);
-    return this.api.getPaymentHistory().pipe(
-      tap(data => {
-        this.payments.set(Array.isArray(data) ? data : []);
+    return this.api.getPaymentHistory(page, size).pipe(
+      tap((data: any) => {
+        const content = Array.isArray(data) ? data : (data?.content || []);
+        this.payments.set(content);
+        this.paymentCurrentPage.set(page);
+        this.paymentTotalPages.set(data?.totalPages ?? 1);
+        this.paymentTotalElements.set(data?.totalElements ?? content.length);
         this.loading.set(false);
         this.error.set('');
       }),

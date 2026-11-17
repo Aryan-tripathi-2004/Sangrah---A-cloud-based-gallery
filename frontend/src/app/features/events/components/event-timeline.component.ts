@@ -42,13 +42,26 @@ export class EventTimelineComponent implements OnInit {
     });
   });
 
+  readonly approvedCount = this.eventService.approvedCount;
   readonly pendingCount = this.eventService.pendingCount;
   readonly rejectedCount = this.eventService.rejectedCount;
+  readonly hasMore = this.eventService.hasMoreEventMedia;
+  readonly isLoading = this.eventService.loading;
+
+  loadMore(): void {
+    if (!this.isLoading() && this.hasMore()) {
+      this.eventService.loadMoreEventMedia(this.eventId(), 'timeline')
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe({
+          error: (error) => console.error('Failed to load more media:', error),
+        });
+    }
+  }
 
   ngOnInit(): void {
     const id = this.eventId();
-    if (id && this.eventService.eventMedia().length === 0) {
-      this.eventService.loadEventMedia(id)
+    if (id && (this.eventService.eventMedia().length === 0 || this.eventService.currentMediaView() !== 'timeline')) {
+      this.eventService.loadEventMedia(id, 0, 50, false, 'timeline')
         .pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe({
           error: (error) => console.error('Failed to load media:', error),
@@ -112,7 +125,7 @@ export class EventTimelineComponent implements OnInit {
     event.stopPropagation();
     const id = this.eventId();
     this.api.deleteEventMedia(id, mediaId).pipe(
-      switchMap(() => this.eventService.loadEventMedia(id)),
+      switchMap(() => this.eventService.loadEventMedia(id, 0, 50, false, 'timeline')),
       takeUntilDestroyed(this.destroyRef)
     ).subscribe({
       next: () => this.closePreview(),
@@ -123,7 +136,7 @@ export class EventTimelineComponent implements OnInit {
   onDeleteFromPreview(mediaId: string): void {
     const id = this.eventId();
     this.api.deleteEventMedia(id, mediaId).pipe(
-      switchMap(() => this.eventService.loadEventMedia(id)),
+      switchMap(() => this.eventService.loadEventMedia(id, 0, 50, false, 'timeline')),
       takeUntilDestroyed(this.destroyRef)
     ).subscribe({
       next: () => this.closePreview(),

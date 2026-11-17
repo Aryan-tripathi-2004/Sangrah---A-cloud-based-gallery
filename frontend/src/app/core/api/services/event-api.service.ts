@@ -1,4 +1,4 @@
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject, PLATFORM_ID } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
 import { Observable, throwError } from 'rxjs';
@@ -31,16 +31,23 @@ export class EventApiService {
     return localStorage.getItem('token');
   }
 
-  getGlobalEvents(): Observable<Event[]> {
-    return this.http.get<Event[]>(`${this.baseUrl}/events?scope=GLOBAL`);
+  getGlobalEvents(visibility?: string, page?: number, size?: number): Observable<Event[] | any> {
+    let params = new HttpParams().set('scope', 'GLOBAL');
+    if (visibility) params = params.set('visibility', visibility);
+    if (page !== undefined) params = params.set('page', page);
+    if (size !== undefined) params = params.set('size', size);
+    return this.http.get<any>(`${this.baseUrl}/events`, { params });
   }
 
   getPublicEvents(): Observable<Event[]> {
     return this.http.get<Event[]>(`${this.baseUrl}/events?scope=GLOBAL&visibility=PUBLIC`);
   }
 
-  getMyEvents(): Observable<Event[]> {
-    return this.http.get<Event[]>(`${this.baseUrl}/events?scope=MY_EVENTS`);
+  getMyEvents(page?: number, size?: number): Observable<Event[] | any> {
+    let params = new HttpParams().set('scope', 'MY_EVENTS');
+    if (page !== undefined) params = params.set('page', page);
+    if (size !== undefined) params = params.set('size', size);
+    return this.http.get<any>(`${this.baseUrl}/events`, { params });
   }
 
   getEventById(eventId: string): Observable<Event> {
@@ -90,8 +97,12 @@ export class EventApiService {
     return this.http.delete<void>(`${this.baseUrl}/events/${eventId}`);
   }
 
-  getEventMedia(eventId: string): Observable<Gallery[]> {
-    return this.http.get<Gallery[]>(`${this.baseUrl}/events/${eventId}/media`);
+  getEventMedia(eventId: string, page?: number, size?: number, view?: string): Observable<Gallery[] | any> {
+    let params = new HttpParams();
+    if (page !== undefined) params = params.set('page', page);
+    if (size !== undefined) params = params.set('size', size);
+    if (view !== undefined) params = params.set('view', view);
+    return this.http.get<Gallery[] | any>(`${this.baseUrl}/events/${eventId}/media`, { params });
   }
 
   uploadEventMedia(eventId: string, file: File): Observable<EventMediaUploadResponse> {

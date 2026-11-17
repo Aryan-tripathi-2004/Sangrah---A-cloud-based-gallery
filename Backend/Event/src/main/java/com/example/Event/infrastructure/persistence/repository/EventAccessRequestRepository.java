@@ -2,6 +2,8 @@ package com.example.Event.infrastructure.persistence.repository;
 
 import com.example.Event.infrastructure.persistence.document.EventAccessRequestDocument;
 import com.example.Event.shared.enums.ApprovalStatus;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.stereotype.Repository;
 
@@ -28,10 +30,21 @@ public interface EventAccessRequestRepository extends MongoRepository<EventAcces
      */
     List<EventAccessRequestDocument> findByEventIdAndStatus(String eventId, ApprovalStatus status);
 
+    Page<EventAccessRequestDocument> findByEventIdAndStatus(String eventId, ApprovalStatus status, Pageable pageable);
+
+    long countByEventIdAndStatus(String eventId, ApprovalStatus status);
+
     /**
      * Find requests for an event by status (ordered by timestamp)
      */
     List<EventAccessRequestDocument> findByEventIdAndStatusInOrderByRequestedAtDesc(String eventId, List<ApprovalStatus> status);
+
+    Page<EventAccessRequestDocument> findByEventIdAndStatusInOrderByRequestedAtDesc(String eventId, List<ApprovalStatus> status, Pageable pageable);
+
+    /**
+     * Find all requests by status across all events
+     */
+    List<EventAccessRequestDocument> findByStatus(ApprovalStatus status);
 
     /**
      * Check for duplicate pending request from same requester

@@ -11,6 +11,8 @@ import com.example.Billing.infrastructure.persistence.repository.StorageUsageLed
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -56,9 +58,9 @@ public class StorageMeteringServiceImpl implements IStorageMeteringService {
     public List<StorageUsageLedgerDTO> getStorageUsageDetails(String userId) {
         log.info("📊 [Storage Metering] Fetching detailed storage usage records for user: {}", userId);
         try {
-            List<StorageUsageLedgerDTO> remoteEntries = mediaServiceClient.getUserStorageLedger(userId, Instant.EPOCH, Instant.now());
-            if (remoteEntries != null && !remoteEntries.isEmpty()) {
-                return remoteEntries;
+            Page<StorageUsageLedgerDTO> remotePage = mediaServiceClient.getUserStorageLedger(userId, Instant.EPOCH, Instant.now(), 0, 500);
+            if (remotePage != null) {
+                return remotePage.getContent();
             }
         } catch (Exception e) {
             log.warn("⚠️ Failed to fetch remote storage ledger from MediaService, falling back to local: {}", e.getMessage());
@@ -68,5 +70,23 @@ public class StorageMeteringServiceImpl implements IStorageMeteringService {
         return usageRecords.stream()
                 .map(storageUsageMapper::toLedgerDTO)
                 .toList();
+    }
+
+    @Override
+    public Page<StorageUsageLedgerDTO> getStorageUsageDetails(String userId, Pageable pageable) {
+        log.info("📊 [Storage Metering] Fetching paginated storage usage records for user: {} (page: {}, size: {})",
+                userId, pageable.getPageNumber(), pageable.getPageSize());
+        try {
+            Page<StorageUsageLedgerDTO> remoteEntries = mediaServiceClient.getUserStorageLedger(
+                    userId, Instant.EPOCH, Instant.now(), pageable.getPageNumber(), pageable.getPageSize());
+            if (remoteEntries != null) {
+                return remoteEntries;
+            }
+        } catch (Exception e) {
+            log.warn("⚠️ Failed to fetch remote storage ledger from MediaService, falling back to local: {}", e.getMessage());
+        }
+
+        Page<StorageUsageLedgerDocument> usageRecords = storageUsageLedgerRepository.findByUserId(userId, pageable);
+        return usageRecords.map(storageUsageMapper::toLedgerDTO);
     }
 }

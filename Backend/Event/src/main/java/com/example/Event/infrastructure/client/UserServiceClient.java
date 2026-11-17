@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.RequestParam;
  * Pure declarative Feign Client contract for communicating with Auth Service.
  * Adheres strictly to the Single Responsibility Principle (SRP).
  */
-@FeignClient(name = "auth-service", url = "${auth.service.url:http://localhost:8081}")
+@FeignClient(name = "auth-service", url = "${auth.service.url}")
 public interface UserServiceClient {
 
     @GetMapping("/internal/api/v1/users")

@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -27,12 +28,12 @@ public class GalleryMediaReconciliationScheduler {
     private final OrphanedMediaLogRepository logRepository;
     private final MediaServiceClient mediaServiceClient;
 
-    @Value("${gallery.media.reconciliation.max-retries:5}")
+    @Value("${gallery.media.reconciliation.max-retries}")
     private int maxRetries;
 
-    @Scheduled(cron = "${gallery.media.reconciliation.cron:0 */5 * * * *}")
+    @Scheduled(cron = "${gallery.media.reconciliation.cron}")
     public void sweepOrphanedMedia() {
-        List<OrphanedMediaLogDocument> pendingLogs = logRepository.findByStatus(OrphanedMediaStatus.PENDING);
+        List<OrphanedMediaLogDocument> pendingLogs = logRepository.findByStatus(OrphanedMediaStatus.PENDING, PageRequest.of(0, 100)).getContent();
         if (pendingLogs.isEmpty()) {
             return;
         }

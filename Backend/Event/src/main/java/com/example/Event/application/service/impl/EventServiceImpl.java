@@ -37,6 +37,9 @@ import com.example.Event.shared.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import com.example.Event.shared.enums.MediaDomain;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -189,6 +192,72 @@ public class EventServiceImpl implements IEventService, IEventInternalService {
     }
 
     @Override
+    public Page<EventSummaryResponse> getMyEvents(String userId, Pageable pageable) {
+        return eventRepository.findByOwnerUserId(userId, pageable)
+                .map(eventMapper::toOwnerSummary);
+    }
+
+    @Override
+    public Page<EventSummaryResponse> getGlobalEvents(String userId, Pageable pageable) {
+        return getGlobalEvents(userId, null, pageable);
+    }
+
+    @Override
+    public Page<EventSummaryResponse> getGlobalEvents(String userId, EventVisibility visibility, Pageable pageable) {
+        Page<EventDocument> eventPage;
+        if (visibility != null) {
+            if (visibility == EventVisibility.PRIVATE) {
+                if (hasText(userId)) {
+                    eventPage = eventRepository.findByOwnerUserIdAndVisibility(userId, EventVisibility.PRIVATE, pageable);
+                } else {
+                    eventPage = Page.empty(pageable);
+                }
+            } else {
+                eventPage = eventRepository.findByVisibility(visibility, pageable);
+            }
+        } else {
+            if (hasText(userId)) {
+                eventPage = eventRepository.findGlobalVisibleEvents(userId, pageable);
+            } else {
+                eventPage = eventRepository.findByVisibilityIn(
+                        List.of(EventVisibility.PUBLIC, EventVisibility.PROTECTED), pageable);
+            }
+        }
+
+        Map<String, String> statusByEventId = Collections.emptyMap();
+        if (hasText(userId) && !eventPage.isEmpty()) {
+            List<String> pageEventIds = eventPage.getContent().stream().map(EventDocument::getId).toList();
+            statusByEventId = eventAccessRequestRepository.findByRequesterUserId(userId).stream()
+                    .filter(r -> pageEventIds.contains(r.getEventId()))
+                    .collect(Collectors.toMap(
+                            EventAccessRequestDocument::getEventId,
+                            r -> r.getStatus() != null ? r.getStatus().name() : "NONE",
+                            (existing, replacement) -> existing
+                    ));
+        }
+
+        final Map<String, String> finalStatusMap = statusByEventId;
+        final boolean isAuthenticated = hasText(userId);
+
+        return eventPage.map(event -> {
+            String status;
+            boolean isOwner = isAuthenticated && userId.equals(event.getOwnerUserId());
+            if (isOwner) {
+                status = "OWNER";
+            } else if (isAuthenticated && collaboratorService.isCollaborator(event.getId(), userId)) {
+                status = "COLLABORATOR";
+            } else if (event.getVisibility() == EventVisibility.PUBLIC) {
+                status = "APPROVED";
+            } else if (finalStatusMap.containsKey(event.getId())) {
+                status = finalStatusMap.get(event.getId());
+            } else {
+                status = "NONE";
+            }
+            return eventMapper.toSummaryWithAccess(event, status, isOwner);
+        });
+    }
+
+    @Override
     public EventResponse getEvent(String eventId, String userId) {
         EventDocument event = findEventEntity(eventId);
 
@@ -326,6 +395,40 @@ public class EventServiceImpl implements IEventService, IEventInternalService {
                         pendingCountByEventId.get(event.getId()).intValue()
                 ))
                 .toList();
+    }
+
+    @Override
+    public Page<EventSummaryResponse> getEventsWithPendingRequests(String userId, Pageable pageable) {
+        log.info("Getting paginated events with pending requests for user: {}", userId);
+        if (!hasText(userId)) {
+            return Page.empty(pageable);
+        }
+        List<EventDocument> ownedEvents = eventRepository.findByOwnerUserId(userId);
+        if (ownedEvents.isEmpty()) {
+            return Page.empty(pageable);
+        }
+
+        List<String> ownedEventIds = ownedEvents.stream()
+                .map(EventDocument::getId)
+                .toList();
+
+        List<EventAccessRequestDocument> pendingRequests = eventAccessRequestRepository
+                .findByEventIdInAndStatus(ownedEventIds, ApprovalStatus.PENDING);
+
+        if (pendingRequests.isEmpty()) {
+            return Page.empty(pageable);
+        }
+
+        Map<String, Long> pendingCountByEventId = pendingRequests.stream()
+                .collect(Collectors.groupingBy(EventAccessRequestDocument::getEventId, Collectors.counting()));
+
+        List<String> eventIdsWithPending = List.copyOf(pendingCountByEventId.keySet());
+
+        Page<EventDocument> eventsPage = eventRepository.findByOwnerUserIdAndIdIn(userId, eventIdsWithPending, pageable);
+        return eventsPage.map(event -> eventMapper.toOwnerSummaryWithPendingCount(
+                event,
+                pendingCountByEventId.getOrDefault(event.getId(), 0L).intValue()
+        ));
     }
 
     private EventDocument findEventEntity(String eventId) {

@@ -9,6 +9,7 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -37,13 +38,21 @@ public class StorageUsageController {
 
     /**
      * Retrieves the detailed per-file storage usage ledger records for the
-     * currently authenticated user.
+     * currently authenticated user (supports optional pagination).
      */
     @GetMapping("/storage-usage/details")
     @Operation(summary = "Get detailed storage usage records")
     @SecurityRequirement(name = "Bearer Authentication")
-    public ResponseEntity<List<StorageUsageLedgerDTO>> getStorageUsageDetails(@CurrentUserId String userId) {
-        log.info("  Fetching storage usage details for user: {}", userId);
+    public ResponseEntity<?> getStorageUsageDetails(
+            @CurrentUserId String userId,
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size) {
+        log.info("  Fetching storage usage details for user: {} (page: {}, size: {})", userId, page, size);
+        if (page != null || size != null) {
+            int p = page != null ? Math.max(0, page) : 0;
+            int s = size != null ? Math.min(100, Math.max(1, size)) : 50;
+            return ResponseEntity.ok(billingService.getStorageUsageDetails(userId, PageRequest.of(p, s)));
+        }
         return ResponseEntity.ok(billingService.getStorageUsageDetails(userId));
     }
 }

@@ -27,6 +27,7 @@ public interface IGalleryMediaService {
     ResponseEntity<?> getMediaResponse(String userId, String mediaId, String acceptHeader);
     MediaDeleteResponse deleteMedia(String userId, String mediaId);
     GalleryMediaListResponse listUserMedia(String userId);
+    GalleryMediaListResponse listUserMedia(String userId, int page, int size);
     List<StorageUsageLedgerDTO> getLedgerEntriesBetweenDates(Instant startDate, Instant endDate);
     Page<StorageUsageLedgerDTO> getLedgerEntriesBetweenDates(Instant startDate, Instant endDate, int page, int size);
     QuotaResponse getQuota();

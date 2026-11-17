@@ -8,6 +8,7 @@ import com.example.Event.api.dto.response.EventMediaModerationResponse;
 import com.example.Event.api.dto.response.EventMediaUploadResponse;
 import com.example.Event.api.dto.response.MessageResponse;
 import com.example.Event.shared.enums.ApprovalStatus;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -19,8 +20,11 @@ public interface IEventModerationService {
     EventMediaUploadResponse uploadMedia(String eventId, MultipartFile file, String userId, String userEmail);
 
     EventMediaCollectionResponse getTimeline(String eventId, String userId);
+    EventMediaCollectionResponse getTimeline(String eventId, String userId, Pageable pageable);
     EventMediaCollectionResponse listEventMedia(String eventId, String userId);
+    EventMediaCollectionResponse listEventMedia(String eventId, String userId, Pageable pageable);
     EventMediaCollectionResponse getMediaCollection(String eventId, String userId, String view);
+    EventMediaCollectionResponse getMediaCollection(String eventId, String userId, String view, Pageable pageable);
 
     EventMediaDetailResponse getMedia(String eventId, String mediaId);
 

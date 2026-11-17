@@ -11,6 +11,10 @@ import com.example.Media.shared.enums.MediaDomain;
 import io.swagger.v3.oas.annotations.Operation;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -75,13 +79,16 @@ public class MediaController {
     }
 
     @GetMapping("/user/{userId}")
-    @Operation(summary = "List media by user and domain")
-    public ResponseEntity<List<MediaResponse>> listMediaByUserAndDomain(
+    @Operation(summary = "List media by user and domain (paginated)")
+    public ResponseEntity<Page<MediaResponse>> listMediaByUserAndDomain(
             @PathVariable String userId,
             @CurrentUserId String callerUserId,
             @RequestHeader(value = "X-User-Role", defaultValue = "USER") String role,
-            @RequestParam(value = "domain", required = false) MediaDomain domain) {
-        return ResponseEntity.ok(mediaService.listAuthorizedMedia(userId, callerUserId, role, domain));
+            @RequestParam(value = "domain", required = false) MediaDomain domain,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size) {
+        Pageable pageable = PageRequest.of(Math.max(0, page), Math.min(100, Math.max(1, size)), Sort.by(Sort.Direction.DESC, "createdAt"));
+        return ResponseEntity.ok(mediaService.listAuthorizedMedia(userId, callerUserId, role, domain, pageable));
     }
 
     @GetMapping("/usage")
@@ -95,13 +102,15 @@ public class MediaController {
 
     @GetMapping("/ledger")
     @Operation(summary = "Get storage ledger for billing")
-    public ResponseEntity<List<StorageUsageLedgerResponse>> getStorageLedger(
+    public ResponseEntity<Page<StorageUsageLedgerResponse>> getStorageLedger(
             @RequestParam String userId,
             @RequestParam Instant startDate,
             @RequestParam Instant endDate,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size,
             @RequestHeader(value = "X-User-Id", required = false) String headerUserId,
             @RequestHeader(value = "X-User-Role", required = false) String role) {
-        return ResponseEntity.ok(mediaService.getAuthorizedStorageLedger(userId, startDate, endDate, headerUserId, role));
+        return ResponseEntity.ok(mediaService.getAuthorizedStorageLedger(userId, startDate, endDate, page, size, headerUserId, role));
     }
 
     @GetMapping("/health")

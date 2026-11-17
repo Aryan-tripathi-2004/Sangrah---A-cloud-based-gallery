@@ -1,4 +1,4 @@
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable, throwError } from 'rxjs';
 import { tap, catchError } from 'rxjs/operators';
@@ -6,6 +6,7 @@ import {
   CostEstimateDTO,
   InvoiceDTO,
   PagedResponse,
+  PaginatedResponse,
   PaymentDTO,
   CheckoutSessionResponse,
   PaymentStatusResponse
@@ -39,8 +40,9 @@ export class BillingApiService {
     return this.http.post<{ sessionUrl?: string; message?: string }>(`${this.baseUrl}/billing/invoices/${invoiceId}/pay`, {});
   }
 
-  getPaymentHistory(): Observable<PaymentDTO[]> {
-    return this.http.get<PaymentDTO[]>(`${this.baseUrl}/billing/payments`);
+  getPaymentHistory(page: number = 0, size: number = 10): Observable<PaginatedResponse<PaymentDTO>> {
+    const params = new HttpParams().set('page', page.toString()).set('size', size.toString());
+    return this.http.get<PaginatedResponse<PaymentDTO>>(`${this.baseUrl}/billing/payments`, { params });
   }
 
   getBillingSummary(yearMonth: string): Observable<unknown> {

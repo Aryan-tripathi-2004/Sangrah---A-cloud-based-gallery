@@ -67,7 +67,7 @@ public class BillingServiceImpl implements IBillingService {
     }
 
     @Override
-    public List<PaymentDTO> getPaymentHistory(String userId, int page, int size) {
+    public Page<PaymentDTO> getPaymentHistory(String userId, int page, int size) {
         return invoiceLifecycleService.getPaymentHistory(userId, page, size);
     }
 
@@ -94,6 +94,11 @@ public class BillingServiceImpl implements IBillingService {
     @Override
     public List<StorageUsageLedgerDTO> getStorageUsageDetails(String userId) {
         return storageMeteringService.getStorageUsageDetails(userId);
+    }
+
+    @Override
+    public Page<StorageUsageLedgerDTO> getStorageUsageDetails(String userId, Pageable pageable) {
+        return storageMeteringService.getStorageUsageDetails(userId, pageable);
     }
 
     @Override

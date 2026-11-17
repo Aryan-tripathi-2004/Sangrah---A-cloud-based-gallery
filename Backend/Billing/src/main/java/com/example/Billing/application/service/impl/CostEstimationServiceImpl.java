@@ -9,12 +9,14 @@ import com.example.Billing.infrastructure.persistence.repository.StorageUsageLed
 import com.example.Billing.shared.util.BillingCalculator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.List;
 
 @Slf4j
@@ -117,16 +119,23 @@ public class CostEstimationServiceImpl implements ICostEstimationService {
 
     private List<StorageUsageLedgerDTO> getLedgerEntriesForPeriod(String userId, Instant start, Instant end) {
         try {
-            List<StorageUsageLedgerDTO> remoteEntries = mediaServiceClient.getUserStorageLedger(userId, start, end);
-            if (remoteEntries != null && !remoteEntries.isEmpty()) {
-                return remoteEntries;
-            }
+            List<StorageUsageLedgerDTO> allEntries = new ArrayList<>();
+            int page = 0;
+            Page<StorageUsageLedgerDTO> remotePage;
+            do {
+                remotePage = mediaServiceClient.getUserStorageLedger(userId, start, end, page, 500);
+                if (remotePage != null && remotePage.hasContent()) {
+                    allEntries.addAll(remotePage.getContent());
+                }
+                page++;
+            } while (remotePage != null && remotePage.hasNext());
+
+            return allEntries;
         } catch (Exception e) {
             log.warn("Could not query MediaService storage ledger, falling back to local repository: {}", e.getMessage());
+            return ledgerRepository.findActiveLedgerInPeriodForUser(userId, start, end).stream()
+                    .map(storageUsageMapper::toLedgerDTO)
+                    .toList();
         }
-
-        return ledgerRepository.findByUserIdAndCreatedAtGreaterThanEqual(userId, start).stream()
-                .map(storageUsageMapper::toLedgerDTO)
-                .toList();
     }
 }

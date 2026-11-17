@@ -117,7 +117,7 @@ public class BillingController {
      */
     @GetMapping("/payments")
     @Operation(summary = "Get payment history", description = "Get all payments for the current user")
-    public ResponseEntity<List<PaymentDTO>> getPaymentHistory(
+    public ResponseEntity<Page<PaymentDTO>> getPaymentHistory(
         @CurrentUserId String userId,
         @RequestParam(defaultValue = "0") int page,
         @RequestParam(defaultValue = "10") int size

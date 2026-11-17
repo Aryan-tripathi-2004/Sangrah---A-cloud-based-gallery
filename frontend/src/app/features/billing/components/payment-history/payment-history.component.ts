@@ -14,6 +14,16 @@ export class PaymentHistoryComponent {
   private readonly billingService = inject(BillingService);
 
   readonly payments = this.billingService.payments;
+  readonly currentPage = this.billingService.paymentCurrentPage;
+  readonly totalPages = this.billingService.paymentTotalPages;
+  readonly totalElements = this.billingService.paymentTotalElements;
+  readonly loading = this.billingService.loading;
+
+  goToPage(page: number): void {
+    if (page >= 0 && page < this.totalPages() && !this.loading()) {
+      this.billingService.loadPaymentHistory(page).subscribe();
+    }
+  }
 
   retryPayment(paymentId: string): void {
     alert('🔄 Payment retry coming in Phase 2');

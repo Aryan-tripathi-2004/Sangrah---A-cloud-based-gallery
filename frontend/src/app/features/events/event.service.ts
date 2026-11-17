@@ -49,20 +49,46 @@ export class EventService {
   public readonly eventMedia = signal<EventMediaStatus[]>([]);
   public readonly uploadProgress = signal<UploadProgress[]>([]);
   public readonly loading = signal<boolean>(false);
+  public readonly serverPendingCount = signal<number | null>(null);
+  public readonly serverApprovedCount = signal<number | null>(null);
+  public readonly serverRejectedCount = signal<number | null>(null);
+  public readonly totalEventMediaCount = signal<number>(0);
+  public readonly hasMoreEventMedia = signal<boolean>(false);
+  public readonly currentEventMediaPage = signal<number>(0);
+  public readonly currentMediaView = signal<string | undefined>(undefined);
 
   // Derived computed state
   public readonly hasMedia = computed(() => this.eventMedia().length > 0);
-  public readonly pendingCount = computed(() => this.eventMedia().filter(m => m.status === 'PENDING').length);
-  public readonly approvedCount = computed(() => this.eventMedia().filter(m => m.status === 'APPROVED').length);
-  public readonly rejectedCount = computed(() => this.eventMedia().filter(m => m.status === 'REJECTED').length);
-
+  public readonly pendingCount = computed(() => {
+    const s = this.serverPendingCount();
+    return s !== null ? s : this.eventMedia().filter(m => m.status === 'PENDING').length;
+  });
+  public readonly approvedCount = computed(() => {
+    const s = this.serverApprovedCount();
+    return s !== null ? s : this.eventMedia().filter(m => m.status === 'APPROVED').length;
+  });
+  public readonly rejectedCount = computed(() => {
+    const s = this.serverRejectedCount();
+    return s !== null ? s : this.eventMedia().filter(m => m.status === 'REJECTED').length;
+  });
 
   /**
-   * Load all media for an event
+   * Load all media for an event (with support for pagination and server-side counts)
    */
-  loadEventMedia(eventId: string): Observable<EventMediaStatus[]> {
+  loadEventMedia(eventId: string, page = 0, size = 50, append = false, view?: string): Observable<EventMediaStatus[]> {
     this.loading.set(true);
-    return this.api.getEventMedia(eventId).pipe(
+    this.currentMediaView.set(view);
+    return this.api.getEventMedia(eventId, page, size, view).pipe(
+      tap((rawRes: any) => {
+        if (rawRes && rawRes.pendingCount !== undefined) {
+          this.serverPendingCount.set(rawRes.pendingCount);
+          this.serverApprovedCount.set(rawRes.approvedCount);
+          this.serverRejectedCount.set(rawRes.rejectedCount);
+          this.totalEventMediaCount.set(rawRes.totalElements || 0);
+          this.hasMoreEventMedia.set(rawRes.hasMore ?? false);
+          this.currentEventMediaPage.set(page);
+        }
+      }),
       map((response: unknown): EventMediaStatus[] => {
         const mediaList: EventMediaPayloadItem[] = Array.isArray(response)
           ? (response as EventMediaPayloadItem[])
@@ -86,7 +112,11 @@ export class EventService {
         });
       }),
       tap((statusList: EventMediaStatus[]) => {
-        this.eventMedia.set(statusList);
+        if (append) {
+          this.eventMedia.update(prev => [...prev, ...statusList]);
+        } else {
+          this.eventMedia.set(statusList);
+        }
         this.loading.set(false);
       }),
       catchError((error) => {
@@ -95,6 +125,14 @@ export class EventService {
         return throwError(() => error);
       })
     );
+  }
+
+  loadMoreEventMedia(eventId: string, view?: string): Observable<EventMediaStatus[]> {
+    if (!this.hasMoreEventMedia() || this.loading()) {
+      return of([]);
+    }
+    const targetView = view !== undefined ? view : this.currentMediaView();
+    return this.loadEventMedia(eventId, this.currentEventMediaPage() + 1, 50, true, targetView);
   }
 
   /**
@@ -121,8 +159,8 @@ export class EventService {
           )
         );
 
-        // Reload media list within reactive stream
-        return this.loadEventMedia(eventId).pipe(
+        // Reload media list within reactive stream preserving current view
+        return this.loadEventMedia(eventId, 0, 50, false, this.currentMediaView()).pipe(
           map(() => response),
           catchError(() => of(response))
         );
@@ -240,5 +278,6 @@ export class EventService {
     this.eventMedia.set([]);
     this.uploadProgress.set([]);
     this.loading.set(false);
+    this.currentMediaView.set(undefined);
   }
 }

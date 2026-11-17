@@ -31,6 +31,8 @@ import com.example.Event.shared.exception.ForbiddenOperationException;
 import com.example.Event.shared.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -100,6 +102,30 @@ public class EventAccessServiceImpl implements IEventAccessService {
                 .toList();
 
         return accessMapper.toRequestsResponse(eventId, requests);
+    }
+
+    @Override
+    public AccessRequestsResponse listAccessRequests(String eventId, String userId, Pageable pageable) {
+        EventInternalDTO event = eventService.getEventById(eventId);
+        requireAccessRequestReviewer(event, userId, "Only event owner and authorized collaborators can view access requests");
+
+        Page<EventAccessRequestDocument> docPage = accessRequestRepository.findByEventIdAndStatusInOrderByRequestedAtDesc(
+                eventId,
+                List.of(STATUS_PENDING, STATUS_APPROVED),
+                pageable);
+
+        List<AccessRequestResponse> requests = docPage.getContent().stream()
+                .map(this::enrichAccessRequest)
+                .toList();
+
+        return accessMapper.toRequestsResponse(
+                eventId,
+                requests,
+                docPage.getNumber(),
+                docPage.getSize(),
+                docPage.getTotalElements(),
+                docPage.getTotalPages(),
+                docPage.hasNext());
     }
 
     @Override

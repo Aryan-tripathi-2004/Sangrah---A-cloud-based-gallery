@@ -91,7 +91,7 @@ export class EventDetailComponent implements OnInit, OnDestroy {
   private deleteCountdownTimer: ReturnType<typeof setInterval> | null = null;
 
   collaboratorCount = computed(() => this.event()?.collaborators?.length ?? 0);
-  mediaCount = computed(() => this.eventService.getEventMediaValue().length);
+  mediaCount = computed(() => this.eventService.totalEventMediaCount());
 
   currentCoverImageUrl = computed(() => {
     const e = this.event();
@@ -130,7 +130,7 @@ export class EventDetailComponent implements OnInit, OnDestroy {
         switchMap((event: Event) => {
           this.event.set(event);
           this.requiresApproval.set(event.requiresApproval === true);
-          this.pendingAccessCount.set(0);
+          this.pendingAccessCount.set((event as any).pendingRequestsCount ?? 0);
 
           return this.authService.getCurrentUserId().pipe(
             catchError(() => of('')),
@@ -141,7 +141,8 @@ export class EventDetailComponent implements OnInit, OnDestroy {
               this.permissions.set(perms);
 
               if (!this.requiresApproval()) {
-                return this.eventService.loadEventMedia(eventId);
+                const view = this.currentTab() === 'timeline' ? 'timeline' : undefined;
+                return this.eventService.loadEventMedia(eventId, 0, 50, false, view);
               }
               return of([]);
             })
@@ -156,12 +157,24 @@ export class EventDetailComponent implements OnInit, OnDestroy {
   }
 
   loadEventMedia(eventId: string): void {
-    this.eventService.loadEventMedia(eventId)
+    const view = this.currentTab() === 'timeline' ? 'timeline' : undefined;
+    this.eventService.loadEventMedia(eventId, 0, 50, false, view)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => this.isLoading.set(false),
         error: () => this.isLoading.set(false),
       });
+  }
+
+  switchTab(tab: string): void {
+    if (this.currentTab() === tab) return;
+    this.currentTab.set(tab);
+    if (tab === 'timeline') {
+      const id = this.eventId();
+      if (id && this.eventService.currentMediaView() !== 'timeline') {
+        this.loadEventMedia(id);
+      }
+    }
   }
 
   onUploadComplete(): void {

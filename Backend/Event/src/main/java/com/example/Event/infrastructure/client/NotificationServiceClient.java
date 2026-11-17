@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.RequestBody;
  * Pure declarative Feign Client contract for communicating with Notification Service.
  * Adheres strictly to the Single Responsibility Principle (SRP).
  */
-@FeignClient(name = "notification-service", url = "${notification-service.url:http://localhost:8085}")
+@FeignClient(name = "notification-service", url = "${notification.service.url}")
 public interface NotificationServiceClient {
 
     @PostMapping("/internal/api/v1/notifications")

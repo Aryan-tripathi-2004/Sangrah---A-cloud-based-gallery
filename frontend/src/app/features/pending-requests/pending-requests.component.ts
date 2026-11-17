@@ -31,8 +31,8 @@ export class PendingRequestsComponent implements OnInit {
     this.api.getPendingAccessRequests().pipe(
       takeUntilDestroyed(this.destroyRef)
     ).subscribe({
-      next: (response: Event[]) => {
-        const events: Event[] = Array.isArray(response) ? response : [];
+      next: (response: any) => {
+        const events: Event[] = Array.isArray(response) ? response : (response?.content || []);
         this.pendingEvents.set(events);
 
         const counts: { [key: string]: number } = {};

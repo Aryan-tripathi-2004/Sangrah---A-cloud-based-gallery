@@ -6,8 +6,9 @@ import com.example.Media.api.dto.response.MediaResponse;
 import com.example.Media.api.dto.response.StorageUsageLedgerResponse;
 import com.example.Media.api.dto.response.StorageUsageResponse;
 import com.example.Media.shared.enums.MediaDomain;
-import org.springframework.data.domain.Page;
 import org.springframework.core.io.Resource;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -45,9 +46,15 @@ public interface IMediaService {
 
     List<MediaResponse> listMediaByUser(String userId);
 
+    Page<MediaResponse> listMediaByUser(String userId, Pageable pageable);
+
     List<MediaResponse> listMediaByUserAndDomain(String userId, MediaDomain domain);
 
+    Page<MediaResponse> listMediaByUserAndDomain(String userId, MediaDomain domain, Pageable pageable);
+
     List<MediaResponse> listAuthorizedMedia(String userId, String callerUserId, String role, MediaDomain domain);
+
+    Page<MediaResponse> listAuthorizedMedia(String userId, String callerUserId, String role, MediaDomain domain, Pageable pageable);
 
     long getStorageUsageBytes(String userId);
 
@@ -57,7 +64,11 @@ public interface IMediaService {
 
     List<StorageUsageLedgerResponse> getStorageLedger(String userId, Instant start, Instant end);
 
+    Page<StorageUsageLedgerResponse> getStorageLedger(String userId, Instant start, Instant end, int page, int size);
+
     List<StorageUsageLedgerResponse> getAuthorizedStorageLedger(String userId, Instant startDate, Instant endDate, String headerUserId, String role);
+
+    Page<StorageUsageLedgerResponse> getAuthorizedStorageLedger(String userId, Instant startDate, Instant endDate, int page, int size, String headerUserId, String role);
 
     Page<StorageUsageLedgerResponse> getLedgerEntriesBetweenDates(Instant startDate, Instant endDate, int page, int size);
 

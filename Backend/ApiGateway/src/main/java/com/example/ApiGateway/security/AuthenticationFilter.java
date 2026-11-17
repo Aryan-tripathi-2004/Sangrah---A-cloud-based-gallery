@@ -55,8 +55,8 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
     @Value("${gateway.security.header.user-email}")
     private String headerUserEmail = "X-User-Email";
 
-    @Value("${gateway.security.header.user-role:X-User-Role}")
-    private String headerUserRole = "X-User-Role";
+    @Value("${gateway.security.header.user-role}")
+    private String headerUserRole;
 
     @Value("${gateway.security.auth.bearer-prefix}")
     private String bearerPrefix = "Bearer ";

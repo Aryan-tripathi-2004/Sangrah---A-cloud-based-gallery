@@ -65,6 +65,23 @@
         </div>
       }
     </div>
+
+    <!-- Load More Pagination Button -->
+    @if (hasMore()) {
+      <div class="flex justify-center my-6">
+        <button
+          (click)="loadMore()"
+          [disabled]="isLoading()"
+          class="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 text-white rounded-lg font-medium transition flex items-center gap-2 shadow-md hover:shadow-lg disabled:cursor-not-allowed">
+          @if (isLoading()) {
+            <span class="inline-block animate-spin">⏳</span>
+            <span>Loading photos...</span>
+          } @else {
+            <span>Load More Photos</span>
+          }
+        </button>
+      </div>
+    }
   }
 
   <!-- Empty State -->
@@ -80,7 +97,7 @@
   <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
     <div class="bg-slate-800/30 border border-slate-700/50 rounded-lg p-4">
       <p class="text-slate-400 text-sm mb-1">Total Photos</p>
-      <p class="text-3xl font-bold">{{ approvedMedia().length }}</p>
+      <p class="text-3xl font-bold">{{ approvedCount() }}</p>
     </div>
     <div class="bg-slate-800/30 border border-slate-700/50 rounded-lg p-4">
       <p class="text-slate-400 text-sm mb-1">Pending Approval</p>

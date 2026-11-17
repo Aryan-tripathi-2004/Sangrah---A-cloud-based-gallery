@@ -36,12 +36,15 @@ public class InternalMediaController {
 
     @GetMapping("/ledger/user")
     @Operation(summary = "Get user storage ledger entries")
-    public ResponseEntity<List<StorageUsageLedgerResponse>> getUserStorageLedger(
+    public ResponseEntity<Page<StorageUsageLedgerResponse>> getUserStorageLedger(
             @RequestParam String userId,
-            @RequestParam Instant startDate,
-            @RequestParam Instant endDate) {
-        log.info("📊 [INTERNAL] Querying user ledger | user: {} | period: {} to {}", userId, startDate, endDate);
-        return ResponseEntity.ok(mediaService.getStorageLedger(userId, startDate, endDate));
+            @RequestParam(required = false) Instant startDate,
+            @RequestParam(required = false) Instant endDate,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size) {
+        log.info("📊 [INTERNAL] Querying user ledger | user: {} | period: {} to {} | page: {} size: {}",
+                userId, startDate, endDate, page, size);
+        return ResponseEntity.ok(mediaService.getStorageLedger(userId, startDate, endDate, page, size));
     }
 
     @GetMapping("/ledger")

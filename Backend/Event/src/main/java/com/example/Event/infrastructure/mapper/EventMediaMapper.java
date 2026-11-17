@@ -54,10 +54,39 @@ public interface EventMediaMapper {
 
     EventMediaUploadResponse toUploadResponse(String mediaId, ApprovalStatus moderationStatus, String message);
 
-    EventMediaCollectionResponse toCollectionResponse(
+    default EventMediaCollectionResponse toCollectionResponse(
             String eventId,
             List<EventMediaItemResponse> media,
-            String message);
+            String message) {
+        return new EventMediaCollectionResponse(eventId, media, message);
+    }
+
+    default EventMediaCollectionResponse toCollectionResponse(
+            String eventId,
+            List<EventMediaItemResponse> media,
+            String message,
+            int page,
+            int size,
+            long totalElements,
+            int totalPages,
+            boolean hasMore) {
+        return new EventMediaCollectionResponse(eventId, media, message, page, size, totalElements, totalPages, hasMore);
+    }
+
+    default EventMediaCollectionResponse toCollectionResponse(
+            String eventId,
+            List<EventMediaItemResponse> media,
+            String message,
+            int page,
+            int size,
+            long totalElements,
+            int totalPages,
+            boolean hasMore,
+            long pendingCount,
+            long approvedCount,
+            long rejectedCount) {
+        return new EventMediaCollectionResponse(eventId, media, message, page, size, totalElements, totalPages, hasMore, pendingCount, approvedCount, rejectedCount);
+    }
 
     default EventMediaDetailResponse toDetailResponse(String eventId, String mediaId, ApprovalStatus moderationStatus) {
         return toDetailResponse(mediaId, eventId, null, moderationStatus);

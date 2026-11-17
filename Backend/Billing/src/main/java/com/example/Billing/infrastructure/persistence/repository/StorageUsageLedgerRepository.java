@@ -1,6 +1,8 @@
 package com.example.Billing.infrastructure.persistence.repository;
 
 import com.example.Billing.infrastructure.persistence.document.StorageUsageLedgerDocument;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.stereotype.Repository;
 
@@ -17,6 +19,8 @@ public interface StorageUsageLedgerRepository extends MongoRepository<StorageUsa
      */
     List<StorageUsageLedgerDocument> findByUserId(String userId);
 
+    Page<StorageUsageLedgerDocument> findByUserId(String userId, Pageable pageable);
+
     /**
      * Find ledger entries by user and date range
      */
@@ -31,4 +35,7 @@ public interface StorageUsageLedgerRepository extends MongoRepository<StorageUsa
      * Find ledger entries by date range (for invoice generation)
      */
     List<StorageUsageLedgerDocument> findByStartAtBetween(Instant startDate, Instant endDate);
+
+    @org.springframework.data.mongodb.repository.Query("{ 'userId': ?0, 'startAt': { $lte: ?2 }, $or: [ { 'endAt': null }, { 'endAt': { $gte: ?1 } } ] }")
+    List<StorageUsageLedgerDocument> findActiveLedgerInPeriodForUser(String userId, Instant startDate, Instant endDate);
 }

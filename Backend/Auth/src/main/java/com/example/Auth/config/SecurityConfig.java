@@ -30,7 +30,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class SecurityConfig {
 
-    @Value("${security.header.user-id:X-User-Id}")
+    @Value("${security.header.user-id}")
     private String userIdHeader;
 
     @Bean

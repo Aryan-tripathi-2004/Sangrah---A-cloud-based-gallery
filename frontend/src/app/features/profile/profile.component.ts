@@ -28,6 +28,8 @@ import { GalleryGridComponent } from './components/gallery-grid/gallery-grid.com
   templateUrl: './profile.component.html',
 })
 export class ProfileComponent implements OnInit {
+  private static readonly PROFILE_PAGE_SIZE = 20;
+
   private readonly userApi = inject(UserApiService);
   private readonly eventApi = inject(EventApiService);
   private readonly galleryApi = inject(GalleryApiService);
@@ -37,6 +39,16 @@ export class ProfileComponent implements OnInit {
   readonly myEvents = signal<Event[]>([]);
   readonly galleryItems = signal<MediaItem[]>([]);
   readonly storageUsage = signal<StorageUsage | null>(null);
+  readonly totalEventsCount = signal<number>(0);
+  readonly totalGalleryCount = signal<number>(0);
+
+  readonly eventsPage = signal<number>(0);
+  readonly hasMoreEvents = signal<boolean>(false);
+  readonly isLoadingMoreEvents = signal<boolean>(false);
+
+  readonly galleryPage = signal<number>(0);
+  readonly hasMoreGallery = signal<boolean>(false);
+  readonly isLoadingMoreGallery = signal<boolean>(false);
 
   readonly activeTab = signal<ProfileTabType>('events');
   readonly isLoading = signal(true);
@@ -60,13 +72,13 @@ export class ProfileComponent implements OnInit {
           return of(null);
         })
       ),
-      events: this.eventApi.getMyEvents().pipe(
+      events: this.eventApi.getMyEvents(0, ProfileComponent.PROFILE_PAGE_SIZE).pipe(
         catchError((err) => {
           console.error('Failed to load events:', err);
           return of([]);
         })
       ),
-      gallery: this.galleryApi.listGalleryMedia().pipe(
+      gallery: this.galleryApi.listGalleryMedia(0, ProfileComponent.PROFILE_PAGE_SIZE).pipe(
         catchError((err) => {
           console.error('Failed to load gallery items:', err);
           return of({ count: 0, items: [] });
@@ -85,8 +97,22 @@ export class ProfileComponent implements OnInit {
         if (profile) {
           this.user.set(profile);
         }
-        this.myEvents.set(Array.isArray(events) ? events : []);
-        this.galleryItems.set(gallery && Array.isArray(gallery.items) ? gallery.items : []);
+        const evList: Event[] = Array.isArray(events) ? events : (events?.content || []);
+        this.myEvents.set(evList);
+        const totalEv = (events as any)?.totalElements !== undefined ? (events as any).totalElements : evList.length;
+        this.totalEventsCount.set(totalEv);
+        this.eventsPage.set(0);
+        this.hasMoreEvents.set((events as any)?.hasNext ?? ((events as any)?.totalPages ? (events as any).totalPages > 1 : evList.length < totalEv));
+
+        const galList: MediaItem[] = gallery && Array.isArray(gallery.items) ? gallery.items : (Array.isArray(gallery) ? gallery : []);
+        this.galleryItems.set(galList);
+        const galCount = storage?.fileCount !== undefined
+          ? storage.fileCount
+          : ((gallery as any)?.totalElements ?? (gallery as any)?.count ?? galList.length);
+        this.totalGalleryCount.set(galCount);
+        this.galleryPage.set(0);
+        this.hasMoreGallery.set((gallery as any)?.hasNext ?? ((gallery as any)?.totalPages ? (gallery as any).totalPages > 1 : galList.length < galCount));
+
         this.storageUsage.set(storage);
         this.isLoading.set(false);
       },
@@ -95,6 +121,50 @@ export class ProfileComponent implements OnInit {
         this.isLoading.set(false);
       },
     });
+  }
+
+  loadMoreEvents(): void {
+    if (this.isLoadingMoreEvents() || !this.hasMoreEvents()) return;
+    this.isLoadingMoreEvents.set(true);
+    const nextPage = this.eventsPage() + 1;
+    this.eventApi.getMyEvents(nextPage, ProfileComponent.PROFILE_PAGE_SIZE)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (res: any) => {
+          const newEvents: Event[] = Array.isArray(res) ? res : (res?.content || []);
+          this.myEvents.update(current => [...current, ...newEvents]);
+          this.eventsPage.set(nextPage);
+          const totalPages = res?.totalPages ?? 1;
+          this.hasMoreEvents.set(res?.hasNext ?? (nextPage + 1 < totalPages));
+          this.isLoadingMoreEvents.set(false);
+        },
+        error: (err) => {
+          console.error('Failed to load more events:', err);
+          this.isLoadingMoreEvents.set(false);
+        }
+      });
+  }
+
+  loadMoreGallery(): void {
+    if (this.isLoadingMoreGallery() || !this.hasMoreGallery()) return;
+    this.isLoadingMoreGallery.set(true);
+    const nextPage = this.galleryPage() + 1;
+    this.galleryApi.listGalleryMedia(nextPage, ProfileComponent.PROFILE_PAGE_SIZE)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (res: any) => {
+          const newItems: MediaItem[] = res && Array.isArray(res.items) ? res.items : (Array.isArray(res) ? res : (res?.content || []));
+          this.galleryItems.update(current => [...current, ...newItems]);
+          this.galleryPage.set(nextPage);
+          const totalPages = res?.totalPages ?? 1;
+          this.hasMoreGallery.set(res?.hasNext ?? (nextPage + 1 < totalPages));
+          this.isLoadingMoreGallery.set(false);
+        },
+        error: (err) => {
+          console.error('Failed to load more gallery items:', err);
+          this.isLoadingMoreGallery.set(false);
+        }
+      });
   }
 
   onAvatarSelected(file: File): void {

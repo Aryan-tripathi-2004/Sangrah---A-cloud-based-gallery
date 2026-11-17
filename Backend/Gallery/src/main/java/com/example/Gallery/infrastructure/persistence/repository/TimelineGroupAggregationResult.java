@@ -24,7 +24,7 @@ public class TimelineGroupAggregationResult {
     @Id
     private String id;
 
-    private List<GalleryMediaDocument> items;
+    private long count;
 
     public String getDate() {
         return id;

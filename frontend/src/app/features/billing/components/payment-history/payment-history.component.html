@@ -42,4 +42,27 @@
       <div class="text-slate-400">No payment history yet</div>
     </div>
   }
+
+  <!-- Pagination Controls -->
+  @if (totalPages() > 1) {
+    <div class="flex items-center justify-between pt-4 border-t border-slate-700/50">
+      <div class="text-sm text-slate-400">
+        Page {{ currentPage() + 1 }} of {{ totalPages() }} ({{ totalElements() }} payments)
+      </div>
+      <div class="flex items-center gap-2">
+        <button
+          (click)="goToPage(currentPage() - 1)"
+          [disabled]="currentPage() === 0 || loading()"
+          class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed border border-slate-700 rounded-lg text-sm text-slate-200 transition">
+          Previous
+        </button>
+        <button
+          (click)="goToPage(currentPage() + 1)"
+          [disabled]="currentPage() >= totalPages() - 1 || loading()"
+          class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed border border-slate-700 rounded-lg text-sm text-slate-200 transition">
+          Next
+        </button>
+      </div>
+    </div>
+  }
 </div>

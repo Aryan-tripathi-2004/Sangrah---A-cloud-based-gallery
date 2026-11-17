@@ -80,6 +80,23 @@
           }
         </div>
       }
+      <!-- Load More Uploaders / Submissions -->
+      @if (hasMore()) {
+        <div class="flex justify-center pt-6 pb-2">
+          <button
+            type="button"
+            (click)="loadMore()"
+            [disabled]="isLoading()"
+            class="px-6 py-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 hover:border-slate-600 text-slate-200 text-sm font-semibold transition-all duration-200 shadow-sm hover:shadow flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+            @if (isLoading()) {
+              <span class="inline-block w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin"></span>
+              <span>Loading submissions...</span>
+            } @else {
+              <span>Load More Submissions</span>
+            }
+          </button>
+        </div>
+      }
       <!-- Empty State -->
       @if (getFilteredUploaders().length === 0) {
         <div class="text-center py-12 rounded-lg bg-slate-800/20 border border-slate-700/50">
@@ -257,6 +274,23 @@
                 </div>
               </div>
             }
+          </div>
+        }
+        <!-- Load More Submissions -->
+        @if (hasMore()) {
+          <div class="flex justify-center pt-6 pb-2">
+            <button
+              type="button"
+              (click)="loadMore()"
+              [disabled]="isLoading()"
+              class="px-6 py-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 hover:border-slate-600 text-slate-200 text-sm font-semibold transition-all duration-200 shadow-sm hover:shadow flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+              @if (isLoading()) {
+                <span class="inline-block w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin"></span>
+                <span>Loading submissions...</span>
+              } @else {
+                <span>Load More Submissions</span>
+              }
+            </button>
           </div>
         }
         <!-- Empty State -->

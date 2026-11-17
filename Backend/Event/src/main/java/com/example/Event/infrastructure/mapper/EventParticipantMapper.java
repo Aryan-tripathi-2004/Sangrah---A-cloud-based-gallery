@@ -22,5 +22,16 @@ public interface EventParticipantMapper {
 
     @Mapping(target = "eventId", source = "eventId")
     @Mapping(target = "participants", source = "participants")
+    @Mapping(target = "page", constant = "0")
+    @Mapping(target = "size", expression = "java(participants != null ? participants.size() : 0)")
+    @Mapping(target = "totalElements", expression = "java(participants != null ? (long) participants.size() : 0L)")
+    @Mapping(target = "totalPages", constant = "1")
+    @Mapping(target = "hasMore", constant = "false")
     EventParticipantsResponse toParticipantsResponse(String eventId, List<String> participants);
+
+    default EventParticipantsResponse toParticipantsResponse(
+            String eventId, List<String> participants,
+            int page, int size, long totalElements, int totalPages, boolean hasMore) {
+        return new EventParticipantsResponse(eventId, toParticipantList(participants), page, size, totalElements, totalPages, hasMore);
+    }
 }

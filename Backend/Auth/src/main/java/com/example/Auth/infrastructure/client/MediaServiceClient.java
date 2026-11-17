@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.multipart.MultipartFile;
 
-@FeignClient(name = "media-service-auth", url = "${media.service.url:http://localhost:8087}")
+@FeignClient(name = "media-service-auth", url = "${media.service.url}")
 public interface MediaServiceClient {
 
     @PostMapping(value = "/api/v1/media/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)

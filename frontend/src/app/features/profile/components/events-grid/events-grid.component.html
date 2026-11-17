@@ -77,6 +77,22 @@
       </a>
     }
   </div>
+
+  @if (hasMore()) {
+    <div class="flex justify-center mt-6">
+      <button
+        (click)="loadMore.emit()"
+        [disabled]="isLoadingMore()"
+        class="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 text-white rounded-xl font-medium text-xs transition flex items-center gap-2 shadow-md hover:shadow-lg disabled:cursor-not-allowed">
+        @if (isLoadingMore()) {
+          <span class="inline-block animate-spin">⏳</span>
+          <span>Loading more events...</span>
+        } @else {
+          <span>Load More Events</span>
+        }
+      </button>
+    </div>
+  }
 } @else {
   <!-- Empty State -->
   <div class="text-center py-16 px-4 bg-slate-850/40 border border-slate-800/80 rounded-3xl">

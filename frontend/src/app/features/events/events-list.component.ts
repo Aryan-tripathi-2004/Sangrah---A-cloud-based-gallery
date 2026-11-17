@@ -27,10 +27,14 @@ export class EventsListComponent implements OnInit {
   readonly pendingRequestEvent = signal<Event | null>(null);
   readonly events = signal<Event[]>([]);
   readonly isLoading = signal<boolean>(true);
+  readonly isLoadingMore = signal<boolean>(false);
+  readonly currentPage = signal<number>(0);
+  readonly hasMore = signal<boolean>(false);
+  readonly totalElements = signal<number>(0);
   readonly selectedFilter = signal<'all' | 'public' | 'protected' | 'private' | 'myEvents'>('all');
 
   ngOnInit(): void {
-    this.loadEvents();
+    this.loadEvents(0, false);
 
     // Open request modal when redirected here with a requestEventId query param
     this.activatedRoute.queryParamMap
@@ -62,55 +66,85 @@ export class EventsListComponent implements OnInit {
 
   selectFilter(filter: 'all' | 'public' | 'protected' | 'private' | 'myEvents'): void {
     this.selectedFilter.set(filter);
-    this.loadEvents();
+    this.currentPage.set(0);
+    this.loadEvents(0, false);
   }
 
-  loadEvents(): void {
-    this.isLoading.set(true);
+  loadEvents(page = 0, append = false): void {
+    if (append) {
+      this.isLoadingMore.set(true);
+    } else {
+      this.isLoading.set(true);
+    }
+
     let request;
+    const size = 12;
 
     switch (this.selectedFilter()) {
       case 'all':
-        request = this.eventApi.getGlobalEvents();
+        request = this.eventApi.getGlobalEvents(undefined, page, size);
         break;
       case 'public':
-        request = this.eventApi.getGlobalEvents().pipe(
-          map(events => events.filter(e => e.visibility === 'PUBLIC'))
-        );
+        request = this.eventApi.getGlobalEvents('PUBLIC', page, size);
         break;
       case 'protected':
-        request = this.eventApi.getGlobalEvents().pipe(
-          map(events => events.filter(e => e.visibility === 'PROTECTED'))
-        );
+        request = this.eventApi.getGlobalEvents('PROTECTED', page, size);
         break;
       case 'private':
-        request = this.eventApi.getGlobalEvents().pipe(
-          map(events => events.filter(e => e.visibility === 'PRIVATE'))
-        );
+        request = this.eventApi.getGlobalEvents('PRIVATE', page, size);
         break;
       case 'myEvents':
-        request = this.eventApi.getMyEvents();
+        request = this.eventApi.getMyEvents(page, size);
         break;
     }
 
     request.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: (events) => {
-        const mapped: Event[] = (events || []).map(event => ({
+      next: (response: any) => {
+        const rawList: any[] = Array.isArray(response)
+          ? response
+          : (response?.content || []);
+
+        const mapped: Event[] = rawList.map(event => ({
           ...event,
           id: event.id || event.eventId || '',
           visibility: (event.visibility || '').toString().toUpperCase(),
           accessStatus: (event.accessStatus ? event.accessStatus.toLowerCase() : 'none') as EventAccessStatus
         }));
 
-        this.events.set(mapped);
+        if (append) {
+          this.events.update(prev => [...prev, ...mapped]);
+        } else {
+          this.events.set(mapped);
+        }
+
+        this.currentPage.set(page);
+        if (response && response.totalElements !== undefined) {
+          this.totalElements.set(response.totalElements);
+          this.hasMore.set(response.hasNext ?? (!response.last && page + 1 < response.totalPages));
+        } else {
+          this.totalElements.set(mapped.length);
+          this.hasMore.set(false);
+        }
+
         this.isLoading.set(false);
+        this.isLoadingMore.set(false);
       },
       error: (err) => {
         console.error('Failed to load events:', err);
-        this.events.set([]);
+        if (!append) {
+          this.events.set([]);
+        }
         this.isLoading.set(false);
+        this.isLoadingMore.set(false);
       },
     });
+  }
+
+  loadMore(): void {
+    if (!this.hasMore() || this.isLoadingMore() || this.isLoading()) {
+      return;
+    }
+    this.loadEvents(this.currentPage() + 1, true);
   }
 
   getCoverImageUrl(mediaId: string): string {

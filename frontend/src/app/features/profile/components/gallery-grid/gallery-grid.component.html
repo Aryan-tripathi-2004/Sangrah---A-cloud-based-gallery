@@ -4,6 +4,7 @@
       <div
         (click)="openPreview(item)"
         class="group relative aspect-square rounded-xl sm:rounded-2xl overflow-hidden bg-slate-800 cursor-pointer shadow-sm hover:shadow-xl transition-all duration-300"
+        style="content-visibility: auto; contain-intrinsic-size: 150px 150px;"
       >
         @if (isVideo(item)) {
           <video
@@ -20,6 +21,7 @@
             [src]="getMediaUrl(item)"
             [alt]="item.originalFileName || 'Gallery photo'"
             loading="lazy"
+            decoding="async"
             class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
           />
         }
@@ -33,6 +35,22 @@
       </div>
     }
   </div>
+
+  @if (hasMore()) {
+    <div class="flex justify-center mt-6">
+      <button
+        (click)="loadMore.emit()"
+        [disabled]="isLoadingMore()"
+        class="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 text-white rounded-xl font-medium text-xs transition flex items-center gap-2 shadow-md hover:shadow-lg disabled:cursor-not-allowed">
+        @if (isLoadingMore()) {
+          <span class="inline-block animate-spin">⏳</span>
+          <span>Loading more items...</span>
+        } @else {
+          <span>Load More Photos</span>
+        }
+      </button>
+    </div>
+  }
 } @else {
   <!-- Empty State -->
   <div class="text-center py-16 px-4 bg-slate-850/40 border border-slate-800/80 rounded-3xl">
